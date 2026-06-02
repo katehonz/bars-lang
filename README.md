@@ -1,150 +1,239 @@
 # 🐆 Bars
 
-> **Bars** (барс) — дивата котка от Русия. Бърз, независим, опасен.
+> **Bars** (Russian: барс) — the wild cat of Russia. Fast, independent, dangerous.
 
-Системен език за програмиране със синтаксис на **Clojure**, ownership като **Rust** (по-лек), и компилация до нативен код през **QBE** / **Cranelift** / **LLVM**.
+A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE** (AOT) and **Cranelift** (JIT/REPL).
 
 ```clojure
 ;; examples/hello.brs
 (defn main []
-  (println "Здравей, свят!"))
+  (println "Hello, World!"))
 ```
 
 ```bash
-$ bars build examples/hello.brs
 $ bars run examples/hello.brs
-Здравей, свят!
+Hello, World!
 ```
 
 ---
 
-## Архитектура
+## Why Bars?
 
-```
-.brs → Reader → AST → Ownership Analysis → QBE IR / Cranelift / LLVM → Нативен код
-```
-
-| Бекенд | Режим | Статус |
-|--------|-------|--------|
-| **QBE** | AOT debug builds | 🚧 В разработка |
-| **Cranelift** | JIT / REPL | 📋 Планирано |
-| **LLVM** | Release builds | 📋 Планирано |
+- **Clojure syntax** — parentheses naturally express scope and structure.
+- **Lightweight ownership** — borrow checking without lifetime annotation hell.
+- **Multiple backends** — QBE for fast AOT debug builds, Cranelift for JIT/REPL.
+- **Zero-cost FFI** — direct C ABI access through the runtime.
+- **GC when you want it** — stack + ownership + Boehm GC for complex data.
+- **`.brs`** — source file extension.
 
 ---
 
-## Уникални Характеристики
+## Quick Start
 
-### Лек Ownership
+### Prerequisites
 
-За разлика от Rust, Bars използва по-лека ownership система без lifetime annotations:
+- Rust 1.70+ (for building the compiler)
+- `qbe` (AOT backend, installed at `~/.local/bin/qbe` or on PATH)
+- `libgc-dev` (Boehm GC for the runtime)
+- `cc` / `gcc` (for linking)
 
-```clojure
-(defn process [^buf data]
-  ; ^buf = borrow (като & в Rust)
-  (buffer/read data 0))
-
-(defn main []
-  (def b (buffer/new 16))
-  (process b)           ; borrow — OK
-  (process b))          ; borrow отново — OK
-```
-
-### Хибридна Памет
-
-| Тип | Управление | Пример |
-|-----|-----------|--------|
-| Stack | Автоматично | `(let [x 42] ...)` |
-| Ownership | Ръчно | `(def f (fs/open "x.txt"))` |
-| GC | Автоматично | `(def m {:a [1 2 3]})` |
-
----
-
-## Бърз старт
-
-### Инсталация
+### Build
 
 ```bash
-git clone <repo>
-cd bars
+git clone https://codeberg.org/bars-lang/bars-lang.git
+cd bars-lang
 cargo build --release
 ```
 
-### Използване
+### Run
 
 ```bash
-# Прочети AST
+# Read and print AST
 bars read examples/hello.brs
 
-# Компилирай до QBE IR
+# Compile to QBE IR
 bars build examples/hello.brs
 
-# Компилирай и изпълни
+# Compile and run
 bars run examples/math.brs
 
-# REPL
+# REPL (Cranelift JIT)
 bars repl
 ```
 
 ---
 
-## Примери
+## Language Tour
 
-### Аритметика и рекурсия
+### Functions
 
 ```clojure
-;; examples/math.brs
+(defn greet [name]
+  (println name))
+
+(defn add [a b]
+  (+ a b))
+```
+
+### Variables
+
+```clojure
+(defn main []
+  (let [x 42
+        y (+ x 1)]
+    (println y)))
+```
+
+### Conditionals
+
+```clojure
+(defn main []
+  (let [x 2]
+    (cond
+      (= x 1) "one"
+      (= x 2) "two"
+      :else   "other")))
+```
+
+### Loops
+
+```clojure
 (defn factorial [n]
-  (if (<= n 1)
-    1
-    (* n (factorial (- n 1)))))
-
-(defn main []
-  (println (factorial 5)))
+  (loop [i n acc 1]
+    (if (= i 0)
+      acc
+      (recur (- i 1) (* acc i)))))
 ```
 
-### Ownership
+### Vectors
 
 ```clojure
-;; examples/ownership.brs
-(defn use [^mut buf data]
-  (buffer/fill data 0))
+(defn main []
+  (let [v (vector 1 2 3)]
+    (push v 4)
+    (println (count v))        ;; 4
+    (println (get v 2))))      ;; 3
+```
+
+### Maps
+
+```clojure
+(defn main []
+  (let [m (map)]
+    (map-set m 1 100)
+    (println (map-get m 1))))  ;; 100
+```
+
+### Borrowing (Ownership)
+
+```clojure
+(defn use-buf [^buf data]
+  ;; immutable borrow
+  (println (count data)))
+
+(defn mutate-buf [^mut buf data]
+  ;; mutable borrow
+  (push data 42))
+```
+
+### Loading Libraries
+
+```clojure
+(load "lib/core.brs")
+(load "lib/math.brs")
 
 (defn main []
-  (def b (buffer/new 16))
-  (use b)
-  (buffer/free b))
+  (println (factorial 5))
+  (println (range 1 10)))
 ```
 
 ---
 
-## Технологичен Стек
+## CLI Reference
 
-| Компонент | Технология |
-|-----------|-----------|
-| Език | Rust |
-| QBE API | `qbe-rs` |
-| CLI | `clap` |
-| Тестове | `cargo test` |
-
----
-
-## Статус на Разработка
-
-Виж [ROADMAP.md](ROADMAP.md) за пълен план.
-
-| Фаза | Статус |
-|------|--------|
-| Reader (Lexer + Parser) | ✅ Работи |
-| AST → QBE IR | ✅ Базов |
-| Функции и рекурсия | ✅ Работи |
-| Ownership анализатор | 📋 Планирано |
-| Runtime + GC | 📋 Планирано |
-| REPL + Cranelift JIT | 📋 Планирано |
-| Макроси | 📋 Планирано |
-| LLVM backend | 📋 Планирано |
+| Command | Description |
+|---------|-------------|
+| `bars read <file>` | Parse and print AST |
+| `bars build <file>` | Compile to QBE IR (stdout) |
+| `bars run <file>` | Compile, link, and execute |
+| `bars repl` | Interactive Cranelift JIT session |
+| `bars check <file>` | Run ownership analysis |
 
 ---
 
-## Лиценз
+## Project Structure
 
-MIT или Apache-2.0
+```
+.
+├── src/              # Compiler source (Rust)
+│   ├── reader/       # Lexer + Parser
+│   ├── ast/          # AST types
+│   ├── macro/        # Macro expansion
+│   ├── ownership/    # Ownership checker
+│   └── backends/     # QBE + Cranelift backends
+├── runtime/          # C runtime + Boehm GC
+├── lib/              # Standard library (.brs)
+├── examples/         # Example programs
+├── tests/            # Integration tests
+└── docs/             # Documentation
+```
+
+---
+
+## Backends
+
+| Backend | Mode | Status |
+|---------|------|--------|
+| **QBE** | AOT debug/release builds | ✅ Working |
+| **Cranelift** | JIT / REPL | ✅ Working |
+| **LLVM** | Optimized release builds | 📋 Planned |
+
+---
+
+## Standard Library
+
+See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
+
+- `lib/core.brs` — numeric helpers, vector helpers, range, `or`, `and`
+- `lib/math.brs` — `square`, `cube`, `gcd`, `lcm`, `factorial`, `fib`, `sum`, `product`
+- `lib/vector.brs` — `last`, `rest`, `take`, `drop`, `reverse`, `contains?`, `index-of`
+- `lib/string.brs` — `str-empty?`, `str-count`
+- `lib/map.brs` — `map-empty?`, `map-has?`
+
+---
+
+## Architecture
+
+```
+.brs → Reader → AST → Macro Expansion → Ownership Check → Backend → Native Code
+                                                          ├── QBE IR → qbe → cc
+                                                          └── Cranelift → JIT
+```
+
+---
+
+## Development Status
+
+See [ROADMAP.md](ROADMAP.md) for the full plan.
+
+| Feature | Status |
+|---------|--------|
+| Reader (Lexer + Parser) | ✅ |
+| AST → QBE IR | ✅ |
+| Functions & recursion | ✅ |
+| Ownership checker | ✅ |
+| Runtime + Boehm GC | ✅ |
+| REPL + Cranelift JIT | ✅ |
+| Built-in macros (`when`, `unless`, `cond`, `->`, `->>`) | ✅ |
+| `loop` / `recur` | ✅ |
+| `load` system | ✅ |
+| Stdlib | ✅ |
+| LLVM backend | 📋 Planned |
+| User-defined macros (`defmacro`) | 📋 Planned |
+| Type inference | 📋 Planned |
+
+---
+
+## License
+
+MIT or Apache-2.0
