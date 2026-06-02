@@ -102,3 +102,21 @@ fn test_defmacro_with_splicing() {
         panic!("Expected Defn");
     }
 }
+
+#[test]
+fn test_match_expression() {
+    let prog = reader::read(r#"
+        (defn f [x]
+          (match x
+            0 100
+            1 101
+            _ 999))
+    "#).unwrap();
+    let expanded = expand_program(&prog).unwrap();
+    assert_eq!(expanded.exprs.len(), 1);
+    if let bars::ast::Expr::Defn { body, .. } = &expanded.exprs[0] {
+        assert!(matches!(body.as_ref(), bars::ast::Expr::Match { .. }));
+    } else {
+        panic!("Expected Defn");
+    }
+}

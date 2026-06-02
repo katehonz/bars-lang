@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Symbol, Type as AstType};
+use crate::ast::{Expr, Pattern, Program, Symbol, Type as AstType};
 use anyhow::{bail, Result};
 use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};
 use std::collections::HashMap;
@@ -245,6 +245,53 @@ impl QbeBackend {
                 }
 
                 // End block
+                func.add_block(&end_label);
+                self.current_block_terminated = false;
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Load(Type::Long, Value::Temporary(slot)),
+                );
+                Ok(Value::Temporary(result))
+            }
+
+            Expr::Match { expr, arms, .. } => {
+                let val = self.compile_expr(expr, func, scope)?;
+                let end_label = self.fresh_label("matchend");
+                let slot = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(slot.clone()),
+                    Type::Long,
+                    Instr::Alloc8(8),
+                );
+
+                for (pattern, body) in arms {
+                    let match_label = self.fresh_label("matcharm");
+                    let next_label = self.fresh_label("matchnext");
+
+                    // Compile pattern match check
+                    let matches = self.compile_pattern_check(&val, pattern, func, scope)?;
+                    func.add_instr(Instr::Jnz(matches, match_label.clone(), next_label.clone()));
+
+                    // Pattern matches — compile body with bindings
+                    func.add_block(&match_label);
+                    self.current_block_terminated = false;
+                    let mut arm_scope = scope.clone();
+                    self.compile_pattern_bindings(&val, pattern, func, &mut arm_scope)?;
+                    let body_val = self.compile_expr(body, func, &mut arm_scope)?;
+                    if !self.current_block_terminated {
+                        func.add_instr(Instr::Store(Type::Long, Value::Temporary(slot.clone()), body_val));
+                        func.add_instr(Instr::Jmp(end_label.clone()));
+                        self.current_block_terminated = true;
+                    }
+
+                    // Next arm
+                    func.add_block(&next_label);
+                    self.current_block_terminated = false;
+                }
+
+                // End block — load result
                 func.add_block(&end_label);
                 self.current_block_terminated = false;
                 let result = self.fresh_temp();
@@ -604,6 +651,116 @@ impl QbeBackend {
         let l = format!("{}_{}", prefix, self.label_counter);
         self.label_counter += 1;
         l
+    }
+
+    fn compile_pattern_check(
+        &mut self,
+        val: &Value,
+        pattern: &Pattern,
+        func: &mut Function,
+        _scope: &HashMap<String, String>,
+    ) -> Result<Value> {
+        match pattern {
+            Pattern::Wildcard | Pattern::Binding(_) => {
+                // Always matches
+                Ok(Value::Const(1))
+            }
+            Pattern::Literal(Expr::Number(n)) => {
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Cmp(Type::Long, Cmp::Eq, val.clone(), Value::Const(*n as u64)),
+                );
+                Ok(Value::Temporary(result))
+            }
+            Pattern::Literal(Expr::Bool(b)) => {
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Cmp(Type::Long, Cmp::Eq, val.clone(), Value::Const(if *b { 1 } else { 0 })),
+                );
+                Ok(Value::Temporary(result))
+            }
+            Pattern::Literal(Expr::Keyword(k)) => {
+                // Keywords are interned strings — compare by pointer/identity
+                // For now, compare the string content by calling strcmp
+                let keyword_label = self.add_string_literal(&k.0);
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Word,
+                    Instr::Call(
+                        "strcmp".to_string(),
+                        vec![(Type::Long, val.clone()), (Type::Long, keyword_label)],
+                        None,
+                    ),
+                );
+                // strcmp returns 0 on match
+                let is_eq = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(is_eq.clone()),
+                    Type::Long,
+                    Instr::Cmp(Type::Long, Cmp::Eq, Value::Temporary(result), Value::Const(0)),
+                );
+                Ok(Value::Temporary(is_eq))
+            }
+            Pattern::Literal(Expr::String(s)) => {
+                let str_label = self.add_string_literal(s);
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Word,
+                    Instr::Call(
+                        "strcmp".to_string(),
+                        vec![(Type::Long, val.clone()), (Type::Long, str_label)],
+                        None,
+                    ),
+                );
+                let is_eq = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(is_eq.clone()),
+                    Type::Long,
+                    Instr::Cmp(Type::Long, Cmp::Eq, Value::Temporary(result), Value::Const(0)),
+                );
+                Ok(Value::Temporary(is_eq))
+            }
+            Pattern::Vector(_, _) | Pattern::List(_, _) => {
+                bail!("Vector/List patterns not yet supported in QBE backend")
+            }
+            other => bail!("Unsupported pattern in QBE backend: {:?}", other),
+        }
+    }
+
+    fn compile_pattern_bindings(
+        &mut self,
+        val: &Value,
+        pattern: &Pattern,
+        _func: &mut Function,
+        scope: &mut HashMap<String, String>,
+    ) -> Result<()> {
+        match pattern {
+            Pattern::Binding(sym) => {
+                scope.insert(sym.0.clone(), match val {
+                    Value::Temporary(t) => t.clone(),
+                    Value::Global(g) => g.clone(),
+                    Value::Const(c) => {
+                        // We need a temporary for constants
+                        // This is handled by the caller storing the value
+                        format!("const_{}", c)
+                    }
+                });
+                Ok(())
+            }
+            Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
+                for p in patterns {
+                    self.compile_pattern_bindings(val, p, _func, scope)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn ast_type_to_qbe(ty: &AstType) -> Option<Type> {

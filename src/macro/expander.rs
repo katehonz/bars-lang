@@ -137,6 +137,19 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
             })
         }
 
+        Expr::Match { expr, arms, span } => {
+            let new_expr = expand_expr(expr, macro_env)?;
+            let mut new_arms = Vec::new();
+            for (pat, body) in arms {
+                new_arms.push((pat.clone(), expand_expr(body, macro_env)?));
+            }
+            Ok(Expr::Match {
+                expr: Box::new(new_expr),
+                arms: new_arms,
+                span: span.clone(),
+            })
+        }
+
         Expr::SyntaxQuote(expr, span) => {
             // Expand syntax-quote using the interpreter
             let mut empty_env = InterpEnv::new();

@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Type as AstType};
+use crate::ast::{Expr, Pattern, Program, Type as AstType};
 use crate::ownership::state::OwnershipState;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -162,6 +162,25 @@ fn expr_is_copy(expr: &Expr, registry: &FunctionRegistry) -> bool {
     }
 }
 
+/// Add pattern bindings to the environment
+fn add_pattern_bindings(
+    pattern: &Pattern,
+    env: &mut OwnershipEnv,
+    registry: &FunctionRegistry,
+) {
+    match pattern {
+        Pattern::Binding(sym) => {
+            env.insert(sym.0.clone(), OwnershipState::Owned);
+        }
+        Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
+            for p in patterns {
+                add_pattern_bindings(p, env, registry);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Check an expression, returning the ownership state of its result
 fn check_expr(
     expr: &Expr,
@@ -222,6 +241,23 @@ fn check_expr(
             env.merge(&then_env);
             env.merge(&else_env);
 
+            Ok(OwnershipState::Owned)
+        }
+
+        Expr::Match { expr, arms, .. } => {
+            check_expr(expr, env, registry)?;
+            let mut arm_envs = Vec::new();
+            for (pattern, body) in arms {
+                let mut arm_env = env.clone();
+                arm_env.push_scope();
+                add_pattern_bindings(pattern, &mut arm_env, registry);
+                check_expr(body, &mut arm_env, registry)?;
+                arm_env.pop_scope();
+                arm_envs.push(arm_env);
+            }
+            for arm_env in arm_envs {
+                env.merge(&arm_env);
+            }
             Ok(OwnershipState::Owned)
         }
 

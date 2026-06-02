@@ -63,6 +63,16 @@ impl fmt::Display for Keyword {
     }
 }
 
+/// Patterns for pattern matching
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Wildcard,                          // _
+    Binding(Symbol),                   // x
+    Literal(Expr),                     // 42, true, "hello", :ok
+    Vector(Vec<Pattern>, Span),        // [p1 p2]
+    List(Vec<Pattern>, Span),          // (p1 p2)
+}
+
 /// Expressions in Bars AST
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -123,6 +133,11 @@ pub enum Expr {
         body: Box<Expr>,
         span: Span,
     },
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<(Pattern, Expr)>,
+        span: Span,
+    },
     Quote(Box<Expr>, Span),
     SyntaxQuote(Box<Expr>, Span),
     Unquote(Box<Expr>, Span),
@@ -145,6 +160,7 @@ impl Expr {
             Expr::Loop { span, .. } => span.clone(),
             Expr::Recur { span, .. } => span.clone(),
             Expr::DefMacro { span, .. } => span.clone(),
+            Expr::Match { span, .. } => span.clone(),
             Expr::Quote(_, s) => s.clone(),
             Expr::SyntaxQuote(_, s) => s.clone(),
             Expr::Unquote(_, s) => s.clone(),

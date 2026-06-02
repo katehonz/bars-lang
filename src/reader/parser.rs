@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Keyword, Program, Span, Symbol, Type};
+use crate::ast::{Expr, Keyword, Pattern, Program, Span, Symbol, Type};
 use crate::reader::lexer::{SpannedToken, Token};
 use anyhow::{bail, Result};
 
@@ -145,6 +145,7 @@ impl<'a> Parser<'a> {
                 "loop" => return self.parse_loop(start_span),
                 "recur" => return self.parse_recur(start_span),
                 "quote" => return self.parse_quote(start_span),
+                "match" => return self.parse_match(start_span),
                 _ => {}
             }
         }
@@ -425,6 +426,83 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expr()?;
         self.expect(Token::RParen)?;
         Ok(Expr::Quote(Box::new(expr), start_span))
+    }
+
+    fn parse_match(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'match'
+        let expr = self.parse_expr()?;
+        let mut arms = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+            let pattern = self.parse_pattern()?;
+            let body = self.parse_expr()?;
+            arms.push((pattern, body));
+        }
+        self.expect(Token::RParen)?;
+        Ok(Expr::Match {
+            expr: Box::new(expr),
+            arms,
+            span: start_span,
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern> {
+        let spanned = self.tokens.get(self.pos).ok_or_else(|| anyhow::anyhow!("Unexpected EOF in pattern"))?;
+        let span = Span::new(spanned.line, spanned.col);
+        match &spanned.token {
+            Token::Symbol(s) if s == "_" => {
+                self.advance();
+                Ok(Pattern::Wildcard)
+            }
+            Token::Symbol(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Pattern::Binding(Symbol(s)))
+            }
+            Token::Number(n) => {
+                let n = *n;
+                self.advance();
+                Ok(Pattern::Literal(Expr::Number(n)))
+            }
+            Token::Float(f) => {
+                let f = *f;
+                self.advance();
+                Ok(Pattern::Literal(Expr::Float(f)))
+            }
+            Token::Bool(b) => {
+                let b = *b;
+                self.advance();
+                Ok(Pattern::Literal(Expr::Bool(b)))
+            }
+            Token::String(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Pattern::Literal(Expr::String(s)))
+            }
+            Token::Keyword(k) => {
+                let k = k.clone();
+                self.advance();
+                Ok(Pattern::Literal(Expr::Keyword(Keyword(k))))
+            }
+            Token::LBracket => {
+                self.advance(); // consume '['
+                let mut items = Vec::new();
+                while !matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+                    items.push(self.parse_pattern()?);
+                }
+                self.expect(Token::RBracket)?;
+                Ok(Pattern::Vector(items, span))
+            }
+            Token::LParen => {
+                self.advance(); // consume '('
+                let mut items = Vec::new();
+                while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                    items.push(self.parse_pattern()?);
+                }
+                self.expect(Token::RParen)?;
+                Ok(Pattern::List(items, span))
+            }
+            other => bail!("Unexpected token in pattern: {} at line {}, col {}", other, span.line, span.col),
+        }
     }
 
     fn parse_vector(&mut self) -> Result<Expr> {

@@ -95,3 +95,15 @@ fn test_run_splicing() {
     assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
     assert!(stdout.contains("2"), "Expected '2' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_run_match() {
+    let output = bars()
+        .args(["run", "examples/match_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
+    assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
+    assert!(stdout.contains("999"), "Expected '999' in output, got: {}", stdout);
+}

@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Symbol, Type as AstType};
+use crate::ast::{Expr, Pattern, Program, Symbol, Type as AstType};
 use anyhow::{bail, Result};
 use cranelift_codegen::ir::{types, AbiParam, BlockArg, InstBuilder, Value as ClifValue};
 use cranelift_codegen::settings::Configurable;
@@ -248,6 +248,43 @@ fn compile_expr(
             Ok(builder.block_params(merge_block)[0])
         }
 
+        Expr::Match { expr, arms, .. } => {
+            let val = compile_expr(expr, builder, vars, functions, module, loop_context, block_filled)?;
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            for (pattern, body) in arms {
+                let arm_block = builder.create_block();
+                let next_block = builder.create_block();
+
+                // Pattern check
+                let matches = compile_pattern_check(val, pattern, builder)?;
+                builder.ins().brif(matches, arm_block, &[], next_block, &[]);
+
+                // Arm body
+                builder.switch_to_block(arm_block);
+                builder.seal_block(arm_block);
+                *block_filled = false;
+                let mut arm_vars = vars.clone();
+                compile_pattern_bindings(val, pattern, &mut arm_vars, builder);
+                let body_val = compile_expr(body, builder, &mut arm_vars, functions, module, loop_context, block_filled)?;
+                if !*block_filled {
+                    builder.ins().jump(merge_block, &[BlockArg::Value(body_val)]);
+                }
+
+                // Next arm
+                builder.switch_to_block(next_block);
+                builder.seal_block(next_block);
+                *block_filled = false;
+            }
+
+            // Merge block
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            *block_filled = false;
+            Ok(builder.block_params(merge_block)[0])
+        }
+
         Expr::Do { exprs, .. } => {
             let mut last = builder.ins().iconst(types::I64, 0);
             for e in exprs {
@@ -407,6 +444,51 @@ fn compile_expr(
         Expr::Splicing(_, _) => bail!("Splicing not supported in Cranelift JIT"),
         Expr::DefMacro { .. } => bail!("defmacro not supported in Cranelift JIT (should be expanded)"),
         Expr::Borrow(_, _, _) => bail!("Borrow not supported in Cranelift JIT"),
+    }
+}
+
+fn compile_pattern_check(
+    val: ClifValue,
+    pattern: &Pattern,
+    builder: &mut FunctionBuilder,
+) -> Result<ClifValue> {
+    match pattern {
+        Pattern::Wildcard | Pattern::Binding(_) => {
+            Ok(builder.ins().iconst(types::I64, 1))
+        }
+        Pattern::Literal(Expr::Number(n)) => {
+            let lit = builder.ins().iconst(types::I64, *n);
+            Ok(builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, lit))
+        }
+        Pattern::Literal(Expr::Bool(b)) => {
+            let lit = builder.ins().iconst(types::I64, if *b { 1 } else { 0 });
+            Ok(builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, lit))
+        }
+        Pattern::Vector(_, _) | Pattern::List(_, _) => {
+            bail!("Vector/List patterns not yet supported in Cranelift backend")
+        }
+        other => bail!("Unsupported pattern in Cranelift backend: {:?}", other),
+    }
+}
+
+fn compile_pattern_bindings(
+    val: ClifValue,
+    pattern: &Pattern,
+    vars: &mut HashMap<String, Variable>,
+    builder: &mut FunctionBuilder,
+) {
+    match pattern {
+        Pattern::Binding(sym) => {
+            let var = builder.declare_var(types::I64);
+            builder.def_var(var, val);
+            vars.insert(sym.0.clone(), var);
+        }
+        Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
+            for p in patterns {
+                compile_pattern_bindings(val, p, vars, builder);
+            }
+        }
+        _ => {}
     }
 }
 
