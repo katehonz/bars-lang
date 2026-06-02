@@ -1,12 +1,12 @@
-use crate::ast::{Expr, Pattern, Program, Symbol, Type as AstType};
+use crate::hir;
 use anyhow::{bail, Result};
-use cranelift_codegen::ir::{types, AbiParam, BlockArg, InstBuilder, Value as ClifValue};
+use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, TrapCode, Value as ClifValue};
 use cranelift_codegen::settings::Configurable;
-use cranelift_codegen::{settings, Context};
+use cranelift_codegen::settings;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Real C runtime function declarations
 unsafe extern "C" {
@@ -29,7 +29,6 @@ pub struct CraneliftBackend {
     module: JITModule,
     builder_context: FunctionBuilderContext,
     functions: HashMap<String, cranelift_module::FuncId>,
-    anon_counter: usize,
 }
 
 impl CraneliftBackend {
@@ -65,23 +64,18 @@ impl CraneliftBackend {
             module,
             builder_context: FunctionBuilderContext::new(),
             functions: HashMap::new(),
-            anon_counter: 0,
         })
     }
 
-    pub fn compile_program(&mut self, program: &Program) -> Result<i64> {
-        // First pass: declare all functions
-        for expr in &program.exprs {
-            if let Expr::Defn { name, params, .. } = expr {
-                self.declare_function(&name.0, params.len())?;
-            }
+    pub fn compile_hir(&mut self, program: &hir::Program) -> Result<i64> {
+        // Declare all functions first
+        for func in &program.funcs {
+            self.declare_function(&func.name, func.params.len())?;
         }
 
-        // Second pass: define all functions
-        for expr in &program.exprs {
-            if let Expr::Defn { name, params, body, .. } = expr {
-                self.define_function(&name.0, params, body)?;
-            }
+        // Define all functions
+        for func in &program.funcs {
+            self.define_function(func, &program.struct_registry)?;
         }
 
         self.module.finalize_definitions().unwrap();
@@ -93,14 +87,7 @@ impl CraneliftBackend {
             let result = unsafe { main_fn() };
             Ok(result)
         } else {
-            // Execute top-level expressions
-            let mut last_result = 0i64;
-            for expr in &program.exprs {
-                if !matches!(expr, Expr::Defn { .. }) {
-                    last_result = self.compile_and_run_expr(expr)?;
-                }
-            }
-            Ok(last_result)
+            Ok(0)
         }
     }
 
@@ -118,380 +105,353 @@ impl CraneliftBackend {
 
     fn define_function(
         &mut self,
-        name: &str,
-        params: &[(Symbol, Option<AstType>)],
-        body: &Expr,
+        func: &hir::Func,
+        struct_registry: &HashMap<String, Vec<String>>,
     ) -> Result<()> {
-        let func_id = *self.functions.get(name).unwrap();
+        let func_id = *self.functions.get(&func.name).unwrap();
 
         let mut ctx = self.module.make_context();
         ctx.func.signature = self.module.make_signature();
-        for _ in params {
+        for _ in &func.params {
             ctx.func.signature.params.push(AbiParam::new(types::I64));
         }
         ctx.func.signature.returns.push(AbiParam::new(types::I64));
 
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut self.builder_context);
+
+        // Create Cranelift blocks for all HIR blocks, entry first
+        let mut blocks: HashMap<String, Block> = HashMap::new();
         let entry_block = builder.create_block();
-        builder.append_block_params_for_function_params(entry_block);
-        builder.switch_to_block(entry_block);
-        builder.seal_block(entry_block);
-
-        let mut vars = HashMap::new();
-
-        for (i, (param, _)) in params.iter().enumerate() {
-            let var = builder.declare_var(types::I64);
-            let val = builder.block_params(entry_block)[i];
-            builder.def_var(var, val);
-            vars.insert(param.0.clone(), var);
+        blocks.insert(func.entry_block.clone(), entry_block);
+        for block in &func.blocks {
+            if block.label != func.entry_block {
+                blocks.insert(block.label.clone(), builder.create_block());
+            }
         }
 
-        let result = compile_expr(body, &mut builder, &mut vars, &self.functions, &mut self.module, &mut None, &mut false)?;
-        builder.ins().return_(&[result]);
-        builder.finalize();
+        builder.append_block_params_for_function_params(entry_block);
 
+        let mut values: HashMap<String, Variable> = HashMap::new();
+        for (i, param) in func.params.iter().enumerate() {
+            let var = builder.declare_var(types::I64);
+            builder.def_var(var, builder.block_params(entry_block)[i]);
+            values.insert(param.clone(), var);
+        }
+
+        let mut string_temps: HashSet<String> = HashSet::new();
+        let functions = &self.functions;
+
+        // Compile each block (don't seal yet — wait until all jumps are emitted)
+        for block in &func.blocks {
+            let clif_block = blocks[&block.label];
+            builder.switch_to_block(clif_block);
+
+            for instr in &block.instrs {
+                compile_instr(
+                    instr,
+                    &mut builder,
+                    &mut values,
+                    &mut string_temps,
+                    struct_registry,
+                    functions,
+                    &mut self.module,
+                )?;
+            }
+
+            compile_terminator(&block.terminator, &mut builder, &values, &blocks)?;
+        }
+
+        // Seal all blocks after all jumps are emitted
+        for block in &func.blocks {
+            builder.seal_block(blocks[&block.label]);
+        }
+
+        builder.finalize();
         self.module.define_function(func_id, &mut ctx)?;
 
         Ok(())
     }
-
-    fn compile_and_run_expr(&mut self, expr: &Expr) -> Result<i64> {
-        let mut ctx = self.module.make_context();
-        ctx.func.signature.returns.push(AbiParam::new(types::I64));
-
-        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut self.builder_context);
-        let block = builder.create_block();
-        builder.switch_to_block(block);
-        builder.seal_block(block);
-
-        let mut vars = HashMap::new();
-        let result = compile_expr(expr, &mut builder, &mut vars, &self.functions, &mut self.module, &mut None, &mut false)?;
-        builder.ins().return_(&[result]);
-        builder.finalize();
-
-        let anon_name = format!("__anon_{}", self.anon_counter);
-        self.anon_counter += 1;
-        let id = self.module.declare_function(&anon_name, Linkage::Export, &ctx.func.signature)?;
-        self.module.define_function(id, &mut ctx)?;
-        self.module.finalize_definitions().unwrap();
-
-        let ptr = self.module.get_finalized_function(id);
-        let f: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
-        let result = unsafe { f() };
-
-        Ok(result)
-    }
 }
 
-fn compile_expr(
-    expr: &Expr,
+fn get_or_declare_var(name: &str, values: &mut HashMap<String, Variable>, builder: &mut FunctionBuilder) -> Variable {
+    *values.entry(name.to_string()).or_insert_with(|| builder.declare_var(types::I64))
+}
+
+fn compile_instr(
+    instr: &hir::Instr,
     builder: &mut FunctionBuilder,
-    vars: &mut HashMap<String, Variable>,
+    values: &mut HashMap<String, Variable>,
+    string_temps: &mut HashSet<String>,
+    struct_registry: &HashMap<String, Vec<String>>,
     functions: &HashMap<String, cranelift_module::FuncId>,
     module: &mut JITModule,
-    loop_context: &mut Option<(cranelift_codegen::ir::Block, Vec<Variable>)>,
-    block_filled: &mut bool,
-) -> Result<ClifValue> {
-    match expr {
-        Expr::Number(n) => Ok(builder.ins().iconst(types::I64, *n)),
-        Expr::Bool(b) => Ok(builder.ins().iconst(types::I64, if *b { 1 } else { 0 })),
-
-        Expr::Symbol(sym) => {
-            if let Some(&var) = vars.get(&sym.0) {
-                Ok(builder.use_var(var))
-            } else {
-                Ok(builder.ins().iconst(types::I64, 0))
-            }
+) -> Result<()> {
+    match instr {
+        hir::Instr::Assign { dest, value } => {
+            let val = operand_to_value(value, values, builder);
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, val);
         }
-
-        Expr::Let { bindings, body, .. } => {
-            for (name, val_expr) in bindings {
-                let val = compile_expr(val_expr, builder, vars, functions, module, loop_context, block_filled)?;
-                let var = builder.declare_var(types::I64);
-                builder.def_var(var, val);
-                vars.insert(name.0.clone(), var);
-            }
-            compile_expr(body, builder, vars, functions, module, loop_context, block_filled)
+        hir::Instr::Const { dest, value } => {
+            let val = builder.ins().iconst(types::I64, *value);
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, val);
         }
-
-        Expr::If { cond, then_branch, else_branch, .. } => {
-            let cond_val = compile_expr(cond, builder, vars, functions, module, loop_context, block_filled)?;
-            let zero = builder.ins().iconst(types::I64, 0);
-            let cond_bool = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, cond_val, zero);
-
-            let then_block = builder.create_block();
-            let else_block = builder.create_block();
-            let merge_block = builder.create_block();
-            builder.append_block_param(merge_block, types::I64);
-
-            builder.ins().brif(cond_bool, then_block, &[], else_block, &[]);
-
-            builder.switch_to_block(then_block);
-            builder.seal_block(then_block);
-            *block_filled = false;
-            let then_val = compile_expr(then_branch, builder, vars, functions, module, loop_context, block_filled)?;
-            if !*block_filled {
-                builder.ins().jump(merge_block, &[BlockArg::Value(then_val)]);
-            }
-
-            builder.switch_to_block(else_block);
-            builder.seal_block(else_block);
-            *block_filled = false;
-            let else_val = compile_expr(else_branch, builder, vars, functions, module, loop_context, block_filled)?;
-            if !*block_filled {
-                builder.ins().jump(merge_block, &[BlockArg::Value(else_val)]);
-            }
-
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-            *block_filled = false;
-            Ok(builder.block_params(merge_block)[0])
+        hir::Instr::Alloc { dest, size } => {
+            let slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, *size as u32, 3);
+            let slot = builder.create_sized_stack_slot(slot_data);
+            let addr = builder.ins().stack_addr(types::I64, slot, 0);
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, addr);
         }
-
-        Expr::Match { expr, arms, .. } => {
-            let val = compile_expr(expr, builder, vars, functions, module, loop_context, block_filled)?;
-            let merge_block = builder.create_block();
-            builder.append_block_param(merge_block, types::I64);
-
-            for (pattern, body) in arms {
-                let arm_block = builder.create_block();
-                let next_block = builder.create_block();
-
-                // Pattern check
-                let matches = compile_pattern_check(val, pattern, builder)?;
-                builder.ins().brif(matches, arm_block, &[], next_block, &[]);
-
-                // Arm body
-                builder.switch_to_block(arm_block);
-                builder.seal_block(arm_block);
-                *block_filled = false;
-                let mut arm_vars = vars.clone();
-                compile_pattern_bindings(val, pattern, &mut arm_vars, builder);
-                let body_val = compile_expr(body, builder, &mut arm_vars, functions, module, loop_context, block_filled)?;
-                if !*block_filled {
-                    builder.ins().jump(merge_block, &[BlockArg::Value(body_val)]);
+        hir::Instr::Store { addr, value } => {
+            let a = operand_to_value(addr, values, builder);
+            let v = operand_to_value(value, values, builder);
+            builder.ins().store(MemFlags::new(), v, a, 0);
+        }
+        hir::Instr::Load { dest, addr } => {
+            let a = operand_to_value(addr, values, builder);
+            let val = builder.ins().load(types::I64, MemFlags::new(), a, 0);
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, val);
+        }
+        hir::Instr::FieldLoad { dest, base, offset } => {
+            let base_val = operand_to_value(base, values, builder);
+            let offset_val = builder.ins().iconst(types::I64, *offset as i64);
+            let addr = builder.ins().iadd(base_val, offset_val);
+            let val = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, val);
+        }
+        hir::Instr::FieldStore { base, offset, value } => {
+            let base_val = operand_to_value(base, values, builder);
+            let offset_val = builder.ins().iconst(types::I64, *offset as i64);
+            let addr = builder.ins().iadd(base_val, offset_val);
+            let v = operand_to_value(value, values, builder);
+            builder.ins().store(MemFlags::new(), v, addr, 0);
+        }
+        hir::Instr::BinOp { dest, op, lhs, rhs } => {
+            let lhs_val = operand_to_value(lhs, values, builder);
+            let rhs_val = operand_to_value(rhs, values, builder);
+            let val = match op {
+                hir::BinOp::Add => builder.ins().iadd(lhs_val, rhs_val),
+                hir::BinOp::Sub => builder.ins().isub(lhs_val, rhs_val),
+                hir::BinOp::Mul => builder.ins().imul(lhs_val, rhs_val),
+                hir::BinOp::Div => builder.ins().sdiv(lhs_val, rhs_val),
+                hir::BinOp::Rem => builder.ins().srem(lhs_val, rhs_val),
+                hir::BinOp::Eq => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
                 }
-
-                // Next arm
-                builder.switch_to_block(next_block);
-                builder.seal_block(next_block);
-                *block_filled = false;
-            }
-
-            // Merge block
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-            *block_filled = false;
-            Ok(builder.block_params(merge_block)[0])
+                hir::BinOp::Ne => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                hir::BinOp::Lt => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedLessThan, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                hir::BinOp::Le => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedLessThanOrEqual, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                hir::BinOp::Gt => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThan, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                hir::BinOp::Ge => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThanOrEqual, lhs_val, rhs_val);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+            };
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, val);
         }
-
-        Expr::Do { exprs, .. } => {
-            let mut last = builder.ins().iconst(types::I64, 0);
-            for e in exprs {
-                last = compile_expr(e, builder, vars, functions, module, loop_context, block_filled)?;
+        hir::Instr::UnOp { dest, op, operand } => {
+            let val = operand_to_value(operand, values, builder);
+            match op {
+                hir::UnOp::Not => {
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, zero);
+                    let result = builder.ins().uextend(types::I64, cmp);
+                    let var = get_or_declare_var(dest, values, builder);
+                    builder.def_var(var, result);
+                }
             }
-            Ok(last)
         }
+        hir::Instr::Call { dest, func: func_name, args } => {
+            let arg_vals: Vec<ClifValue> = args.iter().map(|a| operand_to_value(a, values, builder)).collect();
 
-        Expr::Loop { bindings, body, .. } => {
-            let loop_block = builder.create_block();
-            for _ in bindings {
-                builder.append_block_param(loop_block, types::I64);
+            // Check for struct constructor
+            if let Some(fields) = struct_registry.get(func_name) {
+                let size = fields.len() * 8;
+                let slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32, 3);
+                let slot = builder.create_sized_stack_slot(slot_data);
+                let ptr = builder.ins().stack_addr(types::I64, slot, 0);
+                for (i, arg) in arg_vals.iter().enumerate() {
+                    let offset = (i * 8) as i64;
+                    let offset_val = builder.ins().iconst(types::I64, offset);
+                    let addr = builder.ins().iadd(ptr, offset_val);
+                    builder.ins().store(MemFlags::new(), *arg, addr, 0);
+                }
+                let var = get_or_declare_var(dest, values, builder);
+                builder.def_var(var, ptr);
+                return Ok(());
             }
 
-            let exit_block = builder.create_block();
-            builder.append_block_param(exit_block, types::I64);
-
-            // Initial jump to loop block with binding values
-            let mut init_vals = Vec::new();
-            for (_, init_expr) in bindings {
-                let val = compile_expr(init_expr, builder, vars, functions, module, loop_context, block_filled)?;
-                init_vals.push(BlockArg::Value(val));
-            }
-            builder.ins().jump(loop_block, &init_vals);
-
-            // Compile loop body
-            builder.switch_to_block(loop_block);
-
-            // Save old variable mappings and set up loop variables
-            let mut old_vars = HashMap::new();
-            let loop_vars: Vec<Variable> = bindings.iter().enumerate().map(|(i, (name, _))| {
-                let param = builder.block_params(loop_block)[i];
-                let var = builder.declare_var(types::I64);
-                old_vars.insert(name.0.clone(), vars.get(&name.0).copied());
-                vars.insert(name.0.clone(), var);
-                builder.def_var(var, param);
-                var
-            }).collect();
-
-            // Set loop context for recur
-            let prev_loop = loop_context.take();
-            *loop_context = Some((loop_block, loop_vars.clone()));
-
-            let body_val = compile_expr(body, builder, vars, functions, module, loop_context, block_filled)?;
-
-            // Restore loop context
-            *loop_context = prev_loop;
-
-            // Jump to exit with body value (if block not already filled by recur)
-            if !*block_filled {
-                builder.ins().jump(exit_block, &[BlockArg::Value(body_val)]);
-            }
-
-            builder.seal_block(loop_block);
-            builder.switch_to_block(exit_block);
-            builder.seal_block(exit_block);
-            *block_filled = false;
-            Ok(builder.block_params(exit_block)[0])
-        }
-
-        Expr::Recur { args, .. } => {
-            let (loop_block, loop_vars) = loop_context
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("recur used outside of loop"))?
-                .clone();
-
-            if args.len() != loop_vars.len() {
-                bail!("recur arity mismatch: expected {}, got {}", loop_vars.len(), args.len());
-            }
-
-            let mut new_vals = Vec::new();
-            for arg in args {
-                let val = compile_expr(arg, builder, vars, functions, module, loop_context, block_filled)?;
-                new_vals.push(BlockArg::Value(val));
-            }
-            let dummy = builder.ins().iconst(types::I64, 0);
-            builder.ins().jump(loop_block, &new_vals);
-            *block_filled = true;
-            Ok(dummy)
-        }
-
-        Expr::FnCall { func, args, .. } => {
-            if let Expr::Symbol(sym) = func.as_ref() {
-                match sym.0.as_str() {
-                    "+" | "-" | "*" | "/" if args.len() == 2 => {
-                        let lhs = compile_expr(&args[0], builder, vars, functions, module, loop_context, block_filled)?;
-                        let rhs = compile_expr(&args[1], builder, vars, functions, module, loop_context, block_filled)?;
-                        let result = match sym.0.as_str() {
-                            "+" => builder.ins().iadd(lhs, rhs),
-                            "-" => builder.ins().isub(lhs, rhs),
-                            "*" => builder.ins().imul(lhs, rhs),
-                            "/" => builder.ins().sdiv(lhs, rhs),
-                            _ => unreachable!(),
-                        };
-                        Ok(result)
-                    }
-                    "<" | ">" | "=" | "<=" | ">=" | "!=" if args.len() == 2 => {
-                        let lhs = compile_expr(&args[0], builder, vars, functions, module, loop_context, block_filled)?;
-                        let rhs = compile_expr(&args[1], builder, vars, functions, module, loop_context, block_filled)?;
-                        let cc = match sym.0.as_str() {
-                            "<" => cranelift_codegen::ir::condcodes::IntCC::SignedLessThan,
-                            ">" => cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThan,
-                            "=" => cranelift_codegen::ir::condcodes::IntCC::Equal,
-                            "<=" => cranelift_codegen::ir::condcodes::IntCC::SignedLessThanOrEqual,
-                            ">=" => cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThanOrEqual,
-                            "!=" => cranelift_codegen::ir::condcodes::IntCC::NotEqual,
-                            _ => unreachable!(),
-                        };
-                        let cmp = builder.ins().icmp(cc, lhs, rhs);
-                        Ok(builder.ins().uextend(types::I64, cmp))
-                    }
-                    "println" => {
-                        if !args.is_empty() {
-                            let val = compile_expr(&args[0], builder, vars, functions, module, loop_context, block_filled)?;
-                            call_runtime(builder, module, "bars_print_i64", &[val])?;
+            let result = match func_name.as_str() {
+                "+" if arg_vals.len() == 2 => builder.ins().iadd(arg_vals[0], arg_vals[1]),
+                "-" if arg_vals.len() == 2 => builder.ins().isub(arg_vals[0], arg_vals[1]),
+                "*" if arg_vals.len() == 2 => builder.ins().imul(arg_vals[0], arg_vals[1]),
+                "/" if arg_vals.len() == 2 => builder.ins().sdiv(arg_vals[0], arg_vals[1]),
+                "%" if arg_vals.len() == 2 => builder.ins().srem(arg_vals[0], arg_vals[1]),
+                "=" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                "!=" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                "<" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedLessThan, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                "<=" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedLessThanOrEqual, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                ">" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThan, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                ">=" if arg_vals.len() == 2 => {
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::SignedGreaterThanOrEqual, arg_vals[0], arg_vals[1]);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                "not" if arg_vals.len() == 1 => {
+                    let zero = builder.ins().iconst(types::I64, 0);
+                    let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, arg_vals[0], zero);
+                    builder.ins().uextend(types::I64, cmp)
+                }
+                "println" => {
+                    if !arg_vals.is_empty() && is_string_arg(&args[0], string_temps) {
+                        call_runtime(builder, module, "bars_print_string", &[arg_vals[0]])?;
+                        call_runtime(builder, module, "bars_print_newline", &[])?;
+                    } else {
+                        if !arg_vals.is_empty() {
+                            call_runtime(builder, module, "bars_print_i64", &[arg_vals[0]])?;
                         }
                         call_runtime(builder, module, "bars_print_newline", &[])?;
-                        Ok(builder.ins().iconst(types::I64, 0))
                     }
-                    "not" if args.len() == 1 => {
-                        let val = compile_expr(&args[0], builder, vars, functions, module, loop_context, block_filled)?;
-                        let zero = builder.ins().iconst(types::I64, 0);
-                        let cmp = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, zero);
-                        Ok(builder.ins().uextend(types::I64, cmp))
+                    builder.ins().iconst(types::I64, 0)
+                }
+                "vector" => {
+                    let ptr = call_runtime(builder, module, "bars_vector_new_i64", &[])?;
+                    for arg in &arg_vals {
+                        call_runtime(builder, module, "bars_vector_push_i64", &[ptr, *arg])?;
                     }
-                    func_name => {
-                        if let Some(&func_id) = functions.get(func_name) {
-                            let func_ref = module.declare_func_in_func(func_id, builder.func);
-                            let arg_vals: Result<Vec<_>> = args
-                                .iter()
-                                .map(|a| compile_expr(a, builder, vars, functions, module, loop_context, block_filled))
-                                .collect();
-                            let arg_vals = arg_vals?;
-                            let call = builder.ins().call(func_ref, &arg_vals);
-                            Ok(builder.inst_results(call)[0])
-                        } else {
-                            bail!("Unknown function: {}", func_name)
-                        }
+                    ptr
+                }
+                "push" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_vector_push_i64", &arg_vals)?;
+                    builder.ins().iconst(types::I64, 0)
+                }
+                "get" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_vector_get_i64", &arg_vals)?
+                }
+                "count" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_vector_count_i64", &arg_vals)?
+                }
+                "map" => {
+                    call_runtime(builder, module, "bars_map_new_i64", &[])?
+                }
+                "map_set" | "map-set" if arg_vals.len() == 3 => {
+                    call_runtime(builder, module, "bars_map_set_i64", &arg_vals)?;
+                    builder.ins().iconst(types::I64, 0)
+                }
+                "map_get" | "map-get" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_map_get_i64", &arg_vals)?
+                }
+                "map_count" | "map-count" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_map_count_i64", &arg_vals)?
+                }
+                _ => {
+                    if let Some(&func_id) = functions.get(func_name) {
+                        let func_ref = module.declare_func_in_func(func_id, builder.func);
+                        let call = builder.ins().call(func_ref, &arg_vals);
+                        builder.inst_results(call)[0]
+                    } else {
+                        bail!("Unknown function in Cranelift backend: {}", func_name)
                     }
                 }
-            } else {
-                bail!("Only direct function calls supported in Cranelift backend")
-            }
+            };
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, result);
         }
+        hir::Instr::StringLit { dest, content } => {
+            let mut bytes = content.as_bytes().to_vec();
+            bytes.push(0);
+            let leaked = Box::leak(bytes.into_boxed_slice());
+            let ptr = leaked.as_ptr() as i64;
+            let ptr_val = builder.ins().iconst(types::I64, ptr);
+            let result = call_runtime(builder, module, "bars_string_new", &[ptr_val])?;
+            let var = get_or_declare_var(dest, values, builder);
+            builder.def_var(var, result);
+            string_temps.insert(dest.clone());
+        }
+    }
+    Ok(())
+}
 
-        Expr::Defn { .. } => bail!("Nested defn not supported in Cranelift backend"),
-        Expr::Def { .. } => bail!("def not supported in Cranelift expression context"),
-        Expr::DefStruct { .. } => bail!("defstruct not supported in Cranelift expression context"),
-        Expr::FieldAccess { .. } => bail!("Field access not yet supported in Cranelift JIT"),
-        Expr::String(_) => bail!("String not yet supported in Cranelift JIT"),
-        Expr::Float(_) => bail!("Float not yet supported in Cranelift JIT"),
-        Expr::Keyword(_) => bail!("Keyword not yet supported in Cranelift JIT"),
-        Expr::List(_, _) => bail!("List not supported in Cranelift JIT"),
-        Expr::Vector(_, _) => bail!("Vector not supported in Cranelift JIT"),
-        Expr::Map(_, _) => bail!("Map not supported in Cranelift JIT"),
-        Expr::Quote(_, _) => bail!("Quote not supported in Cranelift JIT"),
-        Expr::SyntaxQuote(_, _) => bail!("Syntax-quote not supported in Cranelift JIT"),
-        Expr::Unquote(_, _) => bail!("Unquote not supported in Cranelift JIT"),
-        Expr::Splicing(_, _) => bail!("Splicing not supported in Cranelift JIT"),
-        Expr::DefMacro { .. } => bail!("defmacro not supported in Cranelift JIT (should be expanded)"),
-        Expr::Borrow(_, _, _) => bail!("Borrow not supported in Cranelift JIT"),
+fn compile_terminator(
+    term: &hir::Terminator,
+    builder: &mut FunctionBuilder,
+    values: &HashMap<String, Variable>,
+    blocks: &HashMap<String, Block>,
+) -> Result<()> {
+    match term {
+        hir::Terminator::Jump(label) => {
+            let target = blocks[label];
+            builder.ins().jump(target, &[]);
+        }
+        hir::Terminator::Branch { cond, then_block, else_block } => {
+            let cond_val = operand_to_value(cond, values, builder);
+            let zero = builder.ins().iconst(types::I64, 0);
+            let cond_bool = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, cond_val, zero);
+            let then_target = blocks[then_block];
+            let else_target = blocks[else_block];
+            builder.ins().brif(cond_bool, then_target, &[], else_target, &[]);
+        }
+        hir::Terminator::Return(val) => {
+            let ret_val = operand_to_value(val, values, builder);
+            builder.ins().return_(&[ret_val]);
+        }
+        hir::Terminator::Unreachable => {
+            builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+    }
+    Ok(())
+}
+
+fn operand_to_value(
+    op: &hir::Operand,
+    values: &HashMap<String, Variable>,
+    builder: &mut FunctionBuilder,
+) -> ClifValue {
+    match op {
+        hir::Operand::Var(v) => {
+            let var = values.get(v).copied().unwrap_or_else(|| {
+                panic!("Undefined variable in Cranelift backend: {}", v)
+            });
+            builder.use_var(var)
+        }
+        hir::Operand::Const(c) => builder.ins().iconst(types::I64, *c),
     }
 }
 
-fn compile_pattern_check(
-    val: ClifValue,
-    pattern: &Pattern,
-    builder: &mut FunctionBuilder,
-) -> Result<ClifValue> {
-    match pattern {
-        Pattern::Wildcard | Pattern::Binding(_) => {
-            Ok(builder.ins().iconst(types::I64, 1))
-        }
-        Pattern::Literal(Expr::Number(n)) => {
-            let lit = builder.ins().iconst(types::I64, *n);
-            Ok(builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, lit))
-        }
-        Pattern::Literal(Expr::Bool(b)) => {
-            let lit = builder.ins().iconst(types::I64, if *b { 1 } else { 0 });
-            Ok(builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, lit))
-        }
-        Pattern::Vector(_, _) | Pattern::List(_, _) => {
-            bail!("Vector/List patterns not yet supported in Cranelift backend")
-        }
-        other => bail!("Unsupported pattern in Cranelift backend: {:?}", other),
-    }
-}
-
-fn compile_pattern_bindings(
-    val: ClifValue,
-    pattern: &Pattern,
-    vars: &mut HashMap<String, Variable>,
-    builder: &mut FunctionBuilder,
-) {
-    match pattern {
-        Pattern::Binding(sym) => {
-            let var = builder.declare_var(types::I64);
-            builder.def_var(var, val);
-            vars.insert(sym.0.clone(), var);
-        }
-        Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
-            for p in patterns {
-                compile_pattern_bindings(val, p, vars, builder);
-            }
-        }
-        _ => {}
-    }
+fn is_string_arg(arg: &hir::Operand, string_temps: &HashSet<String>) -> bool {
+    matches!(arg, hir::Operand::Var(v) if string_temps.contains(v))
 }
 
 fn call_runtime(
@@ -504,14 +464,15 @@ fn call_runtime(
     for _ in args {
         sig.params.push(AbiParam::new(types::I64));
     }
-    if name != "bars_print_newline" {
+    if name != "bars_print_newline" && name != "bars_vector_push_i64" && name != "bars_map_set_i64" {
         sig.returns.push(AbiParam::new(types::I64));
     }
 
     let func_id = module.declare_function(name, Linkage::Import, &sig)?;
     let func_ref = module.declare_func_in_func(func_id, builder.func);
     let call = builder.ins().call(func_ref, args);
-    if name != "bars_print_newline" {
+
+    if name != "bars_print_newline" && name != "bars_vector_push_i64" && name != "bars_map_set_i64" {
         Ok(builder.inst_results(call)[0])
     } else {
         Ok(builder.ins().iconst(types::I64, 0))

@@ -14,6 +14,7 @@ pub mod lowering;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub funcs: Vec<Func>,
+    pub struct_registry: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// A function: name, parameters, and a list of basic blocks

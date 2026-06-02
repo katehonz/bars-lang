@@ -71,12 +71,8 @@ pub fn expand_macros(program: &ast::Program) -> Result<ast::Program, r#macro::Ma
 pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     let hir_program = hir::lowering::lower(program)?;
     let mut backend = backends::qbe_hir::QbeHIRBackend::new();
-    // Register struct definitions for constructor generation
-    for expr in &program.exprs {
-        if let ast::Expr::DefStruct { name, fields, .. } = expr {
-            let field_names: Vec<String> = fields.iter().map(|f| f.0.clone()).collect();
-            backend.add_struct(&name.0, field_names);
-        }
+    for (name, fields) in &hir_program.struct_registry {
+        backend.add_struct(name, fields.clone());
     }
     backend.compile(&hir_program)
 }

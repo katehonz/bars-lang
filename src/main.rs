@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bars::{ast, backends::qbe::QbeBackend, cli::{Cli, Commands}, read_file};
+use bars::{ast, cli::{Cli, Commands}, read_file};
 use clap::Parser;
 use std::io::Write;
 use std::path::Path;
@@ -220,12 +220,19 @@ fn run_repl_jit() -> Result<()> {
                             continue;
                         }
                     };
-                    match backend.compile_program(&expanded) {
-                        Ok(result) => {
-                            println!("{}", result);
+                    match bars::hir::lowering::lower(&expanded) {
+                        Ok(hir_program) => {
+                            match backend.compile_hir(&hir_program) {
+                                Ok(result) => {
+                                    println!("{}", result);
+                                }
+                                Err(e) => {
+                                    eprintln!("Грешка при JIT компилация: {}", e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            eprintln!("Грешка при JIT компилация: {}", e);
+                            eprintln!("Грешка при HIR lowering: {}", e);
                         }
                     }
                 }

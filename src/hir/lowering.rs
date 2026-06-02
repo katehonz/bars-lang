@@ -92,7 +92,8 @@ impl LoweringCtx {
             funcs.push(self.lower_implicit_main(&main_exprs)?);
         }
 
-        Ok(Program { funcs })
+        let struct_registry = std::mem::take(&mut self.struct_registry);
+        Ok(Program { funcs, struct_registry })
     }
 
     fn lower_func(&mut self, name: &str, params: &[(Symbol, Option<crate::ast::Type>)], body: &Expr) -> Result<Func> {
