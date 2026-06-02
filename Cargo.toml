@@ -1,0 +1,25 @@
+[package]
+name = "bars"
+version = "0.1.0"
+edition = "2024"
+authors = ["Bars Contributors"]
+description = "Bars — системен Lisp с ownership"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+qbe = "4"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "2"
+cranelift-codegen = "0.132.0"
+cranelift-frontend = "0.132.0"
+cranelift-jit = "0.132.0"
+cranelift-module = "0.132.0"
+cranelift-native = "0.132.0"
+
+[dev-dependencies]
+# За тестове
+
+[[bin]]
+name = "bars"
+path = "src/main.rs"

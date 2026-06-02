@@ -1,0 +1,60 @@
+image: nimlang/nim:2.2.10
+
+stages:
+  - test
+  - build
+
+before_script:
+  - apt-get update -qq && apt-get install -y -qq make
+
+test:
+  stage: test
+  script:
+    - make test
+    - make build
+    - echo "=== hello ===" && ./cljnim run examples/hello.clj
+    - echo "=== core ===" && ./cljnim run examples/core.clj
+    - echo "=== math ===" && ./cljnim run examples/math.clj
+    - echo "=== macros ===" && ./cljnim run examples/macros.clj
+    - echo "=== ai_tools ===" && ./cljnim run examples/ai_tools.clj || true
+    - echo "=== ai_features ===" && ./cljnim run examples/ai_features.clj || true
+    - echo "=== ffi ===" && ./cljnim run examples/ffi.clj
+    - echo "=== interop ===" && ./cljnim run examples/interop.clj
+    - echo "=== fizzbuzz ===" && ./cljnim run examples/fizzbuzz.clj
+    - echo "=== jsonista ===" && ./cljnim run examples/jsonista.clj
+    - echo "=== wordfreq ===" && ./cljnim run examples/wordfreq.clj
+    # Smoke test REPL (interpreter path)
+    - printf '{"op":"eval","form":"(+ 1 2 3)"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    # Smoke test REPL (tool-call format)
+    - printf '{"tool":"cljnim/eval","args":{"form":"(* 7 6)"}}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    # Test quot/rem in REPL (regression)
+    - printf '{"op":"eval","form":"(quot 10 3)"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    - printf '{"op":"eval","form":"(rem 10 3)"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    # Test channels in REPL
+    - printf '{"op":"eval","form":"(let [c (chan 3)] (>! c 42) (<! c))"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    # Test agents in REPL
+    - printf '{"op":"eval","form":"(do (def a (agent 0)) (send a inc) (deref a))"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -4
+    # Test threading macros in REPL
+    - printf '{"op":"eval","form":"(-> [1 2 3] (map inc))"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    - printf '{"op":"eval","form":"(->> [1 2 3] (map inc) (reduce +))"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    - printf '{"op":"eval","form":"(macroexpand (quote (-> [1 2 3] (map inc))))"}\n{"op":"quit"}\n' | timeout 5 ./cljnim repl --json | head -3
+    # Test compiled path
+    - ./cljnim -e '(+ 10 20)'
+    - ./cljnim -e '(quot 17 3)'
+    # Test deps command
+    - ./cljnim deps || true
+  artifacts:
+    paths:
+      - cljnim
+    expire_in: 1 week
+
+build-release:
+  stage: build
+  only:
+    - main
+  script:
+    - nim c -d:release -o:cljnim src/cljnim.nim
+  artifacts:
+    paths:
+      - cljnim
+    expire_in: 1 month

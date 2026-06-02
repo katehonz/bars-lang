@@ -1,0 +1,427 @@
+use crate::ast::{Expr, Keyword, Program, Span, Symbol, Type};
+use crate::reader::lexer::{SpannedToken, Token};
+use anyhow::{bail, Result};
+
+pub struct Parser<'a> {
+    tokens: &'a [SpannedToken],
+    pos: usize,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(tokens: &'a [SpannedToken]) -> Self {
+        Self { tokens, pos: 0 }
+    }
+
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos).map(|t| &t.token)
+    }
+
+    fn advance(&mut self) -> Option<&SpannedToken> {
+        let tok = self.tokens.get(self.pos);
+        if tok.is_some() {
+            self.pos += 1;
+        }
+        tok
+    }
+
+    fn current_span(&self) -> Span {
+        self.tokens
+            .get(self.pos)
+            .map(|t| Span::new(t.line, t.col))
+            .unwrap_or_else(|| Span::new(0, 0))
+    }
+
+    pub fn parse(mut self) -> Result<Program> {
+        let mut exprs = Vec::new();
+        while !matches!(self.peek(), Some(Token::Eof) | None) {
+            // Skip comments at top level
+            if matches!(self.peek(), Some(Token::Comment(_))) {
+                self.advance();
+                continue;
+            }
+            exprs.push(self.parse_expr()?);
+        }
+        Ok(Program { exprs })
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr> {
+        let spanned = self.tokens.get(self.pos).ok_or_else(|| anyhow::anyhow!("Unexpected EOF"))?;
+        let span = Span::new(spanned.line, spanned.col);
+
+        match &spanned.token {
+            Token::Comment(_) => {
+                self.advance();
+                self.parse_expr()
+            }
+            Token::LParen => self.parse_list(),
+            Token::LBracket => self.parse_vector(),
+            Token::LBrace => self.parse_map(),
+            Token::Quote => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr::Quote(Box::new(expr), span))
+            }
+            Token::Meta => {
+                // ^expr — borrow (or metadata, initially just borrow)
+                self.advance();
+                let is_mut = if let Some(Token::Symbol(s)) = self.peek() {
+                    if s == "mut" {
+                        self.advance();
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                let expr = self.parse_expr()?;
+                Ok(Expr::Borrow(Box::new(expr), is_mut, span))
+            }
+            Token::Number(n) => {
+                self.advance();
+                Ok(Expr::Number(*n))
+            }
+            Token::Float(n) => {
+                self.advance();
+                Ok(Expr::Float(*n))
+            }
+            Token::String(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Expr::String(s))
+            }
+            Token::Symbol(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Expr::Symbol(Symbol(s)))
+            }
+            Token::Keyword(s) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Expr::Keyword(Keyword(s)))
+            }
+            Token::Bool(b) => {
+                let b = *b;
+                self.advance();
+                Ok(Expr::Bool(b))
+            }
+            Token::Nil => {
+                self.advance();
+                Ok(Expr::Symbol(Symbol("nil".to_string())))
+            }
+            other => bail!("Unexpected token: {} at line {}, col {}", other, span.line, span.col),
+        }
+    }
+
+    fn parse_list(&mut self) -> Result<Expr> {
+        let start_span = self.current_span();
+        self.advance(); // consume '('
+
+        // Check for special forms
+        if let Some(Token::Symbol(name)) = self.peek() {
+            let name = name.clone();
+            match name.as_str() {
+                "let" => return self.parse_let(start_span),
+                "if" => return self.parse_if(start_span),
+                "def" => return self.parse_def(start_span),
+                "defn" => return self.parse_defn(start_span),
+                "do" => return self.parse_do(start_span),
+                "loop" => return self.parse_loop(start_span),
+                "recur" => return self.parse_recur(start_span),
+                "quote" => return self.parse_quote(start_span),
+                _ => {}
+            }
+        }
+
+        // Regular list / function call
+        let mut items = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+            items.push(self.parse_expr()?);
+        }
+        self.expect(Token::RParen)?;
+
+        if items.is_empty() {
+            Ok(Expr::List(items, start_span))
+        } else {
+            // Function call: (func arg1 arg2 ...)
+            let func = items.remove(0);
+            Ok(Expr::FnCall {
+                func: Box::new(func),
+                args: items,
+                span: start_span,
+            })
+        }
+    }
+
+    fn parse_let(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'let'
+        self.expect(Token::LBracket)?;
+        let mut bindings = Vec::new();
+        loop {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RBracket)) {
+                break;
+            }
+            let name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected binding name in let at line {}, col {}", start_span.line, start_span.col),
+            };
+            let val = self.parse_expr()?;
+            bindings.push((name, val));
+        }
+        self.expect(Token::RBracket)?;
+        let body_exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        let body = if body_exprs.len() == 1 {
+            Box::new(body_exprs.into_iter().next().unwrap())
+        } else {
+            Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
+        };
+        Ok(Expr::Let { bindings, body, span: start_span })
+    }
+
+    fn parse_if(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'if'
+        let cond = self.parse_expr()?;
+        let then_branch = self.parse_expr()?;
+        let else_branch = if matches!(self.peek(), Some(Token::RParen)) {
+            Expr::Symbol(Symbol("nil".to_string()))
+        } else {
+            self.parse_expr()?
+        };
+        self.expect(Token::RParen)?;
+        Ok(Expr::If {
+            cond: Box::new(cond),
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+            span: start_span,
+        })
+    }
+
+    fn parse_def(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'def'
+        let name = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Symbol(s)
+            }
+            _ => bail!("Expected name in def at line {}, col {}", start_span.line, start_span.col),
+        };
+        let value = self.parse_expr()?;
+        self.expect(Token::RParen)?;
+        Ok(Expr::Def { name, value: Box::new(value), span: start_span })
+    }
+
+    fn parse_defn(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'defn'
+        let name = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Symbol(s)
+            }
+            _ => bail!("Expected function name in defn at line {}, col {}", start_span.line, start_span.col),
+        };
+        self.expect(Token::LBracket)?;
+        let mut params = Vec::new();
+        loop {
+            if matches!(self.peek(), Some(Token::RBracket)) {
+                break;
+            }
+            let (param_name, param_type) = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    (Symbol(s), None)
+                }
+                Some(Token::Meta) => {
+                    // ^mut type name or ^type name
+                    self.advance();
+                    let is_mut = if let Some(Token::Symbol(s)) = self.peek() {
+                        if s == "mut" {
+                            self.advance();
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    let type_hint = match self.peek() {
+                        Some(Token::Symbol(s)) => {
+                            let s = s.clone();
+                            self.advance();
+                            parse_type(&s)
+                        }
+                        _ => None,
+                    };
+                    let name = match self.peek() {
+                        Some(Token::Symbol(s)) => {
+                            let s = s.clone();
+                            self.advance();
+                            Symbol(s)
+                        }
+                        _ => bail!("Expected parameter name after type hint at line {}, col {}", start_span.line, start_span.col),
+                    };
+                    let ty = match type_hint {
+                        Some(t) if is_mut => Some(Type::MutRef(Box::new(t))),
+                        Some(t) => Some(Type::Ref(Box::new(t))),
+                        None => None,
+                    };
+                    (name, ty)
+                }
+                _ => bail!("Expected parameter in defn at line {}, col {}", start_span.line, start_span.col),
+            };
+            params.push((param_name, param_type));
+        }
+        self.expect(Token::RBracket)?;
+
+        // Optional return type: [: i64] or body directly
+        let ret_type = None; // TODO: parse return type annotations
+
+        let body_exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        let body = if body_exprs.len() == 1 {
+            Box::new(body_exprs.into_iter().next().unwrap())
+        } else {
+            Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
+        };
+        Ok(Expr::Defn { name, params, body, ret_type, span: start_span })
+    }
+
+    fn parse_do(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'do'
+        let exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        Ok(Expr::Do { exprs, span: start_span })
+    }
+
+    fn parse_loop(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'loop'
+        self.expect(Token::LBracket)?;
+        let mut bindings = Vec::new();
+        loop {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RBracket)) {
+                break;
+            }
+            let name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected binding name in loop at line {}, col {}", start_span.line, start_span.col),
+            };
+            let val = self.parse_expr()?;
+            bindings.push((name, val));
+        }
+        self.expect(Token::RBracket)?;
+        let body_exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        let body = if body_exprs.len() == 1 {
+            Box::new(body_exprs.into_iter().next().unwrap())
+        } else {
+            Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
+        };
+        Ok(Expr::Loop { bindings, body, span: start_span })
+    }
+
+    fn parse_recur(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'recur'
+        let mut args = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                break;
+            }
+            args.push(self.parse_expr()?);
+        }
+        self.expect(Token::RParen)?;
+        Ok(Expr::Recur { args, span: start_span })
+    }
+
+    fn parse_body_exprs(&mut self) -> Result<Vec<Expr>> {
+        let mut exprs = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                break;
+            }
+            exprs.push(self.parse_expr()?);
+        }
+        Ok(exprs)
+    }
+
+    fn skip_comments(&mut self) {
+        while matches!(self.peek(), Some(Token::Comment(_))) {
+            self.advance();
+        }
+    }
+
+    fn parse_quote(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'quote'
+        let expr = self.parse_expr()?;
+        self.expect(Token::RParen)?;
+        Ok(Expr::Quote(Box::new(expr), start_span))
+    }
+
+    fn parse_vector(&mut self) -> Result<Expr> {
+        let start_span = self.current_span();
+        self.advance(); // consume '['
+        let mut items = Vec::new();
+        while !matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+            items.push(self.parse_expr()?);
+        }
+        self.expect(Token::RBracket)?;
+        Ok(Expr::Vector(items, start_span))
+    }
+
+    fn parse_map(&mut self) -> Result<Expr> {
+        let start_span = self.current_span();
+        self.advance(); // consume '{'
+        let mut items = Vec::new();
+        while !matches!(self.peek(), Some(Token::RBrace) | Some(Token::Eof) | None) {
+            let key = self.parse_expr()?;
+            let val = self.parse_expr()?;
+            items.push((key, val));
+        }
+        self.expect(Token::RBrace)?;
+        Ok(Expr::Map(items, start_span))
+    }
+
+    fn expect(&mut self, expected: Token) -> Result<()> {
+        let tok = self.advance().ok_or_else(|| anyhow::anyhow!("Unexpected EOF"))?;
+        let matches = match (&tok.token, &expected) {
+            (Token::RParen, Token::RParen) => true,
+            (Token::LParen, Token::LParen) => true,
+            (Token::RBracket, Token::RBracket) => true,
+            (Token::LBracket, Token::LBracket) => true,
+            (Token::RBrace, Token::RBrace) => true,
+            (Token::LBrace, Token::LBrace) => true,
+            _ => false,
+        };
+        if !matches {
+            bail!("Expected {:?}, got {:?} at line {}, col {}", expected, tok.token, tok.line, tok.col);
+        }
+        Ok(())
+    }
+}
+
+fn parse_type(s: &str) -> Option<Type> {
+    match s {
+        "i64" => Some(Type::I64),
+        "f64" => Some(Type::F64),
+        "bool" => Some(Type::Bool),
+        _ => Some(Type::Named(s.to_string())),
+    }
+}
+
+pub fn parse(tokens: &[SpannedToken]) -> Result<Program> {
+    Parser::new(tokens).parse()
+}

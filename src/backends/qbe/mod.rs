@@ -1,0 +1,620 @@
+use crate::ast::{Expr, Program, Symbol, Type as AstType};
+use anyhow::{bail, Result};
+use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};
+use std::collections::HashMap;
+
+/// QBE backend compiler
+fn sanitize_name(name: &str) -> String {
+    name.replace('?', "_Q")
+        .replace('!', "_B")
+        .replace('-', "_")
+        .replace('+', "_plus")
+        .replace('*', "_star")
+        .replace('/', "_slash")
+        .replace('%', "_percent")
+        .replace('=', "_eq")
+        .replace('<', "_lt")
+        .replace('>', "_gt")
+        .replace('&', "_amp")
+        .replace('|', "_pipe")
+}
+
+pub struct QbeBackend {
+    module: Module,
+    temp_counter: usize,
+    label_counter: usize,
+    string_counter: usize,
+    loop_context: Option<(String, Vec<(String, String)>)>,
+    current_block_terminated: bool,
+}
+
+impl QbeBackend {
+    pub fn new() -> Self {
+        Self {
+            module: Module::new(),
+            temp_counter: 0,
+            label_counter: 0,
+            string_counter: 0,
+            loop_context: None,
+            current_block_terminated: false,
+        }
+    }
+
+    pub fn compile(mut self, program: &Program) -> Result<String> {
+        // Separate top-level expressions into functions and others
+        let mut has_main = false;
+        let mut main_body: Vec<Expr> = Vec::new();
+
+        for expr in &program.exprs {
+            match expr {
+                Expr::Defn { name, params, body, ret_type, .. } => {
+                    self.compile_defn(name, params, body, ret_type.as_ref())?;
+                    if name.0 == "main" {
+                        has_main = true;
+                    }
+                }
+                other => {
+                    {
+                        main_body.push(other.clone());
+                    }
+                }
+            }
+        }
+
+        // If there are top-level expressions and no explicit main, create one
+        if !main_body.is_empty() && !has_main {
+            self.compile_implicit_main(&main_body)?;
+        } else if !has_main {
+            // Create empty main that returns 0
+            self.compile_implicit_main(&[])?;
+        }
+
+        Ok(self.module.to_string())
+    }
+
+    fn compile_defn(
+        &mut self,
+        name: &Symbol,
+        params: &[(Symbol, Option<AstType>)],
+        body: &Expr,
+        ret_type: Option<&AstType>,
+    ) -> Result<()> {
+        let qbe_ret = ret_type.and_then(|t| Self::ast_type_to_qbe(t));
+
+        let sanitized_name = sanitize_name(&name.0);
+        let mut func = Function::new(
+            Linkage::public(),
+            &sanitized_name,
+            params
+                .iter()
+                .map(|(sym, ty)| {
+                    let qbe_ty = ty.as_ref().and_then(|t| Self::ast_type_to_qbe(t)).unwrap_or(Type::Long);
+                    let sanitized_param = sanitize_name(&sym.0);
+                    (qbe_ty, Value::Temporary(sanitized_param))
+                })
+                .collect(),
+            qbe_ret.or(Some(Type::Long)),
+        );
+
+        func.add_block("start");
+        self.current_block_terminated = false;
+
+        let mut scope = HashMap::new();
+        for (sym, _) in params {
+            scope.insert(sym.0.clone(), sanitize_name(&sym.0));
+        }
+
+        let result = self.compile_expr(body, &mut func, &mut scope)?;
+        func.add_instr(Instr::Ret(Some(result)));
+
+        self.module.add_function(func);
+        Ok(())
+    }
+
+    fn compile_implicit_main(&mut self, body: &[Expr]) -> Result<()> {
+        let mut func = Function::new(
+            Linkage::public(),
+            "main",
+            vec![],
+            Some(Type::Word),
+        );
+        func.add_block("start");
+        self.current_block_terminated = false;
+        let mut scope = HashMap::new();
+
+        for expr in body {
+            let _ = self.compile_expr(expr, &mut func, &mut scope)?;
+        }
+
+        // Return 0 for implicit main (truncate if needed)
+        func.add_instr(Instr::Ret(Some(Value::Const(0))));
+        self.module.add_function(func);
+        Ok(())
+    }
+
+    fn compile_expr(
+        &mut self,
+        expr: &Expr,
+        func: &mut Function,
+        scope: &mut HashMap<String, String>,
+    ) -> Result<Value> {
+        match expr {
+            Expr::Number(n) => Ok(Value::Const(*n as u64)),
+            Expr::Bool(b) => Ok(Value::Const(if *b { 1 } else { 0 })),
+            Expr::Float(_f) => {
+                // QBE doesn't have direct float constants in Value::Const, we need to handle this differently
+                // For now, bail
+                bail!("Float literals not yet supported in QBE backend")
+            }
+            Expr::String(s) => {
+                let label = format!("str_{}", self.string_counter);
+                self.string_counter += 1;
+                let data = qbe::DataDef::new(
+                    Linkage::private(),
+                    label.clone(),
+                    None,
+                    vec![
+                        (Type::Byte, qbe::DataItem::Str(s.replace("\n", "\\n").clone())),
+                        (Type::Byte, qbe::DataItem::Const(0)),
+                    ],
+                );
+                self.module.add_data(data);
+                // Call bars_string_new to create a Bars string object
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Call(
+                        "bars_string_new".to_string(),
+                        vec![(Type::Long, Value::Global(label))],
+                        None,
+                    ),
+                );
+                Ok(Value::Temporary(result))
+            }
+            Expr::Symbol(sym) => {
+                if sym.0 == "nil" {
+                    Ok(Value::Const(0))
+                } else if let Some(temp) = scope.get(&sym.0) {
+                    Ok(Value::Temporary(temp.clone()))
+                } else {
+                    // Global function reference or variable
+                    Ok(Value::Global(sanitize_name(&sym.0)))
+                }
+            }
+            Expr::Keyword(_) => bail!("Keywords cannot be compiled to QBE IR directly"),
+            Expr::List(_, _) => bail!("Bare lists not supported in codegen"),
+            Expr::Vector(_, _) => bail!("Vectors not yet supported in QBE backend"),
+            Expr::Map(_, _) => bail!("Maps not yet supported in QBE backend"),
+            Expr::Quote(_, _) => bail!("Quote not yet supported in QBE backend"),
+            Expr::Borrow(_, _, _) => bail!("Borrow not yet supported in QBE backend"),
+
+            Expr::Let { bindings, body, .. } => {
+                // Create new temporaries for bindings
+                for (name, val_expr) in bindings {
+                    let val = self.compile_expr(val_expr, func, scope)?;
+                    let temp = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(temp.clone()),
+                        Type::Long,
+                        Instr::Copy(val),
+                    );
+                    scope.insert(name.0.clone(), temp);
+                }
+                self.compile_expr(body, func, scope)
+            }
+
+            Expr::If { cond, then_branch, else_branch, .. } => {
+                let cond_val = self.compile_expr(cond, func, scope)?;
+                let then_label = self.fresh_label("then");
+                let else_label = self.fresh_label("else");
+                let end_label = self.fresh_label("endif");
+
+                // Allocate stack slot for the result
+                let slot = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(slot.clone()),
+                    Type::Long,
+                    Instr::Alloc8(8),
+                );
+
+                func.add_instr(Instr::Jnz(cond_val, then_label.clone(), else_label.clone()));
+
+                // Then block
+                func.add_block(&then_label);
+                self.current_block_terminated = false;
+                let then_val = self.compile_expr(then_branch, func, scope)?;
+                if !self.current_block_terminated {
+                    func.add_instr(Instr::Store(Type::Long, Value::Temporary(slot.clone()), then_val));
+                    func.add_instr(Instr::Jmp(end_label.clone()));
+                    self.current_block_terminated = true;
+                }
+
+                // Else block
+                func.add_block(&else_label);
+                self.current_block_terminated = false;
+                let else_val = self.compile_expr(else_branch, func, scope)?;
+                if !self.current_block_terminated {
+                    func.add_instr(Instr::Store(Type::Long, Value::Temporary(slot.clone()), else_val));
+                    func.add_instr(Instr::Jmp(end_label.clone()));
+                    self.current_block_terminated = true;
+                }
+
+                // End block
+                func.add_block(&end_label);
+                self.current_block_terminated = false;
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Load(Type::Long, Value::Temporary(slot)),
+                );
+                Ok(Value::Temporary(result))
+            }
+
+            Expr::Do { exprs, .. } => {
+                let mut last = Value::Const(0);
+                for e in exprs {
+                    last = self.compile_expr(e, func, scope)?;
+                }
+                Ok(last)
+            }
+
+            Expr::Loop { bindings, body, .. } => {
+                let loop_label = self.fresh_label("loop");
+                let end_label = self.fresh_label("loopend");
+
+                // Allocate stack slots for loop variables
+                let mut slots = Vec::new();
+                for (name, _) in bindings {
+                    let slot = self.fresh_temp();
+                    func.assign_instr(Value::Temporary(slot.clone()), Type::Long, Instr::Alloc8(8));
+                    slots.push((name.0.clone(), slot));
+                }
+
+                // Initialize slots
+                for ((_name, slot), (_, init_expr)) in slots.iter().zip(bindings.iter()) {
+                    let init_val = self.compile_expr(init_expr, func, scope)?;
+                    func.add_instr(Instr::Store(Type::Long, Value::Temporary(slot.clone()), init_val));
+                }
+
+                // Jump to loop header
+                func.add_instr(Instr::Jmp(loop_label.clone()));
+
+                // Loop header: load vars from slots into scope
+                func.add_block(&loop_label);
+                self.current_block_terminated = false;
+                let old_scope = scope.clone();
+                for (name, slot) in &slots {
+                    let temp = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(temp.clone()),
+                        Type::Long,
+                        Instr::Load(Type::Long, Value::Temporary(slot.clone())),
+                    );
+                    scope.insert(name.clone(), temp);
+                }
+
+                // Set loop context
+                let prev_loop = self.loop_context.take();
+                self.loop_context = Some((loop_label.clone(), slots));
+
+                // Compile body
+                let body_val = self.compile_expr(body, func, scope)?;
+
+                // Restore loop context
+                self.loop_context = prev_loop;
+
+                // After body, jump to end (if body was recur, this is unreachable)
+                if !self.current_block_terminated {
+                    func.add_instr(Instr::Jmp(end_label.clone()));
+                    self.current_block_terminated = true;
+                }
+
+                // End block
+                func.add_block(&end_label);
+                self.current_block_terminated = false;
+
+                // Restore scope (loop vars are local)
+                *scope = old_scope;
+
+                Ok(body_val)
+            }
+
+            Expr::Recur { args, .. } => {
+                let (loop_label, slots) = self.loop_context
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("recur used outside of loop"))?
+                    .clone();
+
+                if args.len() != slots.len() {
+                    bail!("recur arity mismatch: expected {}, got {}", slots.len(), args.len());
+                }
+
+                // Compute new values and store into slots
+                for (arg, (_, slot)) in args.iter().zip(slots.iter()) {
+                    let val = self.compile_expr(arg, func, scope)?;
+                    func.add_instr(Instr::Store(Type::Long, Value::Temporary(slot.clone()), val));
+                }
+
+                // Jump back to loop header
+                func.add_instr(Instr::Jmp(loop_label));
+                self.current_block_terminated = true;
+
+                Ok(Value::Const(0))
+            }
+
+            Expr::FnCall { func: func_expr, args, .. } => {
+                let func_name_raw = match func_expr.as_ref() {
+                    Expr::Symbol(sym) => sym.0.clone(),
+                    _ => bail!("Only direct function calls supported in QBE backend"),
+                };
+
+                let mut compiled_args = Vec::new();
+                for arg in args {
+                    let val = self.compile_expr(arg, func, scope)?;
+                    compiled_args.push((Type::Long, val));
+                }
+
+                // Handle built-in arithmetic operators (before name sanitization)
+                match func_name_raw.as_str() {
+                    "+" | "-" | "*" | "/" | "%" if compiled_args.len() == 2 => {
+                        let instr = match func_name_raw.as_str() {
+                            "+" => Instr::Add(compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                            "-" => Instr::Sub(compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                            "*" => Instr::Mul(compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                            "/" => Instr::Div(compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                            "%" => Instr::Rem(compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                            _ => unreachable!(),
+                        };
+                        let result = self.fresh_temp();
+                        func.assign_instr(Value::Temporary(result.clone()), Type::Long, instr);
+                        Ok(Value::Temporary(result))
+                    }
+                    "not" if compiled_args.len() == 1 => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Cmp(Type::Long, Cmp::Eq, compiled_args[0].1.clone(), Value::Const(0)),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "<" | ">" | "=" | "<=" | ">=" | "!=" if compiled_args.len() == 2 => {
+                        let cmp = match func_name_raw.as_str() {
+                            "<" => Cmp::Slt,
+                            ">" => Cmp::Sgt,
+                            "=" => Cmp::Eq,
+                            "<=" => Cmp::Sle,
+                            ">=" => Cmp::Sge,
+                            "!=" => Cmp::Ne,
+                            _ => unreachable!(),
+                        };
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Cmp(Type::Long, cmp, compiled_args[0].1.clone(), compiled_args[1].1.clone()),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "println" => {
+                        if compiled_args.is_empty() {
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call("bars_print_newline".to_string(), vec![], None),
+                            );
+                        } else if matches!(args.get(0), Some(Expr::String(_))) {
+                            // Print a Bars string
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call(
+                                    "bars_print_string".to_string(),
+                                    vec![compiled_args[0].clone()],
+                                    None,
+                                ),
+                            );
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call("bars_print_newline".to_string(), vec![], None),
+                            );
+                        } else {
+                            // Print integer
+                            let fmt = self.add_string_literal("%ld\n");
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Word,
+                                Instr::Call(
+                                    "printf".to_string(),
+                                    vec![(Type::Long, fmt), compiled_args[0].clone()],
+                                    None,
+                                ),
+                            );
+                        }
+                        Ok(Value::Const(0))
+                    }
+                    "vector" => {
+                        // Create new vector and push all arguments
+                        let vec_temp = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(vec_temp.clone()),
+                            Type::Long,
+                            Instr::Call("bars_vector_new_i64".to_string(), vec![], None),
+                        );
+                        for arg in &compiled_args {
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call(
+                                    "bars_vector_push_i64".to_string(),
+                                    vec![(Type::Long, Value::Temporary(vec_temp.clone())), arg.clone()],
+                                    None,
+                                ),
+                            );
+                        }
+                        Ok(Value::Temporary(vec_temp))
+                    }
+                    "push" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(self.fresh_temp()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_push_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Const(0))
+                    }
+                    "get" if compiled_args.len() == 2 => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_get_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "count" if compiled_args.len() == 1 => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_count_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "map" => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call("bars_map_new_i64".to_string(), vec![], None),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "map-set" if compiled_args.len() == 3 => {
+                        func.assign_instr(
+                            Value::Temporary(self.fresh_temp()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_set_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Const(0))
+                    }
+                    "map-get" if compiled_args.len() == 2 => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_get_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    "map-count" if compiled_args.len() == 1 => {
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_count_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                    _ => {
+                        // Generic function call
+                        let result = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(result.clone()),
+                            Type::Long,
+                            Instr::Call(sanitize_name(&func_name_raw), compiled_args, None),
+                        );
+                        Ok(Value::Temporary(result))
+                    }
+                }
+            }
+
+            Expr::Def { name, value, .. } => {
+                let val = self.compile_expr(value, func, scope)?;
+                let temp = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(temp.clone()),
+                    Type::Long,
+                    Instr::Copy(val),
+                );
+                scope.insert(name.0.clone(), temp);
+                Ok(Value::Temporary(name.0.clone()))
+            }
+
+            Expr::Defn { .. } => {
+                // Nested defn not supported in expression context
+                bail!("Nested defn not supported in QBE backend")
+            }
+        }
+    }
+
+    fn add_string_literal(&mut self, s: &str) -> Value {
+        let label = format!("fmt_{}", self.string_counter);
+        self.string_counter += 1;
+        let data = qbe::DataDef::new(
+            Linkage::private(),
+            label.clone(),
+            None,
+            vec![
+                (Type::Byte, qbe::DataItem::Str(s.replace("\n", "\\n").to_string())),
+                (Type::Byte, qbe::DataItem::Const(0)),
+            ],
+        );
+        self.module.add_data(data);
+        Value::Global(label)
+    }
+
+    fn fresh_temp(&mut self) -> String {
+        let t = format!("t{}", self.temp_counter);
+        self.temp_counter += 1;
+        t
+    }
+
+    fn fresh_label(&mut self, prefix: &str) -> String {
+        let l = format!("{}_{}", prefix, self.label_counter);
+        self.label_counter += 1;
+        l
+    }
+
+    fn ast_type_to_qbe(ty: &AstType) -> Option<Type> {
+        match ty {
+            AstType::I64 => Some(Type::Long),
+            AstType::F64 => Some(Type::Double),
+            AstType::Bool => Some(Type::Word),
+            AstType::Void => None,
+            _ => Some(Type::Long),
+        }
+    }
+}
+
+impl Default for QbeBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}

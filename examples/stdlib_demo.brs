@@ -1,0 +1,23 @@
+(load "lib/core.brs")
+(load "lib/math.brs")
+(load "lib/vector.brs")
+
+(defn main []
+  (println (square 5))
+  (println (cube 3))
+  (println (gcd 48 18))
+  (println (lcm 4 6))
+  (println (factorial 5))
+  (println (fib 10))
+  (let [v (range 1 5)]
+    (println (sum v))
+    (println (product v))
+    (println (last v))
+    (println (rest v))
+    (println (take v 2))
+    (println (drop v 2))
+    (println (reverse v))
+    (println (contains? v 3))
+    (println (index-of v 3))
+    (println (index-of v 99)))
+  0)

@@ -1,0 +1,2 @@
+#!/bin/bash
+exec /home/ziko/lispnim/experiments/wasm/tools/zig/zig cc "$@"
