@@ -84,3 +84,14 @@ fn test_run_defmacro() {
     assert!(stdout.contains("42"), "Expected '42' in output, got: {}", stdout);
     assert!(stdout.contains("10"), "Expected '10' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_run_splicing() {
+    let output = bars()
+        .args(["run", "examples/splicing_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
+    assert!(stdout.contains("2"), "Expected '2' in output, got: {}", stdout);
+}

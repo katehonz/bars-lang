@@ -112,7 +112,14 @@ pub fn eval(expr: &Expr, env: &mut InterpEnv) -> Result<MacroVal> {
         Expr::Symbol(s) if s.0 == "nil" => Ok(MacroVal::Nil),
         Expr::Symbol(s) => {
             match env.get(&s.0) {
-                Some(v) => Ok(v),
+                Some(v) => {
+                    // If the bound value is an unevaluated FnCall, evaluate it now
+                    if let MacroVal::Expr(Expr::FnCall { .. }) = v {
+                        eval(&v.to_expr(), env)
+                    } else {
+                        Ok(v.clone())
+                    }
+                }
                 None => Ok(MacroVal::Expr(Expr::Symbol(s.clone()))),
             }
         }
@@ -273,10 +280,26 @@ pub fn expand_syntax_quote(expr: &Expr, env: &mut InterpEnv) -> Result<Expr> {
             Ok(Expr::List(result, span.clone()))
         }
         Expr::Vector(items, span) => {
-            let vals: Vec<Expr> = items.iter()
-                .map(|e| expand_syntax_quote(e, env))
-                .collect::<Result<Vec<_>>>()?;
-            Ok(Expr::Vector(vals, span.clone()))
+            let mut result = Vec::new();
+            for item in items {
+                if let Expr::Splicing(inner, _) = item {
+                    let val = eval(inner, env)?;
+                    match val {
+                        MacroVal::Expr(Expr::List(lst, _)) | MacroVal::Expr(Expr::Vector(lst, _)) => {
+                            for e in lst {
+                                result.push(e);
+                            }
+                        }
+                        other => {
+                            result.push(other.to_expr());
+                        }
+                    }
+                } else {
+                    let expanded = expand_syntax_quote(item, env)?;
+                    result.push(expanded);
+                }
+            }
+            Ok(Expr::Vector(result, span.clone()))
         }
         Expr::If { cond, then_branch, else_branch, span } => {
             Ok(Expr::If {
@@ -287,10 +310,27 @@ pub fn expand_syntax_quote(expr: &Expr, env: &mut InterpEnv) -> Result<Expr> {
             })
         }
         Expr::Do { exprs, span } => {
-            let vals: Vec<Expr> = exprs.iter()
-                .map(|e| expand_syntax_quote(e, env))
-                .collect::<Result<Vec<_>>>()?;
-            Ok(Expr::Do { exprs: vals, span: span.clone() })
+            let mut result = Vec::new();
+            for expr in exprs {
+                if let Expr::Splicing(inner, _) = expr {
+                    let val = eval(inner, env)?;
+
+                    match val {
+                        MacroVal::Expr(Expr::List(lst, _)) | MacroVal::Expr(Expr::Vector(lst, _)) | MacroVal::Expr(Expr::Do { exprs: lst, .. }) => {
+                            for e in lst {
+                                result.push(e);
+                            }
+                        }
+                        other => {
+                            result.push(other.to_expr());
+                        }
+                    }
+                } else {
+                    result.push(expand_syntax_quote(expr, env)?);
+                }
+            }
+
+            Ok(Expr::Do { exprs: result, span: span.clone() })
         }
         Expr::Let { bindings, body, span } => {
             let new_bindings: Vec<(Symbol, Expr)> = bindings.iter()

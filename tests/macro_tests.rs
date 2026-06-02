@@ -78,3 +78,27 @@ fn test_defmacro_with_syntax_quote() {
         panic!("Expected Defn");
     }
 }
+
+#[test]
+fn test_defmacro_with_splicing() {
+    let prog = reader::read(r#"
+        (defmacro my-do [exprs]
+          `(do ~@exprs))
+        (defn main []
+          (my-do (list (quote (println 1)) (quote (println 2)))))
+    "#).unwrap();
+    let expanded = expand_program(&prog).unwrap();
+    // Should expand my-do to (do (println 1) (println 2))
+    assert_eq!(expanded.exprs.len(), 1);
+    if let bars::ast::Expr::Defn { body, .. } = &expanded.exprs[0] {
+        if let bars::ast::Expr::Do { exprs, .. } = body.as_ref() {
+            assert_eq!(exprs.len(), 2);
+            assert!(matches!(exprs[0], bars::ast::Expr::FnCall { .. }));
+            assert!(matches!(exprs[1], bars::ast::Expr::FnCall { .. }));
+        } else {
+            panic!("Expected Do in body, got: {:?}", body);
+        }
+    } else {
+        panic!("Expected Defn");
+    }
+}
