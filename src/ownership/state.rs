@@ -3,7 +3,9 @@ use std::fmt;
 /// Ownership state of a variable at any point in the program
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnershipState {
-    /// The variable owns a value and can be used or moved
+    /// The variable owns a Copy type (can be used multiple times)
+    Copy,
+    /// The variable owns a non-Copy value and can be used or moved
     Owned,
     /// The value has been moved to another variable
     Moved,
@@ -15,11 +17,15 @@ pub enum OwnershipState {
 
 impl OwnershipState {
     pub fn is_usable(&self) -> bool {
-        matches!(self, OwnershipState::Owned | OwnershipState::Borrowed { .. })
+        matches!(self, OwnershipState::Copy | OwnershipState::Owned | OwnershipState::Borrowed { .. })
     }
 
     pub fn is_moved(&self) -> bool {
         matches!(self, OwnershipState::Moved)
+    }
+
+    pub fn is_copy(&self) -> bool {
+        matches!(self, OwnershipState::Copy)
     }
 
     pub fn is_mut_borrowed(&self) -> bool {
@@ -34,6 +40,7 @@ impl OwnershipState {
 impl fmt::Display for OwnershipState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            OwnershipState::Copy => write!(f, "copy"),
             OwnershipState::Owned => write!(f, "owned"),
             OwnershipState::Moved => write!(f, "moved"),
             OwnershipState::Borrowed { count } => write!(f, "borrowed ({} active)", count),

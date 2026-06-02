@@ -4,7 +4,7 @@ use bars::reader;
 #[test]
 fn test_use_after_move() {
     let prog = reader::read(r#"
-        (def x 10)
+        (def x (vector 1 2))
         (def y x)
         (println x)
     "#).unwrap();
@@ -57,7 +57,7 @@ fn test_let_binding_ok() {
 fn test_if_branch_merge() {
     let prog = reader::read(r#"
         (defn main []
-          (let [x 5]
+          (let [x (vector 1 2)]
             (if true
               (def y x)
               0)

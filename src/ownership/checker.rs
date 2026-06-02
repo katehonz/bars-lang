@@ -106,6 +106,7 @@ impl OwnershipEnv {
                         (OwnershipState::Borrowed { .. }, _) | (_, OwnershipState::Borrowed { .. }) => {
                             OwnershipState::Owned
                         }
+                        (OwnershipState::Copy, OwnershipState::Copy) => OwnershipState::Copy,
                         _ => OwnershipState::Owned,
                     };
                     self_top.insert(name.clone(), merged);
@@ -131,6 +132,36 @@ pub fn check_program(program: &Program) -> Result<(), OwnershipError> {
     Ok(())
 }
 
+/// Determine if an expression evaluates to a Copy type
+fn expr_is_copy(expr: &Expr, registry: &FunctionRegistry) -> bool {
+    match expr {
+        Expr::Number(_) | Expr::Bool(_) | Expr::Float(_) => true,
+        Expr::FnCall { func, .. } => {
+            if let Expr::Symbol(sym) = func.as_ref() {
+                matches!(sym.0.as_str(),
+                    "+" | "-" | "*" | "/" | "%" |
+                    "=" | "!=" | "<" | ">" | "<=" | ">=" |
+                    "not" | "and" | "or" |
+                    "count" | "get" | "map-get" | "map-count" |
+                    "inc" | "dec" | "abs" | "max" | "min" |
+                    "even?" | "odd?" | "zero?" | "pos?" | "neg?" |
+                    "empty?" | "contains?" | "index-of" | "str-count" |
+                    "square" | "cube" | "gcd" | "lcm" | "factorial" | "fib" |
+                    "sum" | "product" | "first" | "last" | "nth"
+                )
+            } else {
+                false
+            }
+        }
+        Expr::Symbol(sym) => {
+            // If it's a known function name that returns copy, but here it's used as value
+            // we can't know without type info. Default to non-Copy for symbols.
+            false
+        }
+        _ => false,
+    }
+}
+
 /// Check an expression, returning the ownership state of its result
 fn check_expr(
     expr: &Expr,
@@ -138,7 +169,10 @@ fn check_expr(
     registry: &FunctionRegistry,
 ) -> Result<OwnershipState, OwnershipError> {
     match expr {
-        Expr::Number(_) | Expr::Float(_) | Expr::Bool(_) | Expr::String(_) | Expr::Keyword(_) => {
+        Expr::Number(_) | Expr::Float(_) | Expr::Bool(_) => {
+            Ok(OwnershipState::Copy)
+        }
+        Expr::String(_) | Expr::Keyword(_) => {
             Ok(OwnershipState::Owned)
         }
 
@@ -148,6 +182,7 @@ fn check_expr(
                 Some(OwnershipState::Moved) => {
                     Err(OwnershipError::UseAfterMove(name.clone()))
                 }
+                Some(OwnershipState::Copy) => Ok(OwnershipState::Copy),
                 Some(OwnershipState::MutBorrowed) => Ok(OwnershipState::Owned),
                 Some(OwnershipState::Borrowed { .. }) => Ok(OwnershipState::Owned),
                 Some(OwnershipState::Owned) => Ok(OwnershipState::Owned),
@@ -160,9 +195,15 @@ fn check_expr(
             for (name, val_expr) in bindings {
                 let _val_state = check_expr(val_expr, env, registry)?;
                 if let Expr::Symbol(sym) = val_expr {
-                    env.update(&sym.0, OwnershipState::Moved);
+                    if !matches!(env.get(&sym.0), Some(OwnershipState::Copy)) {
+                        env.update(&sym.0, OwnershipState::Moved);
+                    }
                 }
-                env.insert(name.0.clone(), OwnershipState::Owned);
+                if expr_is_copy(val_expr, registry) {
+                    env.insert(name.0.clone(), OwnershipState::Copy);
+                } else {
+                    env.insert(name.0.clone(), OwnershipState::Owned);
+                }
             }
             let body_state = check_expr(body, env, registry)?;
             env.pop_scope();
@@ -195,9 +236,15 @@ fn check_expr(
         Expr::Def { name, value, .. } => {
             let _val_state = check_expr(value, env, registry)?;
             if let Expr::Symbol(sym) = value.as_ref() {
-                env.update(&sym.0, OwnershipState::Moved);
+                if !matches!(env.get(&sym.0), Some(OwnershipState::Copy)) {
+                    env.update(&sym.0, OwnershipState::Moved);
+                }
             }
-            env.insert(name.0.clone(), OwnershipState::Owned);
+            if expr_is_copy(value, registry) {
+                env.insert(name.0.clone(), OwnershipState::Copy);
+            } else {
+                env.insert(name.0.clone(), OwnershipState::Owned);
+            }
             Ok(OwnershipState::Owned)
         }
 
@@ -236,6 +283,9 @@ fn check_expr(
                             match env.get(name) {
                                 Some(OwnershipState::Moved) => {
                                     return Err(OwnershipError::UseAfterMove(name.clone()));
+                                }
+                                Some(OwnershipState::Copy) => {
+                                    // Copy types can always be borrowed
                                 }
                                 Some(OwnershipState::MutBorrowed) => {
                                     return Err(OwnershipError::AlreadyBorrowed(name.clone()));
@@ -283,6 +333,9 @@ fn check_expr(
                 match env.get(name) {
                     Some(OwnershipState::Moved) => {
                         return Err(OwnershipError::UseAfterMove(name.clone()));
+                    }
+                    Some(OwnershipState::Copy) => {
+                        // Copy types can always be borrowed
                     }
                     Some(OwnershipState::MutBorrowed) => {
                         return Err(OwnershipError::AlreadyMutBorrowed(name.clone()));
