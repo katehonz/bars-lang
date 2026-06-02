@@ -9,7 +9,7 @@ fn test_use_after_move() {
         (println x)
     "#).unwrap();
     let err = check_program(&prog).unwrap_err();
-    assert!(matches!(err, OwnershipError::UseAfterMove(_)), "Expected UseAfterMove, got: {:?}", err);
+    assert!(matches!(err, OwnershipError::UseAfterMove(_, _, _)), "Expected UseAfterMove, got: {:?}", err);
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn test_mut_borrow_conflict() {
             (read x)))
     "#).unwrap();
     let err = check_program(&prog).unwrap_err();
-    assert!(matches!(err, OwnershipError::AlreadyMutBorrowed(_) | OwnershipError::AlreadyBorrowed(_)),
+    assert!(matches!(err, OwnershipError::AlreadyMutBorrowed(_, _, _) | OwnershipError::AlreadyBorrowed(_, _, _)),
         "Expected borrow error, got: {:?}", err);
 }
 
@@ -64,5 +64,32 @@ fn test_if_branch_merge() {
             (println x)))
     "#).unwrap();
     let err = check_program(&prog).unwrap_err();
-    assert!(matches!(err, OwnershipError::UseAfterMove(_)), "Expected UseAfterMove after if merge, got: {:?}", err);
+    assert!(matches!(err, OwnershipError::UseAfterMove(_, _, _)), "Expected UseAfterMove after if merge, got: {:?}", err);
+}
+
+#[test]
+fn test_struct_field_after_move() {
+    let prog = reader::read(r#"
+        (defstruct Point [x y])
+        (defn main []
+          (def p (Point 10 20))
+          (def q p)
+          (println (.x p)))
+    "#).unwrap();
+    let err = check_program(&prog).unwrap_err();
+    assert!(matches!(err, OwnershipError::UseAfterMove(_, _, _)), "Expected UseAfterMove for field access after move, got: {:?}", err);
+}
+
+#[test]
+fn test_move_while_borrowed() {
+    let prog = reader::read(r#"
+        (defn use [^buf data]
+          data)
+        (defn main []
+          (let [x (vector 1 2)]
+            (use ^x)
+            (def y x)))
+    "#).unwrap();
+    let err = check_program(&prog).unwrap_err();
+    assert!(matches!(err, OwnershipError::MoveWhileBorrowed(_, _, _)), "Expected MoveWhileBorrowed, got: {:?}", err);
 }

@@ -1,20 +1,20 @@
-use crate::ast::{Expr, Pattern, Program, Type as AstType};
+use crate::ast::{Expr, Pattern, Program, Span, Type as AstType};
 use crate::ownership::state::OwnershipState;
 use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum OwnershipError {
-    #[error("Use after move: variable '{0}' was moved and cannot be used again")]
-    UseAfterMove(String),
-    #[error("Cannot borrow '{0}' as mutable because it is already borrowed")]
-    AlreadyBorrowed(String),
-    #[error("Cannot borrow '{0}' as immutable because it is already mutably borrowed")]
-    AlreadyMutBorrowed(String),
-    #[error("Cannot move '{0}' because it is currently borrowed")]
-    MoveWhileBorrowed(String),
-    #[error("Variable '{0}' not found in scope")]
-    NotFound(String),
+    #[error("Use after move: variable '{0}' was moved and cannot be used again (at line {1}, col {2})")]
+    UseAfterMove(String, usize, usize),
+    #[error("Cannot borrow '{0}' as mutable because it is already borrowed (at line {1}, col {2})")]
+    AlreadyBorrowed(String, usize, usize),
+    #[error("Cannot borrow '{0}' as immutable because it is already mutably borrowed (at line {1}, col {2})")]
+    AlreadyMutBorrowed(String, usize, usize),
+    #[error("Cannot move '{0}' because it is currently borrowed (at line {1}, col {2})")]
+    MoveWhileBorrowed(String, usize, usize),
+    #[error("Variable '{0}' not found in scope (at line {1}, col {2})")]
+    NotFound(String, usize, usize),
 }
 
 /// Registry of function signatures discovered during pre-scan
@@ -199,7 +199,8 @@ fn check_expr(
             let name = &sym.0;
             match env.get(name) {
                 Some(OwnershipState::Moved) => {
-                    Err(OwnershipError::UseAfterMove(name.clone()))
+                    let span = expr.span();
+                    Err(OwnershipError::UseAfterMove(name.clone(), span.line, span.col))
                 }
                 Some(OwnershipState::Copy) => Ok(OwnershipState::Copy),
                 Some(OwnershipState::MutBorrowed) => Ok(OwnershipState::Owned),
@@ -214,8 +215,19 @@ fn check_expr(
             for (name, val_expr) in bindings {
                 let _val_state = check_expr(val_expr, env, registry)?;
                 if let Expr::Symbol(sym) = val_expr {
-                    if !matches!(env.get(&sym.0), Some(OwnershipState::Copy)) {
-                        env.update(&sym.0, OwnershipState::Moved);
+                    match env.get(&sym.0) {
+                        Some(OwnershipState::Borrowed { .. }) => {
+                            let span = expr.span();
+                            return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), span.line, span.col));
+                        }
+                        Some(OwnershipState::MutBorrowed) => {
+                            let span = expr.span();
+                            return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), span.line, span.col));
+                        }
+                        Some(OwnershipState::Copy) => {}
+                        _ => {
+                            env.update(&sym.0, OwnershipState::Moved);
+                        }
                     }
                 }
                 if expr_is_copy(val_expr, registry) {
@@ -272,8 +284,19 @@ fn check_expr(
         Expr::Def { name, value, .. } => {
             let _val_state = check_expr(value, env, registry)?;
             if let Expr::Symbol(sym) = value.as_ref() {
-                if !matches!(env.get(&sym.0), Some(OwnershipState::Copy)) {
-                    env.update(&sym.0, OwnershipState::Moved);
+                match env.get(&sym.0) {
+                    Some(OwnershipState::Borrowed { .. }) => {
+                        let span = expr.span();
+                        return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), span.line, span.col));
+                    }
+                    Some(OwnershipState::MutBorrowed) => {
+                        let span = expr.span();
+                        return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), span.line, span.col));
+                    }
+                    Some(OwnershipState::Copy) => {}
+                    _ => {
+                        env.update(&sym.0, OwnershipState::Moved);
+                    }
                 }
             }
             if expr_is_copy(value, registry) {
@@ -318,16 +341,19 @@ fn check_expr(
                             let name = &sym.0;
                             match env.get(name) {
                                 Some(OwnershipState::Moved) => {
-                                    return Err(OwnershipError::UseAfterMove(name.clone()));
+                                    let span = expr.span();
+                                    return Err(OwnershipError::UseAfterMove(name.clone(), span.line, span.col));
                                 }
                                 Some(OwnershipState::Copy) => {
                                     // Copy types can always be borrowed
                                 }
                                 Some(OwnershipState::MutBorrowed) => {
-                                    return Err(OwnershipError::AlreadyBorrowed(name.clone()));
+                                    let span = expr.span();
+                                    return Err(OwnershipError::AlreadyBorrowed(name.clone(), span.line, span.col));
                                 }
                                 Some(OwnershipState::Borrowed { .. }) if *is_mut => {
-                                    return Err(OwnershipError::AlreadyBorrowed(name.clone()));
+                                    let span = expr.span();
+                                    return Err(OwnershipError::AlreadyBorrowed(name.clone(), span.line, span.col));
                                 }
                                 Some(OwnershipState::Borrowed { .. }) => {
                                     // Multiple immutable borrows are OK
@@ -348,10 +374,11 @@ fn check_expr(
                         let name = &sym.0;
                         // If function expects a borrow but symbol is passed directly, error
                         if matches!(expected_ty, Some(AstType::Ref(_)) | Some(AstType::MutRef(_))) {
+                            let span = expr.span();
                             return Err(OwnershipError::AlreadyBorrowed(format!(
                                 "passing '{}' to function expecting borrow - use '^{}' instead",
                                 name, name
-                            )));
+                            ), span.line, span.col));
                         }
                         check_expr(arg, env, registry)?;
                     }
@@ -368,16 +395,19 @@ fn check_expr(
                 let name = &sym.0;
                 match env.get(name) {
                     Some(OwnershipState::Moved) => {
-                        return Err(OwnershipError::UseAfterMove(name.clone()));
+                        let span = expr.span();
+                        return Err(OwnershipError::UseAfterMove(name.clone(), span.line, span.col));
                     }
                     Some(OwnershipState::Copy) => {
                         // Copy types can always be borrowed
                     }
                     Some(OwnershipState::MutBorrowed) => {
-                        return Err(OwnershipError::AlreadyMutBorrowed(name.clone()));
+                        let span = expr.span();
+                        return Err(OwnershipError::AlreadyMutBorrowed(name.clone(), span.line, span.col));
                     }
                     Some(OwnershipState::Borrowed { .. }) if *is_mut => {
-                        return Err(OwnershipError::AlreadyBorrowed(name.clone()));
+                        let span = expr.span();
+                        return Err(OwnershipError::AlreadyBorrowed(name.clone(), span.line, span.col));
                     }
                     Some(OwnershipState::Borrowed { .. }) => {
                         // Multiple immutable borrows are OK
@@ -431,7 +461,19 @@ fn check_expr(
         }
 
         Expr::DefStruct { .. } => Ok(OwnershipState::Owned),
-        Expr::FieldAccess { expr, .. } => check_expr(expr, env, registry),
+        Expr::FieldAccess { expr, field, .. } => {
+            // If accessing a field of a moved value, error
+            if let Expr::Symbol(sym) = expr.as_ref() {
+                match env.get(&sym.0) {
+                    Some(OwnershipState::Moved) => {
+                        let span = expr.span();
+                        return Err(OwnershipError::UseAfterMove(format!("{} (field .{})", sym.0, field.0), span.line, span.col));
+                    }
+                    _ => {}
+                }
+            }
+            check_expr(expr, env, registry)
+        }
         Expr::List(_, _) | Expr::Vector(_, _) | Expr::Map(_, _) | Expr::Quote(_, _) => {
             Ok(OwnershipState::Owned)
         }
