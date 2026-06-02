@@ -67,16 +67,17 @@ pub fn expand_macros(program: &ast::Program) -> Result<ast::Program, r#macro::Ma
     r#macro::expand_program(program)
 }
 
-/// Compile a program to QBE IR string (legacy AST backend)
-pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
-    let backend = backends::qbe::QbeBackend::new();
-    backend.compile(program)
-}
-
 /// Compile a program to QBE IR string via HIR lowering
-pub fn compile_to_qbe_hir(program: &ast::Program) -> Result<String> {
+pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     let hir_program = hir::lowering::lower(program)?;
-    let backend = backends::qbe_hir::QbeHIRBackend::new();
+    let mut backend = backends::qbe_hir::QbeHIRBackend::new();
+    // Register struct definitions for constructor generation
+    for expr in &program.exprs {
+        if let ast::Expr::DefStruct { name, fields, .. } = expr {
+            let field_names: Vec<String> = fields.iter().map(|f| f.0.clone()).collect();
+            backend.add_struct(&name.0, field_names);
+        }
+    }
     backend.compile(&hir_program)
 }
 

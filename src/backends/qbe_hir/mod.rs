@@ -1,6 +1,6 @@
 use crate::backends::qbe::sanitize_name;
 use crate::hir;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};
 use std::collections::HashMap;
 
@@ -9,6 +9,7 @@ pub struct QbeHIRBackend {
     temp_counter: usize,
     string_counter: usize,
     struct_registry: HashMap<String, Vec<String>>,
+    string_temps: HashMap<String, ()>,
 }
 
 impl QbeHIRBackend {
@@ -18,6 +19,7 @@ impl QbeHIRBackend {
             temp_counter: 0,
             string_counter: 0,
             struct_registry: HashMap::new(),
+            string_temps: HashMap::new(),
         }
     }
 
@@ -48,11 +50,7 @@ impl QbeHIRBackend {
         }
 
         for (i, block) in func.blocks.iter().enumerate() {
-            if i == 0 {
-                qbe_func.add_block(&block_labels[&block.label]);
-            } else {
-                qbe_func.add_block(&block_labels[&block.label]);
-            }
+            qbe_func.add_block(&block_labels[&block.label]);
 
             for instr in &block.instrs {
                 self.compile_instr(instr, &mut qbe_func)?;
@@ -130,6 +128,33 @@ impl QbeHIRBackend {
                     .map(|a| (Type::Long, self.operand_to_value(a)))
                     .collect();
 
+                // Check if this is a struct constructor
+                if let Some(fields) = self.struct_registry.get(func_name) {
+                    let size = fields.len() * 8;
+                    let ptr = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(ptr.clone()),
+                        Type::Long,
+                        Instr::Alloc8(size as u64),
+                    );
+                    for (i, arg) in compiled_args.iter().enumerate() {
+                        let offset = (i * 8) as u64;
+                        let addr = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(addr.clone()),
+                            Type::Long,
+                            Instr::Add(Value::Temporary(ptr.clone()), Value::Const(offset)),
+                        );
+                        func.add_instr(Instr::Store(Type::Long, Value::Temporary(addr), arg.1.clone()));
+                    }
+                    func.assign_instr(
+                        Value::Temporary(dest.clone()),
+                        Type::Long,
+                        Instr::Copy(Value::Temporary(ptr)),
+                    );
+                    return Ok(());
+                }
+
                 // Handle built-in operators and runtime functions
                 match func_name.as_str() {
                     "+" | "-" | "*" | "/" | "%" | "=" | "!=" | "<" | "<=" | ">" | ">=" if args.len() == 2 => {
@@ -166,8 +191,24 @@ impl QbeHIRBackend {
                                 Type::Long,
                                 Instr::Call("bars_print_newline".to_string(), vec![], None),
                             );
+                        } else if self.is_string_arg(&args[0]) {
+                            // Print a Bars string
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call(
+                                    "bars_print_string".to_string(),
+                                    vec![compiled_args[0].clone()],
+                                    None,
+                                ),
+                            );
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call("bars_print_newline".to_string(), vec![], None),
+                            );
                         } else {
-                            // Print integer for now
+                            // Print integer
                             let fmt = self.add_string_literal("%ld\n");
                             func.assign_instr(
                                 Value::Temporary(self.fresh_temp()),
@@ -183,6 +224,104 @@ impl QbeHIRBackend {
                             Value::Temporary(dest.clone()),
                             Type::Long,
                             Instr::Copy(Value::Const(0)),
+                        );
+                    }
+                    "vector" => {
+                        // Create new vector and push all arguments
+                        let ptr = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(ptr.clone()),
+                            Type::Long,
+                            Instr::Call("bars_vector_new_i64".to_string(), vec![], None),
+                        );
+                        for arg in &compiled_args {
+                            func.assign_instr(
+                                Value::Temporary(self.fresh_temp()),
+                                Type::Long,
+                                Instr::Call(
+                                    "bars_vector_push_i64".to_string(),
+                                    vec![(Type::Long, Value::Temporary(ptr.clone())), arg.clone()],
+                                    None,
+                                ),
+                            );
+                        }
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Copy(Value::Temporary(ptr)),
+                        );
+                    }
+                    "push" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_push_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "get" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_get_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "count" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_vector_count_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "map" => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call("bars_map_new_i64".to_string(), vec![], None),
+                        );
+                    }
+                    "map_set" | "map-set" if compiled_args.len() == 3 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_set_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "map_get" | "map-get" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_get_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "map_count" | "map-count" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_map_count_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
                         );
                     }
                     _ => {
@@ -201,6 +340,7 @@ impl QbeHIRBackend {
                     Type::Long,
                     Instr::Call("bars_string_new".to_string(), vec![(Type::Long, label)], None),
                 );
+                self.string_temps.insert(dest.clone(), ());
             }
         }
         Ok(())
@@ -233,6 +373,13 @@ impl QbeHIRBackend {
         match op {
             hir::Operand::Var(v) => Value::Temporary(v.clone()),
             hir::Operand::Const(c) => Value::Const(*c as u64),
+        }
+    }
+
+    fn is_string_arg(&self, arg: &hir::Operand) -> bool {
+        match arg {
+            hir::Operand::Var(v) => self.string_temps.contains_key(v),
+            _ => false,
         }
     }
 

@@ -48,8 +48,7 @@ fn main() -> Result<()> {
 
 fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     let expanded = bars::expand_macros(program)?;
-    let backend = QbeBackend::new();
-    backend.compile(&expanded)
+    bars::compile_to_qbe(&expanded)
 }
 
 fn run_file(file: &Path) -> Result<()> {
