@@ -5,9 +5,12 @@ pub mod hir;
 pub mod r#macro;
 pub mod ownership;
 pub mod reader;
+pub mod types;
 
 use anyhow::Result;
 use std::collections::HashSet;
+#[cfg(feature = "llvm-backend")]
+use std::io::Write;
 
 /// Read and parse a Bars source file, resolving (load ...) dependencies
 pub fn read_file(path: &std::path::Path) -> Result<ast::Program> {
@@ -85,9 +88,60 @@ pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     backend.compile(&hir_program)
 }
 
-/// Full pipeline: read → expand → compile (legacy)
+/// Full pipeline: read → expand → compile via QBE HIR (legacy)
 pub fn compile_file(path: &std::path::Path) -> Result<String> {
     let program = read_file(path)?;
     let expanded = expand_macros(&program)?;
     compile_to_qbe(&expanded)
+}
+
+/// Full pipeline: read → expand → LLVM object file
+#[cfg(feature = "llvm-backend")]
+pub fn compile_file_llvm(path: &std::path::Path, optimize: bool) -> Result<()> {
+    let program = read_file(path)?;
+    let expanded = expand_macros(&program)?;
+    let hir_program = lower_and_optimize(&expanded)?;
+
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
+
+    backends::llvm::compile_hir_to_object(
+        &hir_program,
+        std::path::Path::new(&obj_file),
+        optimize,
+    )?;
+
+    // Link with runtime and produce binary
+    let bin_file = format!("/tmp/{}_{}.out", stem, std::process::id());
+    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
+    let link = std::process::Command::new("cc")
+        .args([&obj_file, &runtime_obj, "-lgc", "-o", &bin_file])
+        .output()?;
+
+    if !link.status.success() {
+        let stderr = String::from_utf8_lossy(&link.stderr);
+        anyhow::bail!("Link step failed:\n{}", stderr);
+    }
+
+    // Run the binary
+    let run = std::process::Command::new(&bin_file).output()?;
+    std::io::stdout().write_all(&run.stdout)?;
+    std::io::stderr().write_all(&run.stderr)?;
+
+    let _ = std::fs::remove_file(&obj_file);
+    let _ = std::fs::remove_file(&bin_file);
+
+    Ok(())
+}
+
+/// Infer and check types for a program.
+/// Returns the inferred type for each top-level definition.
+pub fn infer_types(program: &ast::Program) -> Result<Vec<(String, types::Type)>, types::TypeError> {
+    let mut ctx = types::InferCtx::new();
+    let (subst, defn_types) = ctx.infer_program(program)?;
+    // Apply substitution to get concrete types
+    let results: Vec<_> = defn_types.into_iter()
+        .map(|(name, ty)| (name, types::apply_subst(&subst, &ty)))
+        .collect();
+    Ok(results)
 }

@@ -134,6 +134,11 @@ pub enum Expr {
         body: Box<Expr>,
         span: Span,
     },
+    Lambda {
+        params: Vec<(Symbol, Option<Type>)>,
+        body: Box<Expr>,
+        span: Span,
+    },
     Match {
         expr: Box<Expr>,
         arms: Vec<(Pattern, Expr)>,
@@ -171,6 +176,7 @@ impl Expr {
             Expr::Loop { span, .. } => span.clone(),
             Expr::Recur { span, .. } => span.clone(),
             Expr::DefMacro { span, .. } => span.clone(),
+            Expr::Lambda { span, .. } => span.clone(),
             Expr::Match { span, .. } => span.clone(),
             Expr::DefStruct { span, .. } => span.clone(),
             Expr::FieldAccess { span, .. } => span.clone(),

@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bars::{ast, cli::{Cli, Commands}, read_file};
+use bars::{ast, cli::{Backend, Cli, Commands}, read_file};
 use clap::Parser;
 use std::io::Write;
 use std::path::Path;
@@ -15,29 +15,89 @@ fn main() -> Result<()> {
                 println!("{:#?}", expr);
             }
         }
-        Commands::Build { file, output } => {
-            let qbe_ir = bars::compile_file(&file)?;
-            if let Some(out) = output {
-                std::fs::write(&out, qbe_ir)?;
-                println!("Written to {}", out.display());
-            } else {
-                println!("{}", qbe_ir);
+        Commands::Build { file, output, backend, release: _release } => {
+            match backend {
+                Backend::Qbe => {
+                    let qbe_ir = bars::compile_file(&file)?;
+                    if let Some(out) = output {
+                        std::fs::write(&out, qbe_ir)?;
+                        println!("Written to {}", out.display());
+                    } else {
+                        println!("{}", qbe_ir);
+                    }
+                }
+                #[cfg(feature = "llvm-backend")]
+                Backend::Llvm => {
+                    let program = read_file(&file)?;
+                    let expanded = bars::expand_macros(&program)?;
+                    let hir_program = bars::lower_and_optimize(&expanded)?;
+
+                    let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+                    let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
+
+                    bars::backends::llvm::compile_hir_to_object(
+                        &hir_program,
+                        std::path::Path::new(&obj_file),
+                        _release,
+                    )?;
+
+                    if let Some(out) = output {
+                        let bin_out = out;
+                        let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
+                        let cc_compile = Command::new("cc")
+                            .args([&obj_file, &runtime_obj, "-lgc", "-o"])
+                            .arg(&bin_out)
+                            .output()?;
+                        if !cc_compile.status.success() {
+                            let stderr = String::from_utf8_lossy(&cc_compile.stderr);
+                            bail!("Link step failed:\n{}", stderr);
+                        }
+                        println!("Binary written to {}", bin_out.display());
+                        let _ = std::fs::remove_file(&obj_file);
+                    } else {
+                        println!("Object file written to {}", obj_file);
+                    }
+                }
             }
         }
-        Commands::Run { file } => {
-            run_file(&file)?;
+        Commands::Run { file, backend, release: _release } => {
+            match backend {
+                Backend::Qbe => {
+                    run_file_qbe(&file)?;
+                }
+                #[cfg(feature = "llvm-backend")]
+                Backend::Llvm => {
+                    bars::compile_file_llvm(&file, _release)?;
+                }
+            }
         }
         Commands::Repl => {
             run_repl_jit()?;
         }
-        Commands::Check { file } => {
+        Commands::Check { file, types } => {
             let program = read_file(&file)?;
             let expanded = bars::expand_macros(&program)?;
-            match bars::ownership::check_program(&expanded) {
-                Ok(()) => println!("✅ Ownership checks passed."),
-                Err(e) => {
-                    eprintln!("❌ Ownership error: {}", e);
-                    std::process::exit(1);
+
+            if types {
+                match bars::infer_types(&expanded) {
+                    Ok(results) => {
+                        println!("✅ Type inference passed.");
+                        for (name, ty) in &results {
+                            println!("  {} : {}", name, ty);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Type error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                match bars::ownership::check_program(&expanded) {
+                    Ok(()) => println!("✅ Ownership checks passed."),
+                    Err(e) => {
+                        eprintln!("❌ Ownership error: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
         }
@@ -51,7 +111,7 @@ fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     bars::compile_to_qbe(&expanded)
 }
 
-fn run_file(file: &Path) -> Result<()> {
+fn run_file_qbe(file: &Path) -> Result<()> {
     let program = read_file(file)?;
     let qbe_ir = compile_to_qbe(&program)?;
 
@@ -95,73 +155,6 @@ fn run_file(file: &Path) -> Result<()> {
     let _ = std::fs::remove_file(&s_file);
     let _ = std::fs::remove_file(&bin_file);
 
-    Ok(())
-}
-
-fn run_repl() -> Result<()> {
-    println!("Bars REPL v0.1.0");
-    println!("Натисни Ctrl+D за изход.");
-    println!();
-
-    let mut input = String::new();
-    let mut depth = 0i32;
-
-    loop {
-        let prompt = if depth > 0 { "  " } else { "bars> " };
-        print!("{}", prompt);
-        std::io::stdout().flush()?;
-
-        let mut line = String::new();
-        match std::io::stdin().read_line(&mut line) {
-            Ok(0) => {
-                println!();
-                break;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Грешка при четене: {}", e);
-                break;
-            }
-        }
-
-        for ch in line.chars() {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => depth -= 1,
-                _ => {}
-            }
-        }
-
-        input.push_str(&line);
-
-        if depth == 0 && !input.trim().is_empty() {
-            match bars::reader::read(&input) {
-                Ok(program) => {
-                    match compile_to_qbe(&program) {
-                        Ok(ir) => {
-                            // For REPL, just print the QBE IR for now
-                            // Later: JIT compile and execute
-                            println!("; QBE IR:");
-                            for line in ir.lines() {
-                                if !line.trim().is_empty() {
-                                    println!("; {}", line);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Грешка при компилация: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Грешка при парсване: {}", e);
-                }
-            }
-            input.clear();
-        }
-    }
-
-    println!("Довиждане!");
     Ok(())
 }
 

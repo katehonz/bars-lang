@@ -67,6 +67,26 @@ fn test_multi_expr_body() {
     if let bars::ast::Expr::Defn { body, .. } = &prog.exprs[0] {
         assert!(matches!(body.as_ref(), bars::ast::Expr::Do { .. }));
     } else {
-        panic!("Expected defn");
+        panic!("Expected Defn with Do body");
     }
+}
+
+#[test]
+fn test_parse_lambda() {
+    let prog = reader::read(r#"
+        (fn [x] (+ x 1))
+    "#).unwrap();
+    assert_eq!(prog.exprs.len(), 1);
+    assert!(matches!(&prog.exprs[0], bars::ast::Expr::Lambda { .. }),
+        "Expected Lambda, got {:?}", prog.exprs[0]);
+}
+
+#[test]
+fn test_parse_lambda_multi_body() {
+    let prog = reader::read(r#"
+        (fn [x]
+          (println x)
+          (+ x 1))
+    "#).unwrap();
+    assert!(matches!(&prog.exprs[0], bars::ast::Expr::Lambda { .. }));
 }

@@ -49,7 +49,7 @@ impl QbeHIRBackend {
             block_labels.insert(block.label.clone(), qbe_label);
         }
 
-        for (i, block) in func.blocks.iter().enumerate() {
+        for (_i, block) in func.blocks.iter().enumerate() {
             qbe_func.add_block(&block_labels[&block.label]);
 
             for instr in &block.instrs {

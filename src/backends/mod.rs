@@ -1,4 +1,6 @@
 pub mod cranelift;
+#[cfg(feature = "llvm-backend")]
+pub mod llvm;
 pub mod qbe_hir;
 
 /// Sanitize a Bars identifier into a valid QBE/C identifier.

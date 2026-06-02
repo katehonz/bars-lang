@@ -147,6 +147,7 @@ impl<'a> Parser<'a> {
                 "quote" => return self.parse_quote(start_span),
                 "match" => return self.parse_match(start_span),
                 "defstruct" => return self.parse_defstruct(start_span),
+                "fn" => return self.parse_lambda(start_span),
                 _ => {}
             }
         }
@@ -258,50 +259,7 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Some(Token::RBracket)) {
                 break;
             }
-            let (param_name, param_type) = match self.peek() {
-                Some(Token::Symbol(s)) => {
-                    let s = s.clone();
-                    self.advance();
-                    (Symbol(s), None)
-                }
-                Some(Token::Meta) => {
-                    // ^mut type name or ^type name
-                    self.advance();
-                    let is_mut = if let Some(Token::Symbol(s)) = self.peek() {
-                        if s == "mut" {
-                            self.advance();
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-                    let type_hint = match self.peek() {
-                        Some(Token::Symbol(s)) => {
-                            let s = s.clone();
-                            self.advance();
-                            parse_type(&s)
-                        }
-                        _ => None,
-                    };
-                    let name = match self.peek() {
-                        Some(Token::Symbol(s)) => {
-                            let s = s.clone();
-                            self.advance();
-                            Symbol(s)
-                        }
-                        _ => bail!("Expected parameter name after type hint at line {}, col {}", start_span.line, start_span.col),
-                    };
-                    let ty = match type_hint {
-                        Some(t) if is_mut => Some(Type::MutRef(Box::new(t))),
-                        Some(t) => Some(Type::Ref(Box::new(t))),
-                        None => None,
-                    };
-                    (name, ty)
-                }
-                _ => bail!("Expected parameter in defn at line {}, col {}", start_span.line, start_span.col),
-            };
+            let (param_name, param_type) = self.parse_fn_param(start_span.clone())?;
             params.push((param_name, param_type));
         }
         self.expect(Token::RBracket)?;
@@ -366,6 +324,29 @@ impl<'a> Parser<'a> {
         Ok(Expr::Do { exprs, span: start_span })
     }
 
+    fn parse_lambda(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'fn'
+        self.expect(Token::LBracket)?;
+        let mut params = Vec::new();
+        loop {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RBracket)) {
+                break;
+            }
+            let (param_name, param_type) = self.parse_fn_param(start_span.clone())?;
+            params.push((param_name, param_type));
+        }
+        self.expect(Token::RBracket)?;
+        let body_exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        let body = if body_exprs.len() == 1 {
+            Box::new(body_exprs.into_iter().next().unwrap())
+        } else {
+            Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
+        };
+        Ok(Expr::Lambda { params, body, span: start_span })
+    }
+
     fn parse_loop(&mut self, start_span: Span) -> Result<Expr> {
         self.advance(); // consume 'loop'
         self.expect(Token::LBracket)?;
@@ -426,6 +407,46 @@ impl<'a> Parser<'a> {
     fn skip_comments(&mut self) {
         while matches!(self.peek(), Some(Token::Comment(_))) {
             self.advance();
+        }
+    }
+
+    /// Parse a function parameter: name or ^type name or ^mut type name
+    fn parse_fn_param(&mut self, start_span: Span) -> Result<(Symbol, Option<Type>)> {
+        match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok((Symbol(s), None))
+            }
+            Some(Token::Meta) => {
+                self.advance();
+                let is_mut = if let Some(Token::Symbol(s)) = self.peek() {
+                    if s == "mut" { self.advance(); true } else { false }
+                } else { false };
+                let type_hint = match self.peek() {
+                    Some(Token::Symbol(s)) => {
+                        let s = s.clone();
+                        self.advance();
+                        parse_type(&s)
+                    }
+                    _ => None,
+                };
+                let name = match self.peek() {
+                    Some(Token::Symbol(s)) => {
+                        let s = s.clone();
+                        self.advance();
+                        Symbol(s)
+                    }
+                    _ => bail!("Expected parameter name after type at line {}", start_span.line),
+                };
+                let ty = match type_hint {
+                    Some(t) if is_mut => Some(Type::MutRef(Box::new(t))),
+                    Some(t) => Some(Type::Ref(Box::new(t))),
+                    None => None,
+                };
+                Ok((name, ty))
+            }
+            _ => bail!("Expected parameter at line {}", start_span.line),
         }
     }
 

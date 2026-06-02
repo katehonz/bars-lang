@@ -4,7 +4,7 @@
 //! This interpreter evaluates Bars expressions where the "values" are
 //! themselves AST `Expr` nodes (or primitives like i64/bool).
 
-use crate::ast::{Expr, Keyword, Program, Span, Symbol};
+use crate::ast::{Expr, Keyword, Span, Symbol};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 
@@ -70,7 +70,7 @@ pub struct InterpEnv {
 
 impl InterpEnv {
     pub fn new() -> Self {
-        let mut builtins = HashMap::new();
+        let builtins = HashMap::new();
         Self { scopes: vec![builtins] }
     }
 

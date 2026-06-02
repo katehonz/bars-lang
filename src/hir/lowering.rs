@@ -11,6 +11,9 @@ pub struct LoweringCtx {
     current_block_active: bool,
     loop_stack: Vec<(String, Vec<String>)>,
     struct_registry: std::collections::HashMap<String, Vec<String>>,
+    /// Lambda functions extracted during lowering
+    lambda_funcs: Vec<Func>,
+    lambda_counter: usize,
 }
 
 impl LoweringCtx {
@@ -24,6 +27,8 @@ impl LoweringCtx {
             current_block_active: false,
             loop_stack: Vec::new(),
             struct_registry: std::collections::HashMap::new(),
+            lambda_funcs: Vec::new(),
+            lambda_counter: 0,
         }
     }
 
@@ -77,6 +82,12 @@ impl LoweringCtx {
                     let func = self.lower_func(&name.0, params, body)?;
                     funcs.push(func);
                 }
+                Expr::Lambda { params, body, .. } => {
+                    let name = format!("_lambda_{}", self.label_counter);
+                    self.label_counter += 1;
+                    let func = self.lower_func(&name, params, body)?;
+                    funcs.push(func);
+                }
                 Expr::DefStruct { .. } => {
                     // Skip - compile-time only
                 }
@@ -85,6 +96,9 @@ impl LoweringCtx {
                 }
             }
         }
+
+        // Add lambda functions extracted during lowering
+        funcs.append(&mut self.lambda_funcs);
 
         // Implicit main if needed
         let has_main = funcs.iter().any(|f| f.name == "main");
@@ -407,6 +421,31 @@ impl LoweringCtx {
 
             Expr::Defn { .. } => {
                 bail!("Nested defn not supported in HIR lowering")
+            }
+
+            Expr::Lambda { params, body, .. } => {
+                // Save current lowering state, extract lambda as a separate function,
+                // then restore state.
+                let saved_blocks = std::mem::take(&mut self.blocks);
+                let saved_instrs = std::mem::take(&mut self.current_instrs);
+                let saved_block = std::mem::take(&mut self.current_block);
+                let saved_active = self.current_block_active;
+                let saved_loop = std::mem::take(&mut self.loop_stack);
+
+                let name = format!("_lambda_{}", self.lambda_counter);
+                self.lambda_counter += 1;
+                let func = self.lower_func(&name, params, body)?;
+                self.lambda_funcs.push(func);
+
+                // Restore state
+                self.blocks = saved_blocks;
+                self.current_instrs = saved_instrs;
+                self.current_block = saved_block;
+                self.current_block_active = saved_active;
+                self.loop_stack = saved_loop;
+
+                // Lambda expression returns 0
+                Ok(Operand::Const(0))
             }
 
             other => bail!("Unsupported expression in HIR lowering: {:?}", other),

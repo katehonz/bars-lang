@@ -150,7 +150,7 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
             })
         }
 
-        Expr::SyntaxQuote(expr, span) => {
+        Expr::SyntaxQuote(expr, _span) => {
             // Expand syntax-quote using the interpreter
             let mut empty_env = InterpEnv::new();
             let expanded = crate::r#macro::interpreter::expand_syntax_quote(expr, &mut empty_env)
