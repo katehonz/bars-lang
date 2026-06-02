@@ -2,6 +2,8 @@
 
 > **Bars** (Russian: барс) — the Snow Leopard. Fast, independent, dangerous.
 
+![Bars — the Snow Leopard](bars-kotka.png)
+
 A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE** (AOT) and **Cranelift** (JIT/REPL).
 
 ```clojure
