@@ -235,4 +235,4 @@ Then Bars is your language. **Join or build.**
 
 **Adopted this day by the Bars language project.**
 
-*Bars — the wild cat of Russia. Fast, independent, dangerous.*
+*Bars — the Snow Leopard. Fast, independent, dangerous.*

@@ -1,6 +1,6 @@
 # 🐆 Bars
 
-> **Bars** (Russian: барс) — the wild cat of Russia. Fast, independent, dangerous.
+> **Bars** (Russian: барс) — the Snow Leopard. Fast, independent, dangerous.
 
 A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE** (AOT) and **Cranelift** (JIT/REPL).
 
