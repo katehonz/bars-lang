@@ -1,10 +1,10 @@
 # 🐆 Bars
 
-> **Bars** (Russian: барс) — the Snow Leopard. Fast, independent, dangerous.
+> **Bars** (барс) — Снежният леопард. Бърз, независим, опасен.
 
 ![Bars — the Snow Leopard](bars-kotka.png)
 
-A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE** (AOT) and **Cranelift** (JIT/REPL).
+A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE**, **Cranelift**, and **LLVM**.
 
 ```clojure
 ;; examples/hello.brs
@@ -22,8 +22,10 @@ Hello, World!
 ## Why Bars?
 
 - **Clojure syntax** — parentheses naturally express scope and structure.
-- **Lightweight ownership** — borrow checking without lifetime annotation hell.
-- **Multiple backends** — QBE for fast AOT debug builds, Cranelift for JIT/REPL.
+- **Lightweight ownership** — NLL borrow checking, drop checking, no lifetime annotations.
+- **Type inference** — Hindley-Milner type system with `bars check --types`.
+- **Three backends** — QBE for fast AOT, Cranelift for JIT/REPL, LLVM for `--release`.
+- **Lambda functions** — anonymous `(fn [x] body)` with full pipeline support.
 - **Zero-cost FFI** — direct C ABI access through the runtime.
 - **GC when you want it** — stack + ownership + Boehm GC for complex data.
 - **`.brs`** — source file extension.
@@ -149,6 +151,29 @@ bars repl
   (println (range 1 10)))
 ```
 
+### Lambda Functions
+
+```clojure
+;; Inline anonymous functions
+(fn [x] (+ x 1))
+
+;; Lambda with borrow annotation
+(fn [^buf data]
+  (println (count data)))
+
+;; Lambda as function body
+(defn make-adder [n]
+  (fn [x] (+ x n)))
+```
+
+### Type Checking
+
+```bash
+$ bars check --types examples/hello.brs
+✅ Type inference passed.
+  main : i64
+```
+
 ---
 
 ## CLI Reference
@@ -157,9 +182,14 @@ bars repl
 |---------|-------------|
 | `bars read <file>` | Parse and print AST |
 | `bars build <file>` | Compile to QBE IR via HIR (stdout) |
-| `bars run <file>` | Compile, link, and execute |
+| `bars build --backend llvm <file>` | Compile via LLVM to object file |
+| `bars build --release <file>` | Release build with optimizations |
+| `bars run <file>` | Compile, link, and execute (QBE) |
+| `bars run --backend llvm <file>` | Compile, link, and execute (LLVM) |
 | `bars repl` | Interactive Cranelift JIT session |
 | `bars check <file>` | Run ownership analysis |
+| `bars check --types <file>` | Run type inference |
+| `bars build --features llvm-backend` | Enable LLVM backend (requires LLVM 14+) |
 
 ---
 
@@ -172,8 +202,9 @@ bars repl
 │   ├── ast/          # AST types
 │   ├── macro/        # Macro expansion
 │   ├── ownership/    # Ownership checker
+│   ├── types/        # Hindley-Milner type inference
 │   ├── hir/          # High-level IR (flattened)
-│   └── backends/     # QBE HIR + Cranelift HIR backends
+│   └── backends/     # QBE + Cranelift + LLVM backends
 ├── runtime/          # C runtime + Boehm GC
 ├── lib/              # Standard library (.brs)
 ├── examples/         # Example programs
@@ -187,9 +218,9 @@ bars repl
 
 | Backend | Mode | Status |
 |---------|------|--------|
-| **QBE HIR** | AOT debug/release builds | ✅ Working |
+| **QBE HIR** | Fast AOT debug/release | ✅ Working |
 | **Cranelift** | JIT / REPL | ✅ Working |
-| **LLVM** | Optimized release builds | 📋 Planned |
+| **LLVM** | Optimized release (--release) | ✅ Working |
 
 ---
 
@@ -210,7 +241,8 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 ```
 .brs → Reader → AST → Macro Expansion → Ownership Check → HIR → Backend → Native Code
                                                                     ├── QBE IR → qbe → cc
-                                                                    └── Cranelift → JIT
+                                                                    ├── Cranelift → JIT
+                                                                    └── LLVM IR → llc → cc
 ```
 
 ---
@@ -231,9 +263,10 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | `loop` / `recur` | ✅ |
 | `load` system | ✅ |
 | Stdlib | ✅ |
-| LLVM backend | 📋 Planned |
+| LLVM backend | ✅ |
 | User-defined macros (`defmacro`) | ✅ |
-| Type inference | 📋 Planned |
+| Type inference (`check --types`) | ✅ |
+| Lambda functions (`fn [x] body`) | ✅ |
 
 ---
 
