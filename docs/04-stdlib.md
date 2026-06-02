@@ -95,4 +95,4 @@ Bars ships with a standard library written in Bars itself under `lib/`.
 
 ## Higher-Order Functions (REPL/Cranelift Only)
 
-The QBE backend does not yet support function pointers, so `map-vec`, `filter-vec`, and `reduce-vec` are commented out in `lib/core.brs`. They work in the Cranelift JIT REPL.
+The AOT backend does not yet support function pointers, so `map-vec`, `filter-vec`, and `reduce-vec` are commented out in `lib/core.brs`. They work in the Cranelift JIT REPL.

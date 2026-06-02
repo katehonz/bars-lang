@@ -1,4 +1,5 @@
 pub mod lowering;
+pub mod optimize;
 
 /// High-level Intermediate Representation (HIR)
 ///

@@ -220,7 +220,7 @@ fn run_repl_jit() -> Result<()> {
                             continue;
                         }
                     };
-                    match bars::hir::lowering::lower(&expanded) {
+                    match bars::lower_and_optimize(&expanded) {
                         Ok(hir_program) => {
                             match backend.compile_hir(&hir_program) {
                                 Ok(result) => {

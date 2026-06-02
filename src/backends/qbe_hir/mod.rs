@@ -1,4 +1,4 @@
-use crate::backends::qbe::sanitize_name;
+use crate::backends::sanitize_name;
 use crate::hir;
 use anyhow::Result;
 use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};

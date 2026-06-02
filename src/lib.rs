@@ -67,9 +67,17 @@ pub fn expand_macros(program: &ast::Program) -> Result<ast::Program, r#macro::Ma
     r#macro::expand_program(program)
 }
 
+/// Lower AST to HIR and run optimization passes.
+pub fn lower_and_optimize(program: &ast::Program) -> Result<hir::Program> {
+    let mut hir_program = hir::lowering::lower(program)?;
+    hir::optimize::constant_fold(&mut hir_program);
+    hir::optimize::remove_dead_blocks(&mut hir_program);
+    Ok(hir_program)
+}
+
 /// Compile a program to QBE IR string via HIR lowering
 pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
-    let hir_program = hir::lowering::lower(program)?;
+    let hir_program = lower_and_optimize(program)?;
     let mut backend = backends::qbe_hir::QbeHIRBackend::new();
     for (name, fields) in &hir_program.struct_registry {
         backend.add_struct(name, fields.clone());

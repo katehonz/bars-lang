@@ -1,12 +1,18 @@
 pub mod cranelift;
-pub mod qbe;
 pub mod qbe_hir;
 
-use crate::ast::Program;
-use anyhow::Result;
-
-/// Trait for compiler backends
-pub trait Backend {
-    /// Generate code from AST Program
-    fn compile(&mut self, program: &Program) -> Result<String>;
+/// Sanitize a Bars identifier into a valid QBE/C identifier.
+pub fn sanitize_name(name: &str) -> String {
+    name.replace('?', "_Q")
+        .replace('!', "_B")
+        .replace('-', "_")
+        .replace('+', "_plus")
+        .replace('*', "_star")
+        .replace('/', "_slash")
+        .replace('%', "_percent")
+        .replace('=', "_eq")
+        .replace('<', "_lt")
+        .replace('>', "_gt")
+        .replace('&', "_amp")
+        .replace('|', "_pipe")
 }

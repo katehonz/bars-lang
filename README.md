@@ -154,7 +154,7 @@ bars repl
 | Command | Description |
 |---------|-------------|
 | `bars read <file>` | Parse and print AST |
-| `bars build <file>` | Compile to QBE IR (stdout) |
+| `bars build <file>` | Compile to QBE IR via HIR (stdout) |
 | `bars run <file>` | Compile, link, and execute |
 | `bars repl` | Interactive Cranelift JIT session |
 | `bars check <file>` | Run ownership analysis |
@@ -170,7 +170,8 @@ bars repl
 │   ├── ast/          # AST types
 │   ├── macro/        # Macro expansion
 │   ├── ownership/    # Ownership checker
-│   └── backends/     # QBE + Cranelift backends
+│   ├── hir/          # High-level IR (flattened)
+│   └── backends/     # QBE HIR + Cranelift HIR backends
 ├── runtime/          # C runtime + Boehm GC
 ├── lib/              # Standard library (.brs)
 ├── examples/         # Example programs
@@ -184,7 +185,7 @@ bars repl
 
 | Backend | Mode | Status |
 |---------|------|--------|
-| **QBE** | AOT debug/release builds | ✅ Working |
+| **QBE HIR** | AOT debug/release builds | ✅ Working |
 | **Cranelift** | JIT / REPL | ✅ Working |
 | **LLVM** | Optimized release builds | 📋 Planned |
 
@@ -205,9 +206,9 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 ## Architecture
 
 ```
-.brs → Reader → AST → Macro Expansion → Ownership Check → Backend → Native Code
-                                                          ├── QBE IR → qbe → cc
-                                                          └── Cranelift → JIT
+.brs → Reader → AST → Macro Expansion → Ownership Check → HIR → Backend → Native Code
+                                                                    ├── QBE IR → qbe → cc
+                                                                    └── Cranelift → JIT
 ```
 
 ---
@@ -219,7 +220,7 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | Feature | Status |
 |---------|--------|
 | Reader (Lexer + Parser) | ✅ |
-| AST → QBE IR | ✅ |
+| AST → HIR → QBE IR | ✅ |
 | Functions & recursion | ✅ |
 | Ownership checker | ✅ |
 | Runtime + Boehm GC | ✅ |
@@ -229,7 +230,7 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | `load` system | ✅ |
 | Stdlib | ✅ |
 | LLVM backend | 📋 Planned |
-| User-defined macros (`defmacro`) | 📋 Planned |
+| User-defined macros (`defmacro`) | ✅ |
 | Type inference | 📋 Planned |
 
 ---

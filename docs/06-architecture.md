@@ -9,13 +9,15 @@ Reader (lexer + recursive descent parser)
     ↓
 AST (Expr enum)
     ↓
-Macro Expansion (built-in macros)
+Macro Expansion (built-in macros + defmacro)
     ↓
 Ownership Analysis
     ↓
+HIR Lowering — AST → flattened HIR (alloc, store, load, call, branch, jump)
+    ↓
 Backend Code Generation
-    ├── QBE Backend → QBE IR → qbe assembler → cc → native binary
-    └── Cranelift Backend → JIT in-memory machine code
+    ├── QBE HIR Backend → QBE IR → qbe assembler → cc → native binary
+    └── Cranelift HIR Backend → JIT in-memory machine code
     ↓
 C Runtime (Boehm GC)
 ```
@@ -41,12 +43,14 @@ Core types:
 
 ### Macro Expansion (`src/macro/expander.rs`)
 
-Built-in macros (no `defmacro` yet):
+Built-in macros:
 - `when` → `(if cond (do body...) nil)`
 - `unless` → `(if (not cond) (do body...) nil)`
 - `cond` → nested `if`
 - `->` (thread-first) — insert first arg as first argument
 - `->>` (thread-last) — insert first arg as last argument
+
+User-defined macros via `defmacro` + `syntax-quote`/`~`/`~@`
 
 ### Ownership Checker (`src/ownership/checker.rs`)
 
@@ -64,24 +68,32 @@ Errors:
 
 ### Backends
 
-#### QBE Backend (`src/backends/qbe/mod.rs`)
+#### HIR (`src/hir/`)
 
-- Generates QBE SSA IR via the `qbe` crate.
+Flattened intermediate representation where all control flow and memory operations are explicit:
+- `Instr::Alloc`, `Store`, `Load`, `FieldLoad`, `FieldStore`
+- `Instr::BinOp`, `UnOp`, `Call`, `StringLit`
+- `Terminator::Branch`, `Jump`, `Return`
+
+High-level constructs (`if`, `match`, `loop`/`recur`, `let`) are desugared to ~10 primitive instructions.
+
+#### QBE HIR Backend (`src/backends/qbe_hir/mod.rs`)
+
+- Consumes HIR and generates QBE SSA IR via the `qbe` crate.
 - Compiles `defn` to `export function` definitions.
 - Top-level expressions are wrapped in `$main()`.
 - Built-in operators (`+`, `-`, `*`, `/`, `%`, comparisons) emit direct QBE instructions.
 - `println` dispatches to `printf` (integers) or `bars_print_string` (strings).
-- `if` uses stack slots (`alloc8` + `store`/`load`) instead of phi nodes to support nesting.
-- `loop`/`recur` use stack slots and `jmp` to loop labels.
+- `if`/`match` use stack slots (`alloc8` + `store`/`load`) instead of phi nodes.
+- `loop`/`recur` use `jmp` to loop labels with explicit variable updates.
 - Name sanitization handles special characters (`?`, `!`, `-`, `+`, etc.) for QBE compatibility.
 
-#### Cranelift Backend (`src/backends/cranelift/mod.rs`)
+#### Cranelift HIR Backend (`src/backends/cranelift/mod.rs`)
 
-- Uses `cranelift-jit` for in-memory compilation.
-- Each REPL expression is compiled to an anonymous function (`__anon_N`).
+- Consumes HIR and uses `cranelift-jit` for in-memory compilation.
 - `defn` functions are declared and defined in the JIT module, persisting across REPL iterations.
-- `if` uses Cranelift block parameters.
-- `loop`/`recur` use block parameters natively (no stack growth).
+- HIR variables map to Cranelift `Variable`s with `def_var`/`use_var`, enabling automatic phi insertion.
+- Blocks are sealed only after all jumps are emitted, so backward edges (loops) resolve correctly.
 
 ### C Runtime (`runtime/bars_runtime.c`)
 

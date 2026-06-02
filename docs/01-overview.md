@@ -52,9 +52,11 @@ Macro expansion
     ↓
 Ownership analysis
     ↓
+HIR lowering
+    ↓
 Backend
-    ├── QBE IR → qbe assembler → cc → native binary
-    └── Cranelift → JIT in-memory execution
+    ├── QBE HIR → QBE IR → qbe assembler → cc → native binary
+    └── Cranelift HIR → JIT in-memory execution
     ↓
 Runtime (C + Boehm GC)
 ```
