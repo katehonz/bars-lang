@@ -146,7 +146,15 @@ impl<'a> Parser<'a> {
                 "recur" => return self.parse_recur(start_span),
                 "quote" => return self.parse_quote(start_span),
                 "match" => return self.parse_match(start_span),
+                "defstruct" => return self.parse_defstruct(start_span),
                 _ => {}
+            }
+        }
+
+        // Check for field access: (.field expr)
+        if let Some(Token::Symbol(name)) = self.peek() {
+            if name.starts_with('.') && name.len() > 1 {
+                return self.parse_field_access(start_span);
             }
         }
 
@@ -494,6 +502,23 @@ impl<'a> Parser<'a> {
             }
             Token::LParen => {
                 self.advance(); // consume '('
+                // Check if this is a struct pattern: (StructName field1 field2 ...)
+                if let Some(Token::Symbol(s)) = self.peek() {
+                    let struct_name = s.clone();
+                    self.advance();
+                    let mut fields = Vec::new();
+                    while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                        let field_pattern = self.parse_pattern()?;
+                        fields.push(field_pattern);
+                    }
+                    self.expect(Token::RParen)?;
+                    // If we consumed a symbol and then sub-patterns, treat as struct pattern
+                    if !fields.is_empty() {
+                        return Ok(Pattern::Struct { name: Symbol(struct_name), fields });
+                    }
+                    // Just one symbol with no sub-patterns — treat as binding in a list
+                    return Ok(Pattern::List(vec![Pattern::Binding(Symbol(struct_name))], span));
+                }
                 let mut items = Vec::new();
                 while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
                     items.push(self.parse_pattern()?);
@@ -503,6 +528,49 @@ impl<'a> Parser<'a> {
             }
             other => bail!("Unexpected token in pattern: {} at line {}, col {}", other, span.line, span.col),
         }
+    }
+
+    fn parse_defstruct(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'defstruct'
+        let name = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Symbol(s)
+            }
+            _ => bail!("Expected struct name after defstruct at line {}, col {}", start_span.line, start_span.col),
+        };
+        self.expect(Token::LBracket)?;
+        let mut fields = Vec::new();
+        while !matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+            let field_name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected field name in defstruct at line {}, col {}", start_span.line, start_span.col),
+            };
+            fields.push(field_name);
+        }
+        self.expect(Token::RBracket)?;
+        self.expect(Token::RParen)?;
+        Ok(Expr::DefStruct { name, fields, span: start_span })
+    }
+
+    fn parse_field_access(&mut self, start_span: Span) -> Result<Expr> {
+        let field = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let name = s.clone();
+                self.advance();
+                // Remove leading dot
+                Symbol(name.trim_start_matches('.').to_string())
+            }
+            _ => bail!("Expected field name in field access at line {}, col {}", start_span.line, start_span.col),
+        };
+        let expr = self.parse_expr()?;
+        self.expect(Token::RParen)?;
+        Ok(Expr::FieldAccess { expr: Box::new(expr), field, span: start_span })
     }
 
     fn parse_vector(&mut self) -> Result<Expr> {

@@ -107,3 +107,25 @@ fn test_run_match() {
     assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
     assert!(stdout.contains("999"), "Expected '999' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_run_struct() {
+    let output = bars()
+        .args(["run", "examples/struct_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("10"), "Expected '10' in output, got: {}", stdout);
+    assert!(stdout.contains("20"), "Expected '20' in output, got: {}", stdout);
+}
+
+#[test]
+fn test_run_struct_match() {
+    let output = bars()
+        .args(["run", "examples/struct_match.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
+    assert!(stdout.contains("7"), "Expected '7' in output, got: {}", stdout);
+}

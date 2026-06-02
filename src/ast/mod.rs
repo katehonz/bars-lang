@@ -71,6 +71,7 @@ pub enum Pattern {
     Literal(Expr),                     // 42, true, "hello", :ok
     Vector(Vec<Pattern>, Span),        // [p1 p2]
     List(Vec<Pattern>, Span),          // (p1 p2)
+    Struct { name: Symbol, fields: Vec<Pattern> }, // (Point x y)
 }
 
 /// Expressions in Bars AST
@@ -138,6 +139,16 @@ pub enum Expr {
         arms: Vec<(Pattern, Expr)>,
         span: Span,
     },
+    DefStruct {
+        name: Symbol,
+        fields: Vec<Symbol>,
+        span: Span,
+    },
+    FieldAccess {
+        expr: Box<Expr>,
+        field: Symbol,
+        span: Span,
+    },
     Quote(Box<Expr>, Span),
     SyntaxQuote(Box<Expr>, Span),
     Unquote(Box<Expr>, Span),
@@ -161,6 +172,8 @@ impl Expr {
             Expr::Recur { span, .. } => span.clone(),
             Expr::DefMacro { span, .. } => span.clone(),
             Expr::Match { span, .. } => span.clone(),
+            Expr::DefStruct { span, .. } => span.clone(),
+            Expr::FieldAccess { span, .. } => span.clone(),
             Expr::Quote(_, s) => s.clone(),
             Expr::SyntaxQuote(_, s) => s.clone(),
             Expr::Unquote(_, s) => s.clone(),

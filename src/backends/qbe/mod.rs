@@ -26,6 +26,7 @@ pub struct QbeBackend {
     string_counter: usize,
     loop_context: Option<(String, Vec<(String, String)>)>,
     current_block_terminated: bool,
+    struct_registry: HashMap<String, Vec<String>>,
 }
 
 impl QbeBackend {
@@ -37,6 +38,7 @@ impl QbeBackend {
             string_counter: 0,
             loop_context: None,
             current_block_terminated: false,
+            struct_registry: HashMap::new(),
         }
     }
 
@@ -52,6 +54,14 @@ impl QbeBackend {
                     if name.0 == "main" {
                         has_main = true;
                     }
+                }
+                Expr::DefStruct { name, fields, .. } => {
+                    let field_names: Vec<String> = fields.iter().map(|f| f.0.clone()).collect();
+                    self.struct_registry.insert(name.0.clone(), field_names);
+                    // Generate QBE type definition: type :Point = { l, l }
+                    let qbe_type = format!("type :{} = {{ {} }}", sanitize_name(&name.0), 
+                        fields.iter().map(|_| "l".to_string()).collect::<Vec<_>>().join(", "));
+                    // We can't easily add raw type defs via qbe-rs, so we'll append them manually
                 }
                 other => {
                     {
@@ -407,6 +417,31 @@ impl QbeBackend {
                     compiled_args.push((Type::Long, val));
                 }
 
+                // Check if this is a struct constructor
+                if let Some(fields) = self.struct_registry.get(&func_name_raw) {
+                    if args.len() != fields.len() {
+                        bail!("Struct constructor {} expects {} arguments, got {}", func_name_raw, fields.len(), args.len());
+                    }
+                    let size = fields.len() * 8;
+                    let ptr = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(ptr.clone()),
+                        Type::Long,
+                        Instr::Alloc8(size as u64),
+                    );
+                    for (i, arg) in compiled_args.iter().enumerate() {
+                        let offset = (i * 8) as u64;
+                        let addr = self.fresh_temp();
+                        func.assign_instr(
+                            Value::Temporary(addr.clone()),
+                            Type::Long,
+                            Instr::Add(Value::Temporary(ptr.clone()), Value::Const(offset)),
+                        );
+                        func.add_instr(Instr::Store(Type::Long, Value::Temporary(addr), arg.1.clone()));
+                    }
+                    return Ok(Value::Temporary(ptr));
+                }
+
                 // Handle built-in arithmetic operators (before name sanitization)
                 match func_name_raw.as_str() {
                     "+" | "-" | "*" | "/" | "%" if compiled_args.len() == 2 => {
@@ -606,6 +641,49 @@ impl QbeBackend {
                 }
             }
 
+            Expr::FieldAccess { expr, field, .. } => {
+                let ptr = self.compile_expr(expr, func, scope)?;
+                // Look up struct type from the expression
+                // For now, we can't easily know the struct type from just the AST
+                // We'll need to track types. For simplicity, we'll look for a struct
+                // whose field names include this field.
+                let mut found_offset = None;
+                for (struct_name, fields) in &self.struct_registry {
+                    for (i, f) in fields.iter().enumerate() {
+                        if f == &field.0 {
+                            found_offset = Some((struct_name.clone(), i));
+                            break;
+                        }
+                    }
+                    if found_offset.is_some() {
+                        break;
+                    }
+                }
+                let (_, offset_idx) = found_offset
+                    .ok_or_else(|| anyhow::anyhow!("Unknown field '{}' in field access", field.0))?;
+                let offset = (offset_idx * 8) as u64;
+                let addr = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(addr.clone()),
+                    Type::Long,
+                    Instr::Add(
+                        match &ptr {
+                            Value::Temporary(t) => Value::Temporary(t.clone()),
+                            Value::Global(g) => Value::Global(g.clone()),
+                            Value::Const(c) => Value::Const(*c),
+                        },
+                        Value::Const(offset),
+                    ),
+                );
+                let result = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(result.clone()),
+                    Type::Long,
+                    Instr::Load(Type::Long, Value::Temporary(addr)),
+                );
+                Ok(Value::Temporary(result))
+            }
+
             Expr::Def { name, value, .. } => {
                 let val = self.compile_expr(value, func, scope)?;
                 let temp = self.fresh_temp();
@@ -621,6 +699,9 @@ impl QbeBackend {
             Expr::Defn { .. } => {
                 // Nested defn not supported in expression context
                 bail!("Nested defn not supported in QBE backend")
+            }
+            Expr::DefStruct { .. } => {
+                bail!("defstruct not supported in QBE expression context")
             }
         }
     }
@@ -729,6 +810,47 @@ impl QbeBackend {
             Pattern::Vector(_, _) | Pattern::List(_, _) => {
                 bail!("Vector/List patterns not yet supported in QBE backend")
             }
+            Pattern::Struct { name, fields } => {
+                // Get struct field info
+                let struct_fields = self.struct_registry.get(&name.0)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown struct '{}' in pattern", name.0))?;
+                if fields.len() != struct_fields.len() {
+                    bail!("Struct pattern {} field count mismatch: expected {}, got {}", name.0, struct_fields.len(), fields.len());
+                }
+                // AND together all field matches
+                let mut overall = Value::Const(1);
+                for (i, field_pat) in fields.iter().enumerate() {
+                    let offset = (i * 8) as u64;
+                    let addr = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(addr.clone()),
+                        Type::Long,
+                        Instr::Add(
+                            match val {
+                                Value::Temporary(t) => Value::Temporary(t.clone()),
+                                Value::Global(g) => Value::Global(g.clone()),
+                                Value::Const(c) => Value::Const(*c),
+                            },
+                            Value::Const(offset),
+                        ),
+                    );
+                    let field_val = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(field_val.clone()),
+                        Type::Long,
+                        Instr::Load(Type::Long, Value::Temporary(addr)),
+                    );
+                    let field_match = self.compile_pattern_check(&Value::Temporary(field_val), field_pat, func, _scope)?;
+                    let new_overall = self.fresh_temp();
+                    func.assign_instr(
+                        Value::Temporary(new_overall.clone()),
+                        Type::Long,
+                        Instr::And(overall, field_match),
+                    );
+                    overall = Value::Temporary(new_overall);
+                }
+                Ok(overall)
+            }
             other => bail!("Unsupported pattern in QBE backend: {:?}", other),
         }
     }
@@ -756,6 +878,34 @@ impl QbeBackend {
             Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
                 for p in patterns {
                     self.compile_pattern_bindings(val, p, _func, scope)?;
+                }
+                Ok(())
+            }
+            Pattern::Struct { name, fields } => {
+                let struct_fields = self.struct_registry.get(&name.0)
+                    .ok_or_else(|| anyhow::anyhow!("Unknown struct '{}' in pattern bindings", name.0))?;
+                for (i, field_pat) in fields.iter().enumerate() {
+                    let offset = (i * 8) as u64;
+                    let addr = self.fresh_temp();
+                    _func.assign_instr(
+                        Value::Temporary(addr.clone()),
+                        Type::Long,
+                        Instr::Add(
+                            match val {
+                                Value::Temporary(t) => Value::Temporary(t.clone()),
+                                Value::Global(g) => Value::Global(g.clone()),
+                                Value::Const(c) => Value::Const(*c),
+                            },
+                            Value::Const(offset),
+                        ),
+                    );
+                    let field_val = self.fresh_temp();
+                    _func.assign_instr(
+                        Value::Temporary(field_val.clone()),
+                        Type::Long,
+                        Instr::Load(Type::Long, Value::Temporary(addr)),
+                    );
+                    self.compile_pattern_bindings(&Value::Temporary(field_val), field_pat, _func, scope)?;
                 }
                 Ok(())
             }

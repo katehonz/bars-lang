@@ -172,7 +172,7 @@ fn add_pattern_bindings(
         Pattern::Binding(sym) => {
             env.insert(sym.0.clone(), OwnershipState::Owned);
         }
-        Pattern::Vector(patterns, _) | Pattern::List(patterns, _) => {
+        Pattern::Vector(patterns, _) | Pattern::List(patterns, _) | Pattern::Struct { fields: patterns, .. } => {
             for p in patterns {
                 add_pattern_bindings(p, env, registry);
             }
@@ -430,6 +430,8 @@ fn check_expr(
             check_expr(expr, env, registry)
         }
 
+        Expr::DefStruct { .. } => Ok(OwnershipState::Owned),
+        Expr::FieldAccess { expr, .. } => check_expr(expr, env, registry),
         Expr::List(_, _) | Expr::Vector(_, _) | Expr::Map(_, _) | Expr::Quote(_, _) => {
             Ok(OwnershipState::Owned)
         }

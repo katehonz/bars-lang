@@ -159,6 +159,12 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
         }
         Expr::Unquote(expr, span) => Ok(Expr::Unquote(Box::new(expand_expr(expr, macro_env)?), span.clone())),
         Expr::Splicing(expr, span) => Ok(Expr::Splicing(Box::new(expand_expr(expr, macro_env)?), span.clone())),
+        Expr::FieldAccess { expr, field, span } => Ok(Expr::FieldAccess {
+            expr: Box::new(expand_expr(expr, macro_env)?),
+            field: field.clone(),
+            span: span.clone(),
+        }),
+        Expr::DefStruct { .. } => Ok(expr.clone()),
 
         // Atoms — nothing to expand
         other => Ok(other.clone()),

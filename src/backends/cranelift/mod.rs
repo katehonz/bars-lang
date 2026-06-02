@@ -432,6 +432,8 @@ fn compile_expr(
 
         Expr::Defn { .. } => bail!("Nested defn not supported in Cranelift backend"),
         Expr::Def { .. } => bail!("def not supported in Cranelift expression context"),
+        Expr::DefStruct { .. } => bail!("defstruct not supported in Cranelift expression context"),
+        Expr::FieldAccess { .. } => bail!("Field access not yet supported in Cranelift JIT"),
         Expr::String(_) => bail!("String not yet supported in Cranelift JIT"),
         Expr::Float(_) => bail!("Float not yet supported in Cranelift JIT"),
         Expr::Keyword(_) => bail!("Keyword not yet supported in Cranelift JIT"),
