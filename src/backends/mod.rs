@@ -1,5 +1,6 @@
 pub mod cranelift;
 pub mod qbe;
+pub mod qbe_hir;
 
 use crate::ast::Program;
 use anyhow::Result;

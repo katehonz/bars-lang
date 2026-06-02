@@ -4,7 +4,7 @@ use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};
 use std::collections::HashMap;
 
 /// QBE backend compiler
-fn sanitize_name(name: &str) -> String {
+pub fn sanitize_name(name: &str) -> String {
     name.replace('?', "_Q")
         .replace('!', "_B")
         .replace('-', "_")

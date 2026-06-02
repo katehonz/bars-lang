@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod backends;
 pub mod cli;
+pub mod hir;
 pub mod r#macro;
 pub mod ownership;
 pub mod reader;
@@ -66,13 +67,20 @@ pub fn expand_macros(program: &ast::Program) -> Result<ast::Program, r#macro::Ma
     r#macro::expand_program(program)
 }
 
-/// Compile a program to QBE IR string
+/// Compile a program to QBE IR string (legacy AST backend)
 pub fn compile_to_qbe(program: &ast::Program) -> Result<String> {
     let backend = backends::qbe::QbeBackend::new();
     backend.compile(program)
 }
 
-/// Full pipeline: read → expand → compile
+/// Compile a program to QBE IR string via HIR lowering
+pub fn compile_to_qbe_hir(program: &ast::Program) -> Result<String> {
+    let hir_program = hir::lowering::lower(program)?;
+    let backend = backends::qbe_hir::QbeHIRBackend::new();
+    backend.compile(&hir_program)
+}
+
+/// Full pipeline: read → expand → compile (legacy)
 pub fn compile_file(path: &std::path::Path) -> Result<String> {
     let program = read_file(path)?;
     let expanded = expand_macros(&program)?;
