@@ -1,4 +1,6 @@
 use crate::ast::{Expr, Program, Span, Symbol};
+use crate::r#macro::interpreter::{eval, InterpEnv, MacroVal};
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -9,32 +11,59 @@ pub enum MacroError {
     UnknownMacro(String),
     #[error("Invalid syntax for macro '{0}'")]
     InvalidSyntax(String),
+    #[error("Macro evaluation error: {0}")]
+    EvalError(String),
 }
 
-/// Expand all macros in a program
+impl From<anyhow::Error> for MacroError {
+    fn from(e: anyhow::Error) -> Self {
+        MacroError::EvalError(e.to_string())
+    }
+}
+
+/// Expand all macros in a program (built-in + user-defined)
 pub fn expand_program(program: &Program) -> Result<Program, MacroError> {
+    // First pass: collect all defmacro definitions
+    let mut macro_env: HashMap<String, Expr> = HashMap::new();
+    for expr in &program.exprs {
+        if let Expr::DefMacro { name, params, body, .. } = expr {
+            macro_env.insert(name.0.clone(), Expr::Defn {
+                name: name.clone(),
+                params: params.clone(),
+                body: body.clone(),
+                ret_type: None,
+                span: Span::new(0, 0),
+            });
+        }
+    }
+
+    // Second pass: expand all expressions
     let mut new_exprs = Vec::new();
     for expr in &program.exprs {
-        new_exprs.push(expand_expr(expr)?);
+        // Skip defmacro forms themselves in the output (they are compile-time only)
+        if matches!(expr, Expr::DefMacro { .. }) {
+            continue;
+        }
+        new_exprs.push(expand_expr(expr, &macro_env)?);
     }
     Ok(Program { exprs: new_exprs })
 }
 
 /// Expand macros in a single expression
-fn expand_expr(expr: &Expr) -> Result<Expr, MacroError> {
+fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, MacroError> {
     match expr {
         // Don't expand inside quote
         Expr::Quote(inner, span) => Ok(Expr::Quote(inner.clone(), span.clone())),
 
         // Expand function calls
         Expr::FnCall { func, args, span } => {
-            let expanded_func = expand_expr(func)?;
-            let expanded_args: Result<Vec<_>, _> = args.iter().map(expand_expr).collect();
+            let expanded_func = expand_expr(func, macro_env)?;
+            let expanded_args: Result<Vec<_>, _> = args.iter().map(|a| expand_expr(a, macro_env)).collect();
             let expanded_args = expanded_args?;
 
             // Check if func is a macro name
             if let Expr::Symbol(sym) = &expanded_func {
-                if let Some(expanded) = try_expand_macro(&sym.0, &expanded_args, span)? {
+                if let Some(expanded) = try_expand_macro(&sym.0, &expanded_args, span, macro_env)? {
                     return Ok(expanded);
                 }
             }
@@ -48,65 +77,75 @@ fn expand_expr(expr: &Expr) -> Result<Expr, MacroError> {
 
         // Recursively expand other expressions
         Expr::Let { bindings, body, span } => {
-            let new_bindings: Result<Vec<_>, _> = bindings
+            let new_bindings: Result<Vec<_>, MacroError> = bindings
                 .iter()
-                .map(|(name, val)| Ok((name.clone(), expand_expr(val)?)))
+                .map(|(name, val)| Ok((name.clone(), expand_expr(val, macro_env)?)))
                 .collect();
             Ok(Expr::Let {
                 bindings: new_bindings?,
-                body: Box::new(expand_expr(body)?),
+                body: Box::new(expand_expr(body, macro_env)?),
                 span: span.clone(),
             })
         }
 
         Expr::If { cond, then_branch, else_branch, span } => Ok(Expr::If {
-            cond: Box::new(expand_expr(cond)?),
-            then_branch: Box::new(expand_expr(then_branch)?),
-            else_branch: Box::new(expand_expr(else_branch)?),
+            cond: Box::new(expand_expr(cond, macro_env)?),
+            then_branch: Box::new(expand_expr(then_branch, macro_env)?),
+            else_branch: Box::new(expand_expr(else_branch, macro_env)?),
             span: span.clone(),
         }),
 
-        Expr::Do { exprs, span } => {
-            let new_exprs: Result<Vec<_>, _> = exprs.iter().map(expand_expr).collect();
-            Ok(Expr::Do {
-                exprs: new_exprs?,
-                span: span.clone(),
-            })
-        }
-
         Expr::Def { name, value, span } => Ok(Expr::Def {
             name: name.clone(),
-            value: Box::new(expand_expr(value)?),
+            value: Box::new(expand_expr(value, macro_env)?),
             span: span.clone(),
         }),
 
         Expr::Defn { name, params, body, ret_type, span } => Ok(Expr::Defn {
             name: name.clone(),
             params: params.clone(),
-            body: Box::new(expand_expr(body)?),
+            body: Box::new(expand_expr(body, macro_env)?),
             ret_type: ret_type.clone(),
             span: span.clone(),
         }),
 
+        Expr::Do { exprs, span } => {
+            let new_exprs: Result<Vec<_>, _> = exprs.iter().map(|e| expand_expr(e, macro_env)).collect();
+            Ok(Expr::Do {
+                exprs: new_exprs?,
+                span: span.clone(),
+            })
+        }
+
         Expr::Loop { bindings, body, span } => {
-            let new_bindings: Result<Vec<_>, _> = bindings
+            let new_bindings: Result<Vec<_>, MacroError> = bindings
                 .iter()
-                .map(|(name, val)| Ok((name.clone(), expand_expr(val)?)))
+                .map(|(name, val)| Ok((name.clone(), expand_expr(val, macro_env)?)))
                 .collect();
             Ok(Expr::Loop {
                 bindings: new_bindings?,
-                body: Box::new(expand_expr(body)?),
+                body: Box::new(expand_expr(body, macro_env)?),
                 span: span.clone(),
             })
         }
 
         Expr::Recur { args, span } => {
-            let new_args: Result<Vec<_>, _> = args.iter().map(expand_expr).collect();
+            let new_args: Result<Vec<_>, _> = args.iter().map(|a| expand_expr(a, macro_env)).collect();
             Ok(Expr::Recur {
                 args: new_args?,
                 span: span.clone(),
             })
         }
+
+        Expr::SyntaxQuote(expr, span) => {
+            // Expand syntax-quote using the interpreter
+            let mut empty_env = InterpEnv::new();
+            let expanded = crate::r#macro::interpreter::expand_syntax_quote(expr, &mut empty_env)
+                .map_err(|e| MacroError::EvalError(e.to_string()))?;
+            expand_expr(&expanded, macro_env)
+        }
+        Expr::Unquote(expr, span) => Ok(Expr::Unquote(Box::new(expand_expr(expr, macro_env)?), span.clone())),
+        Expr::Splicing(expr, span) => Ok(Expr::Splicing(Box::new(expand_expr(expr, macro_env)?), span.clone())),
 
         // Atoms — nothing to expand
         other => Ok(other.clone()),
@@ -118,15 +157,36 @@ fn try_expand_macro(
     name: &str,
     args: &[Expr],
     span: &Span,
+    macro_env: &HashMap<String, Expr>,
 ) -> Result<Option<Expr>, MacroError> {
+    // Built-in macros first
     match name {
-        "when" => expand_when(args, span),
-        "unless" => expand_unless(args, span),
-        "cond" => expand_cond(args, span),
-        "->" => expand_thread_first(args, span),
-        "->>" => expand_thread_last(args, span),
-        _ => Ok(None),
+        "when" => return expand_when(args, span),
+        "unless" => return expand_unless(args, span),
+        "cond" => return expand_cond(args, span),
+        "->" => return expand_thread_first(args, span),
+        "->>" => return expand_thread_last(args, span),
+        _ => {}
     }
+
+    // User-defined macros
+    if let Some(macro_defn) = macro_env.get(name) {
+        if let Expr::Defn { params, body, .. } = macro_defn {
+            let mut interp_env = InterpEnv::new();
+            for (i, (param, _)) in params.iter().enumerate() {
+                let arg_val = if i < args.len() {
+                    MacroVal::Expr(args[i].clone())
+                } else {
+                    MacroVal::Nil
+                };
+                interp_env.insert(param.0.clone(), arg_val);
+            }
+            let result = eval(body, &mut interp_env)?;
+            return Ok(Some(result.to_expr()));
+        }
+    }
+
+    Ok(None)
 }
 
 /// (when cond body...)
@@ -216,38 +276,8 @@ fn expand_thread_first(args: &[Expr], span: &Span) -> Result<Option<Expr>, Macro
                 span: span.clone(),
             },
             other => {
-                return Err(MacroError::InvalidSyntax(format!(
-                    "-> expects function call, got {:?}", other
-                )));
+                return Err(MacroError::InvalidSyntax(format!("-> {:?}", other)));
             }
-        };
-    }
-    Ok(Some(result))
-}
-
-/// (cond (p1 e1) (p2 e2) ...)
-/// => (if p1 e1 (if p2 e2 ...))
-fn expand_cond(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
-    if args.is_empty() {
-        return Ok(Some(Expr::Symbol(Symbol("nil".to_string()))));
-    }
-    // args should be pairs: [condition1, result1, condition2, result2, ...]
-    // Or with explicit else: [... :else default]
-    let mut result = Expr::Symbol(Symbol("nil".to_string()));
-    // Process in reverse to build nested ifs from inside out
-    let mut i = args.len();
-    while i >= 2 {
-        i -= 2;
-        let cond = match &args[i] {
-            Expr::Keyword(_) => Expr::Bool(true),
-            other => other.clone(),
-        };
-        let then_val = args[i + 1].clone();
-        result = Expr::If {
-            cond: Box::new(cond),
-            then_branch: Box::new(then_val),
-            else_branch: Box::new(result),
-            span: span.clone(),
         };
     }
     Ok(Some(result))
@@ -290,10 +320,35 @@ fn expand_thread_last(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroE
                 span: span.clone(),
             },
             other => {
-                return Err(MacroError::InvalidSyntax(format!(
-                    "->> expects function call, got {:?}", other
-                )));
+                return Err(MacroError::InvalidSyntax(format!("->> {:?}", other)));
             }
+        };
+    }
+    Ok(Some(result))
+}
+
+/// (cond (p1 e1) (p2 e2) ...)
+/// => (if p1 e1 (if p2 e2 ...))
+fn expand_cond(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
+    if args.is_empty() {
+        return Ok(Some(Expr::Symbol(Symbol("nil".to_string()))));
+    }
+    // args should be pairs: [condition1, result1, condition2, result2, ...]
+    let mut result = Expr::Symbol(Symbol("nil".to_string()));
+    // Process in reverse to build nested ifs from inside out
+    let mut i = args.len();
+    while i >= 2 {
+        i -= 2;
+        let cond = match &args[i] {
+            Expr::Keyword(_) => Expr::Bool(true),
+            other => other.clone(),
+        };
+        let then_val = args[i + 1].clone();
+        result = Expr::If {
+            cond: Box::new(cond),
+            then_branch: Box::new(then_val),
+            else_branch: Box::new(result),
+            span: span.clone(),
         };
     }
     Ok(Some(result))

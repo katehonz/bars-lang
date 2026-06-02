@@ -54,3 +54,27 @@ fn test_when_in_function() {
     let ir = bars::compile_to_qbe(&expanded).unwrap();
     assert!(ir.contains("jnz"));
 }
+
+#[test]
+fn test_defmacro_with_syntax_quote() {
+    let prog = reader::read(r#"
+        (defmacro my-or [a b]
+          `(if ~a ~a ~b))
+        (defn main []
+          (my-or false 42))
+    "#).unwrap();
+    let expanded = expand_program(&prog).unwrap();
+    // Should expand my-or to (if false false 42)
+    assert_eq!(expanded.exprs.len(), 1); // only defn remains
+    if let bars::ast::Expr::Defn { body, .. } = &expanded.exprs[0] {
+        if let bars::ast::Expr::If { cond, then_branch, else_branch, .. } = body.as_ref() {
+            assert!(matches!(cond.as_ref(), bars::ast::Expr::Bool(false)));
+            assert!(matches!(then_branch.as_ref(), bars::ast::Expr::Bool(false)));
+            assert!(matches!(else_branch.as_ref(), bars::ast::Expr::Number(42)));
+        } else {
+            panic!("Expected If in body, got: {:?}", body);
+        }
+    } else {
+        panic!("Expected Defn");
+    }
+}

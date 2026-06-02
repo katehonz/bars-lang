@@ -117,7 +117,16 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    DefMacro {
+        name: Symbol,
+        params: Vec<(Symbol, Option<Type>)>,
+        body: Box<Expr>,
+        span: Span,
+    },
     Quote(Box<Expr>, Span),
+    SyntaxQuote(Box<Expr>, Span),
+    Unquote(Box<Expr>, Span),
+    Splicing(Box<Expr>, Span),
     Borrow(Box<Expr>, bool, Span), // expr, is_mut
 }
 
@@ -135,7 +144,11 @@ impl Expr {
             Expr::Do { span, .. } => span.clone(),
             Expr::Loop { span, .. } => span.clone(),
             Expr::Recur { span, .. } => span.clone(),
+            Expr::DefMacro { span, .. } => span.clone(),
             Expr::Quote(_, s) => s.clone(),
+            Expr::SyntaxQuote(_, s) => s.clone(),
+            Expr::Unquote(_, s) => s.clone(),
+            Expr::Splicing(_, s) => s.clone(),
             Expr::Borrow(_, _, s) => s.clone(),
         }
     }

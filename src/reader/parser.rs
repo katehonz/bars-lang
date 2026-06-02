@@ -61,6 +61,21 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_expr()?;
                 Ok(Expr::Quote(Box::new(expr), span))
             }
+            Token::SyntaxQuote => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr::SyntaxQuote(Box::new(expr), span))
+            }
+            Token::Unquote => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr::Unquote(Box::new(expr), span))
+            }
+            Token::Splicing => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                Ok(Expr::Splicing(Box::new(expr), span))
+            }
             Token::Meta => {
                 // ^expr — borrow (or metadata, initially just borrow)
                 self.advance();
@@ -125,6 +140,7 @@ impl<'a> Parser<'a> {
                 "if" => return self.parse_if(start_span),
                 "def" => return self.parse_def(start_span),
                 "defn" => return self.parse_defn(start_span),
+                "defmacro" => return self.parse_defmacro(start_span),
                 "do" => return self.parse_do(start_span),
                 "loop" => return self.parse_loop(start_span),
                 "recur" => return self.parse_recur(start_span),
@@ -292,6 +308,46 @@ impl<'a> Parser<'a> {
             Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
         };
         Ok(Expr::Defn { name, params, body, ret_type, span: start_span })
+    }
+
+    fn parse_defmacro(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'defmacro'
+        let name = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Symbol(s)
+            }
+            _ => bail!("Expected macro name after defmacro at line {}, col {}", start_span.line, start_span.col),
+        };
+
+        self.expect(Token::LBracket)?;
+        let mut params = Vec::new();
+        loop {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RBracket)) {
+                break;
+            }
+            let param_name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected parameter in defmacro at line {}, col {}", start_span.line, start_span.col),
+            };
+            params.push((param_name, None));
+        }
+        self.expect(Token::RBracket)?;
+
+        let body_exprs = self.parse_body_exprs()?;
+        self.expect(Token::RParen)?;
+        let body = if body_exprs.len() == 1 {
+            Box::new(body_exprs.into_iter().next().unwrap())
+        } else {
+            Box::new(Expr::Do { exprs: body_exprs, span: start_span.clone() })
+        };
+        Ok(Expr::DefMacro { name, params, body, span: start_span })
     }
 
     fn parse_do(&mut self, start_span: Span) -> Result<Expr> {

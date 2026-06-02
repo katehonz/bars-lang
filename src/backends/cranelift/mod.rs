@@ -402,6 +402,10 @@ fn compile_expr(
         Expr::Vector(_, _) => bail!("Vector not supported in Cranelift JIT"),
         Expr::Map(_, _) => bail!("Map not supported in Cranelift JIT"),
         Expr::Quote(_, _) => bail!("Quote not supported in Cranelift JIT"),
+        Expr::SyntaxQuote(_, _) => bail!("Syntax-quote not supported in Cranelift JIT"),
+        Expr::Unquote(_, _) => bail!("Unquote not supported in Cranelift JIT"),
+        Expr::Splicing(_, _) => bail!("Splicing not supported in Cranelift JIT"),
+        Expr::DefMacro { .. } => bail!("defmacro not supported in Cranelift JIT (should be expanded)"),
         Expr::Borrow(_, _, _) => bail!("Borrow not supported in Cranelift JIT"),
     }
 }

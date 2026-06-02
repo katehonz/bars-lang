@@ -187,6 +187,10 @@ impl QbeBackend {
             Expr::Vector(_, _) => bail!("Vectors not yet supported in QBE backend"),
             Expr::Map(_, _) => bail!("Maps not yet supported in QBE backend"),
             Expr::Quote(_, _) => bail!("Quote not yet supported in QBE backend"),
+            Expr::SyntaxQuote(_, _) => bail!("Syntax-quote not yet supported in QBE backend"),
+            Expr::Unquote(_, _) => bail!("Unquote not yet supported in QBE backend"),
+            Expr::Splicing(_, _) => bail!("Splicing not yet supported in QBE backend"),
+            Expr::DefMacro { .. } => bail!("defmacro not supported in QBE backend (should be expanded)"),
             Expr::Borrow(_, _, _) => bail!("Borrow not yet supported in QBE backend"),
 
             Expr::Let { bindings, body, .. } => {

@@ -73,3 +73,14 @@ fn test_build_output() {
     assert!(stdout.contains("export function l $main()"));
     assert!(stdout.contains("$printf"));
 }
+
+#[test]
+fn test_run_defmacro() {
+    let output = bars()
+        .args(["run", "examples/defmacro_demo2.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("42"), "Expected '42' in output, got: {}", stdout);
+    assert!(stdout.contains("10"), "Expected '10' in output, got: {}", stdout);
+}

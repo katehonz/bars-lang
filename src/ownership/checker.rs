@@ -380,6 +380,20 @@ fn check_expr(
             Ok(OwnershipState::Owned)
         }
 
+        Expr::DefMacro { params, body, .. } => {
+            env.push_scope();
+            for (param, _) in params {
+                env.insert(param.0.clone(), OwnershipState::Owned);
+            }
+            check_expr(body, env, registry)?;
+            env.pop_scope();
+            Ok(OwnershipState::Owned)
+        }
+
+        Expr::SyntaxQuote(expr, _) | Expr::Unquote(expr, _) | Expr::Splicing(expr, _) => {
+            check_expr(expr, env, registry)
+        }
+
         Expr::List(_, _) | Expr::Vector(_, _) | Expr::Map(_, _) | Expr::Quote(_, _) => {
             Ok(OwnershipState::Owned)
         }
