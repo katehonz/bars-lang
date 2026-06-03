@@ -1,7 +1,8 @@
 ;; Bars standard library — Algebraic Data Types
 ;; Option and Result types with helper functions
+;; These are generic — T and E are type variables.
 
-(deftype Option [Some i64] [None])
+(deftype Option [Some T] [None])
 
 (defn is-some? [opt]
   (match opt
@@ -19,7 +20,7 @@
     None default))
 
 ;; Result type for error handling
-(deftype Result [Ok i64] [Err i64])
+(deftype Result [Ok T] [Err E])
 
 (defn is-ok? [res]
   (match res

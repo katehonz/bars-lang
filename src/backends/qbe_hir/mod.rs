@@ -42,7 +42,7 @@ impl QbeHIRBackend {
         let mut qbe_func = Function::new(
             Linkage::public(),
             &sanitized,
-            func.params.iter().map(|p| (Type::Long, Value::Temporary(p.clone()))).collect(),
+            func.params.iter().map(|p| (Type::Long, Value::Temporary(sanitize_name(p)))).collect(),
             Some(Type::Long),
         );
 
@@ -70,13 +70,13 @@ impl QbeHIRBackend {
         match instr {
             hir::Instr::Assign { dest, value } => {
                 let val = self.operand_to_value(value);
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Copy(val));
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Copy(val));
             }
             hir::Instr::Const { dest, value } => {
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Copy(Value::Const(*value as u64)));
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Copy(Value::Const(*value as u64)));
             }
             hir::Instr::Alloc { dest, size } => {
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Alloc8(*size as u64));
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Alloc8(*size as u64));
             }
             hir::Instr::Store { addr, value } => {
                 let a = self.operand_to_value(addr);
@@ -85,13 +85,13 @@ impl QbeHIRBackend {
             }
             hir::Instr::Load { dest, addr } => {
                 let a = self.operand_to_value(addr);
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Load(Type::Long, a));
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Load(Type::Long, a));
             }
             hir::Instr::FieldLoad { dest, base, offset } => {
                 let base_val = self.operand_to_value(base);
                 let addr = self.fresh_temp();
                 func.assign_instr(Value::Temporary(addr.clone()), Type::Long, Instr::Add(base_val, Value::Const(*offset as u64)));
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Load(Type::Long, Value::Temporary(addr)));
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Load(Type::Long, Value::Temporary(addr)));
             }
             hir::Instr::FieldStore { base, offset, value } => {
                 let base_val = self.operand_to_value(base);
@@ -116,13 +116,13 @@ impl QbeHIRBackend {
                     hir::BinOp::Gt => Instr::Cmp(Type::Long, Cmp::Sgt, lhs_val, rhs_val),
                     hir::BinOp::Ge => Instr::Cmp(Type::Long, Cmp::Sge, lhs_val, rhs_val),
                 };
-                func.assign_instr(Value::Temporary(dest.clone()), Type::Long, qbe_op);
+                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, qbe_op);
             }
             hir::Instr::UnOp { dest, op, operand } => {
                 let val = self.operand_to_value(operand);
                 match op {
                     hir::UnOp::Not => {
-                        func.assign_instr(Value::Temporary(dest.clone()), Type::Long, Instr::Cmp(Type::Long, Cmp::Eq, val, Value::Const(0)));
+                        func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Cmp(Type::Long, Cmp::Eq, val, Value::Const(0)));
                     }
                 }
             }
@@ -151,7 +151,7 @@ impl QbeHIRBackend {
                         func.add_instr(Instr::Store(Type::Long, Value::Temporary(addr), arg.1.clone()));
                     }
                     func.assign_instr(
-                        Value::Temporary(dest.clone()),
+                        Value::Temporary(sanitize_name(&dest)),
                         Type::Long,
                         Instr::Copy(Value::Temporary(ptr)),
                     );
@@ -177,12 +177,12 @@ impl QbeHIRBackend {
                             ">=" => Instr::Cmp(Type::Long, Cmp::Sge, lhs, rhs),
                             _ => unreachable!(),
                         };
-                        func.assign_instr(Value::Temporary(dest.clone()), Type::Long, instr);
+                        func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, instr);
                     }
                     "not" if args.len() == 1 => {
                         let val = self.operand_to_value(&args[0]);
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Cmp(Type::Long, Cmp::Eq, val, Value::Const(0)),
                         );
@@ -230,7 +230,7 @@ impl QbeHIRBackend {
                             );
                         }
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Copy(Value::Const(0)),
                         );
@@ -255,14 +255,14 @@ impl QbeHIRBackend {
                             );
                         }
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Copy(Value::Temporary(ptr)),
                         );
                     }
                     "push" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_vector_push_i64".to_string(),
@@ -273,7 +273,7 @@ impl QbeHIRBackend {
                     }
                     "get" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_vector_get_i64".to_string(),
@@ -284,7 +284,7 @@ impl QbeHIRBackend {
                     }
                     "count" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_vector_count_i64".to_string(),
@@ -295,14 +295,14 @@ impl QbeHIRBackend {
                     }
                     "map" => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call("bars_map_new_i64".to_string(), vec![], None),
                         );
                     }
                     "map_set" | "map-set" if compiled_args.len() == 3 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_map_set_i64".to_string(),
@@ -313,7 +313,7 @@ impl QbeHIRBackend {
                     }
                     "map_get" | "map-get" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_map_get_i64".to_string(),
@@ -324,7 +324,7 @@ impl QbeHIRBackend {
                     }
                     "map_count" | "map-count" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_map_count_i64".to_string(),
@@ -335,14 +335,14 @@ impl QbeHIRBackend {
                     }
                     "set" => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call("bars_set_new_i64".to_string(), vec![], None),
                         );
                     }
                     "set_add" | "set-add" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_set_add_i64".to_string(),
@@ -353,7 +353,7 @@ impl QbeHIRBackend {
                     }
                     "set_contains?" | "set-contains?" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_set_contains_i64".to_string(),
@@ -364,7 +364,7 @@ impl QbeHIRBackend {
                     }
                     "set_count" | "set-count" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_set_count_i64".to_string(),
@@ -376,7 +376,7 @@ impl QbeHIRBackend {
                     // Math
                     "sqrt" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_sqrt_i64".to_string(),
@@ -387,7 +387,7 @@ impl QbeHIRBackend {
                     }
                     "pow" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_pow_i64".to_string(),
@@ -398,7 +398,7 @@ impl QbeHIRBackend {
                     }
                     "abs" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_abs_i64".to_string(),
@@ -410,7 +410,7 @@ impl QbeHIRBackend {
                     // String ops
                     "str-count" | "str_count" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_length".to_string(),
@@ -421,7 +421,7 @@ impl QbeHIRBackend {
                     }
                     "str-concat" | "str_concat" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_concat".to_string(),
@@ -433,7 +433,7 @@ impl QbeHIRBackend {
                     // I/O
                     "slurp" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_slurp".to_string(),
@@ -444,7 +444,7 @@ impl QbeHIRBackend {
                     }
                     "spit" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_spit".to_string(),
@@ -455,7 +455,7 @@ impl QbeHIRBackend {
                     }
                     "str-trim" | "str_trim" if compiled_args.len() == 1 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_trim".to_string(),
@@ -466,7 +466,7 @@ impl QbeHIRBackend {
                     }
                     "str-substring" | "str_substring" | "substring" if compiled_args.len() == 3 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_substring".to_string(),
@@ -477,7 +477,7 @@ impl QbeHIRBackend {
                     }
                     "str-split" | "str_split" | "split" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_split".to_string(),
@@ -488,7 +488,7 @@ impl QbeHIRBackend {
                     }
                     "str-join" | "str_join" | "join" if compiled_args.len() == 2 => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(
                                 "bars_string_join".to_string(),
@@ -499,7 +499,7 @@ impl QbeHIRBackend {
                     }
                     _ => {
                         func.assign_instr(
-                            Value::Temporary(dest.clone()),
+                            Value::Temporary(sanitize_name(&dest)),
                             Type::Long,
                             Instr::Call(sanitize_name(func_name), compiled_args, None),
                         );
@@ -509,7 +509,7 @@ impl QbeHIRBackend {
             hir::Instr::StringLit { dest, content } => {
                 let label = self.add_string_literal(content);
                 func.assign_instr(
-                    Value::Temporary(dest.clone()),
+                    Value::Temporary(sanitize_name(&dest)),
                     Type::Long,
                     Instr::Call("bars_string_new".to_string(), vec![(Type::Long, label)], None),
                 );
@@ -546,11 +546,11 @@ impl QbeHIRBackend {
                     .collect();
                 let dest = self.fresh_temp();
                 func.assign_instr(
-                    Value::Temporary(dest.clone()),
+                    Value::Temporary(sanitize_name(&dest)),
                     Type::Long,
                     Instr::Call(sanitize_name(func_name), compiled_args, None),
                 );
-                func.add_instr(Instr::Ret(Some(Value::Temporary(dest))));
+                func.add_instr(Instr::Ret(Some(Value::Temporary(sanitize_name(&dest)))));
             }
         }
         Ok(())
@@ -558,7 +558,7 @@ impl QbeHIRBackend {
 
     fn operand_to_value(&self, op: &hir::Operand) -> Value {
         match op {
-            hir::Operand::Var(v) => Value::Temporary(v.clone()),
+            hir::Operand::Var(v) => Value::Temporary(sanitize_name(v)),
             hir::Operand::Const(c) => Value::Const(*c as u64),
         }
     }
