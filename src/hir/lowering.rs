@@ -201,9 +201,9 @@ impl LoweringCtx {
         }
 
         match expr {
-            Expr::Number(n) => Ok(Operand::Const(*n)),
-            Expr::Bool(b) => Ok(Operand::Const(if *b { 1 } else { 0 })),
-            Expr::Symbol(sym) => {
+            Expr::Number(n, _) => Ok(Operand::Const(*n)),
+            Expr::Bool(b, _) => Ok(Operand::Const(if *b { 1 } else { 0 })),
+            Expr::Symbol(sym, _) => {
                 if sym.0 == "nil" {
                     Ok(Operand::Const(0))
                 } else {
@@ -211,7 +211,7 @@ impl LoweringCtx {
                 }
             }
 
-            Expr::String(s) => {
+            Expr::String(s, _) => {
                 let dest = self.fresh_temp();
                 self.emit(Instr::StringLit { dest: dest.clone(), content: s.clone() });
                 Ok(Operand::Var(dest))
@@ -313,7 +313,7 @@ impl LoweringCtx {
 
             Expr::FnCall { func, args, .. } => {
                 let func_name = match func.as_ref() {
-                    Expr::Symbol(sym) => sym.0.clone(),
+                    Expr::Symbol(sym, _) => sym.0.clone(),
                     other => bail!("Only direct function calls in HIR lowering: {:?}", other),
                 };
 
@@ -563,7 +563,7 @@ impl LoweringCtx {
                 Ok(Operand::Var(dest))
             }
 
-            Expr::Keyword(kw) => {
+            Expr::Keyword(kw, _) => {
                 // Keywords are represented as strings at runtime for now
                 let dest = self.fresh_temp();
                 self.emit(Instr::StringLit { dest: dest.clone(), content: format!(":{}", kw.0) });
@@ -641,7 +641,7 @@ impl LoweringCtx {
             Pattern::Binding(_) => Ok(Operand::Const(1)),
             Pattern::Literal(lit_expr) => {
                 match lit_expr {
-                    Expr::Number(n) => {
+                    Expr::Number(n, _) => {
                         let dest = self.fresh_temp();
                         self.emit(Instr::BinOp {
                             dest: dest.clone(),
@@ -651,7 +651,7 @@ impl LoweringCtx {
                         });
                         Ok(Operand::Var(dest))
                     }
-                    Expr::Bool(b) => {
+                    Expr::Bool(b, _) => {
                         let dest = self.fresh_temp();
                         self.emit(Instr::BinOp {
                             dest: dest.clone(),
@@ -892,38 +892,38 @@ impl LoweringCtx {
         //         (recur (+ i 1) result))))
         let loop_expr = Expr::Loop {
             bindings: vec![
-                (Symbol("i".to_string()), Expr::Number(0)),
+                (Symbol("i".to_string()), Expr::Number(0, Span::new(0, 0))),
                 (Symbol("result".to_string()), Expr::FnCall {
-                    func: Box::new(Expr::Symbol(Symbol("vector".to_string()))),
+                    func: Box::new(Expr::Symbol(Symbol("vector".to_string()), Span::new(0, 0))),
                     args: vec![],
                     span: Span::new(0, 0),
                 }),
             ],
             body: Box::new(Expr::If {
                 cond: Box::new(Expr::FnCall {
-                    func: Box::new(Expr::Symbol(Symbol("=".to_string()))),
+                    func: Box::new(Expr::Symbol(Symbol("=".to_string()), Span::new(0, 0))),
                     args: vec![
-                        Expr::Symbol(Symbol("i".to_string())),
+                        Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)),
                         Expr::FnCall {
-                            func: Box::new(Expr::Symbol(Symbol("count".to_string()))),
+                            func: Box::new(Expr::Symbol(Symbol("count".to_string()), Span::new(0, 0))),
                             args: vec![vec.clone()],
                             span: Span::new(0, 0),
                         },
                     ],
                     span: Span::new(0, 0),
                 }),
-                then_branch: Box::new(Expr::Symbol(Symbol("result".to_string()))),
+                then_branch: Box::new(Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0))),
                 else_branch: Box::new(Expr::Do {
                     exprs: vec![
                         Expr::FnCall {
-                            func: Box::new(Expr::Symbol(Symbol("push".to_string()))),
+                            func: Box::new(Expr::Symbol(Symbol("push".to_string()), Span::new(0, 0))),
                             args: vec![
-                                Expr::Symbol(Symbol("result".to_string())),
+                                Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0)),
                                 Expr::FnCall {
                                     func: Box::new(fn_sym),
                                     args: vec![Expr::FnCall {
-                                        func: Box::new(Expr::Symbol(Symbol("get".to_string()))),
-                                        args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()))],
+                                        func: Box::new(Expr::Symbol(Symbol("get".to_string()), Span::new(0, 0))),
+                                        args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0))],
                                         span: Span::new(0, 0),
                                     }],
                                     span: Span::new(0, 0),
@@ -934,11 +934,11 @@ impl LoweringCtx {
                         Expr::Recur {
                             args: vec![
                                 Expr::FnCall {
-                                    func: Box::new(Expr::Symbol(Symbol("+".to_string()))),
-                                    args: vec![Expr::Symbol(Symbol("i".to_string())), Expr::Number(1)],
+                                    func: Box::new(Expr::Symbol(Symbol("+".to_string()), Span::new(0, 0))),
+                                    args: vec![Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)), Expr::Number(1, Span::new(0, 0))],
                                     span: Span::new(0, 0),
                                 },
-                                Expr::Symbol(Symbol("result".to_string())),
+                                Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0)),
                             ],
                             span: Span::new(0, 0),
                         },
@@ -957,50 +957,50 @@ impl LoweringCtx {
         let fn_sym = self.extract_callable(pred)?;
         let loop_expr = Expr::Loop {
             bindings: vec![
-                (Symbol("i".to_string()), Expr::Number(0)),
+                (Symbol("i".to_string()), Expr::Number(0, Span::new(0, 0))),
                 (Symbol("result".to_string()), Expr::FnCall {
-                    func: Box::new(Expr::Symbol(Symbol("vector".to_string()))),
+                    func: Box::new(Expr::Symbol(Symbol("vector".to_string()), Span::new(0, 0))),
                     args: vec![],
                     span: Span::new(0, 0),
                 }),
             ],
             body: Box::new(Expr::If {
                 cond: Box::new(Expr::FnCall {
-                    func: Box::new(Expr::Symbol(Symbol("=".to_string()))),
+                    func: Box::new(Expr::Symbol(Symbol("=".to_string()), Span::new(0, 0))),
                     args: vec![
-                        Expr::Symbol(Symbol("i".to_string())),
+                        Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)),
                         Expr::FnCall {
-                            func: Box::new(Expr::Symbol(Symbol("count".to_string()))),
+                            func: Box::new(Expr::Symbol(Symbol("count".to_string()), Span::new(0, 0))),
                             args: vec![vec.clone()],
                             span: Span::new(0, 0),
                         },
                     ],
                     span: Span::new(0, 0),
                 }),
-                then_branch: Box::new(Expr::Symbol(Symbol("result".to_string()))),
+                then_branch: Box::new(Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0))),
                 else_branch: Box::new(Expr::Do {
                     exprs: vec![
                         Expr::Let {
                             bindings: vec![(Symbol("elem".to_string()), Expr::FnCall {
-                                func: Box::new(Expr::Symbol(Symbol("get".to_string()))),
-                                args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()))],
+                                func: Box::new(Expr::Symbol(Symbol("get".to_string()), Span::new(0, 0))),
+                                args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0))],
                                 span: Span::new(0, 0),
                             })],
                             body: Box::new(Expr::If {
                                 cond: Box::new(Expr::FnCall {
                                     func: Box::new(fn_sym.clone()),
-                                    args: vec![Expr::Symbol(Symbol("elem".to_string()))],
+                                    args: vec![Expr::Symbol(Symbol("elem".to_string()), Span::new(0, 0))],
                                     span: Span::new(0, 0),
                                 }),
                                 then_branch: Box::new(Expr::FnCall {
-                                    func: Box::new(Expr::Symbol(Symbol("push".to_string()))),
+                                    func: Box::new(Expr::Symbol(Symbol("push".to_string()), Span::new(0, 0))),
                                     args: vec![
-                                        Expr::Symbol(Symbol("result".to_string())),
-                                        Expr::Symbol(Symbol("elem".to_string())),
+                                        Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0)),
+                                        Expr::Symbol(Symbol("elem".to_string()), Span::new(0, 0)),
                                     ],
                                     span: Span::new(0, 0),
                                 }),
-                                else_branch: Box::new(Expr::Number(0)),
+                                else_branch: Box::new(Expr::Number(0, Span::new(0, 0))),
                                 span: Span::new(0, 0),
                             }),
                             span: Span::new(0, 0),
@@ -1008,11 +1008,11 @@ impl LoweringCtx {
                         Expr::Recur {
                             args: vec![
                                 Expr::FnCall {
-                                    func: Box::new(Expr::Symbol(Symbol("+".to_string()))),
-                                    args: vec![Expr::Symbol(Symbol("i".to_string())), Expr::Number(1)],
+                                    func: Box::new(Expr::Symbol(Symbol("+".to_string()), Span::new(0, 0))),
+                                    args: vec![Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)), Expr::Number(1, Span::new(0, 0))],
                                     span: Span::new(0, 0),
                                 },
-                                Expr::Symbol(Symbol("result".to_string())),
+                                Expr::Symbol(Symbol("result".to_string()), Span::new(0, 0)),
                             ],
                             span: Span::new(0, 0),
                         },
@@ -1031,37 +1031,37 @@ impl LoweringCtx {
         let fn_sym = self.extract_callable(f)?;
         let loop_expr = Expr::Loop {
             bindings: vec![
-                (Symbol("i".to_string()), Expr::Number(0)),
+                (Symbol("i".to_string()), Expr::Number(0, Span::new(0, 0))),
                 (Symbol("acc".to_string()), init.clone()),
             ],
             body: Box::new(Expr::If {
                 cond: Box::new(Expr::FnCall {
-                    func: Box::new(Expr::Symbol(Symbol("=".to_string()))),
+                    func: Box::new(Expr::Symbol(Symbol("=".to_string()), Span::new(0, 0))),
                     args: vec![
-                        Expr::Symbol(Symbol("i".to_string())),
+                        Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)),
                         Expr::FnCall {
-                            func: Box::new(Expr::Symbol(Symbol("count".to_string()))),
+                            func: Box::new(Expr::Symbol(Symbol("count".to_string()), Span::new(0, 0))),
                             args: vec![vec.clone()],
                             span: Span::new(0, 0),
                         },
                     ],
                     span: Span::new(0, 0),
                 }),
-                then_branch: Box::new(Expr::Symbol(Symbol("acc".to_string()))),
+                then_branch: Box::new(Expr::Symbol(Symbol("acc".to_string()), Span::new(0, 0))),
                 else_branch: Box::new(Expr::Recur {
                     args: vec![
                         Expr::FnCall {
-                            func: Box::new(Expr::Symbol(Symbol("+".to_string()))),
-                            args: vec![Expr::Symbol(Symbol("i".to_string())), Expr::Number(1)],
+                            func: Box::new(Expr::Symbol(Symbol("+".to_string()), Span::new(0, 0))),
+                            args: vec![Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0)), Expr::Number(1, Span::new(0, 0))],
                             span: Span::new(0, 0),
                         },
                         Expr::FnCall {
                             func: Box::new(fn_sym),
                             args: vec![
-                                Expr::Symbol(Symbol("acc".to_string())),
+                                Expr::Symbol(Symbol("acc".to_string()), Span::new(0, 0)),
                                 Expr::FnCall {
-                                    func: Box::new(Expr::Symbol(Symbol("get".to_string()))),
-                                    args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()))],
+                                    func: Box::new(Expr::Symbol(Symbol("get".to_string()), Span::new(0, 0))),
+                                    args: vec![vec.clone(), Expr::Symbol(Symbol("i".to_string()), Span::new(0, 0))],
                                     span: Span::new(0, 0),
                                 },
                             ],
@@ -1081,7 +1081,7 @@ impl LoweringCtx {
     /// For lambdas, extract them to a named function and return the symbol.
     fn extract_callable(&mut self, expr: &Expr) -> Result<Expr> {
         match expr {
-            Expr::Symbol(_) => Ok(expr.clone()),
+            Expr::Symbol(_, _) => Ok(expr.clone()),
             Expr::Lambda { params, body, .. } => {
                 // Save lowering state
                 let saved_blocks = std::mem::take(&mut self.blocks);
@@ -1102,7 +1102,7 @@ impl LoweringCtx {
                 self.current_block_active = saved_active;
                 self.loop_stack = saved_loop;
 
-                Ok(Expr::Symbol(Symbol(name)))
+                Ok(Expr::Symbol(Symbol(name), Span::new(0, 0)))
             }
             other => bail!("Cannot use {:?} as a callable function", other),
         }

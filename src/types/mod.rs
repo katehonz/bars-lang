@@ -246,11 +246,11 @@ impl InferCtx {
     fn infer_expr(&mut self, env: &mut TypeEnv, expr: &Expr) -> Result<Type, TypeError> {
         let span = expr.span();
         match expr {
-            Expr::Number(_) => Ok(Type::I64),
-            Expr::Float(_) => Ok(Type::F64),
-            Expr::Bool(_) => Ok(Type::Bool),
-            Expr::String(_) => Ok(Type::I64),
-            Expr::Symbol(sym) => {
+            Expr::Number(_, _) => Ok(Type::I64),
+            Expr::Float(_, _) => Ok(Type::F64),
+            Expr::Bool(_, _) => Ok(Type::Bool),
+            Expr::String(_, _) => Ok(Type::I64),
+            Expr::Symbol(sym, _) => {
                 match env.get(&sym.0) {
                     Some(scheme) => {
                         let ty = self.instantiate(scheme);
@@ -259,7 +259,7 @@ impl InferCtx {
                     None => Err(TypeError::UndefinedVar(sym.0.clone(), span.line, span.col)),
                 }
             }
-            Expr::Keyword(_) => Ok(Type::String),
+            Expr::Keyword(_, _) => Ok(Type::String),
 
             Expr::Let { bindings, body, span: _let_span } => {
                 for (name, val_expr) in bindings {
@@ -683,6 +683,25 @@ impl fmt::Display for TypeError {
             TypeError::Mismatch(a, b) => write!(f, "Type mismatch: expected {}, found {}", a, b),
             TypeError::UndefinedVar(name, line, col) => write!(f, "Undefined variable '{}' at line {}, col {}", name, line, col),
             TypeError::Circular(id, ty) => write!(f, "Circular type: 't{} appears in {}", id, ty),
+        }
+    }
+}
+
+impl TypeError {
+    pub fn location(&self) -> (usize, usize) {
+        match self {
+            TypeError::UndefinedVar(_, line, col) => (*line, *col),
+            _ => (0, 0),
+        }
+    }
+
+    pub fn short_message(&self) -> String {
+        match self {
+            TypeError::Mismatch(expected, found) => {
+                format!("type mismatch: expected {expected}, found {found}")
+            }
+            TypeError::UndefinedVar(name, _, _) => format!("undefined variable '{name}'"),
+            TypeError::Circular(id, ty) => format!("circular type: t{id} appears in {ty}"),
         }
     }
 }

@@ -4,7 +4,7 @@ use bars::reader;
 fn test_parse_number() {
     let prog = reader::read("42").unwrap();
     assert_eq!(prog.exprs.len(), 1);
-    assert!(matches!(prog.exprs[0], bars::ast::Expr::Number(42)));
+    assert!(matches!(prog.exprs[0], bars::ast::Expr::Number(42, _)));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn test_parse_vector() {
 fn test_parse_keyword() {
     let prog = reader::read(":hello").unwrap();
     assert_eq!(prog.exprs.len(), 1);
-    assert!(matches!(prog.exprs[0], bars::ast::Expr::Keyword(_)));
+    assert!(matches!(prog.exprs[0], bars::ast::Expr::Keyword(_, _)));
 }
 
 #[test]

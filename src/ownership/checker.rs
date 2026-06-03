@@ -19,6 +19,30 @@ pub enum OwnershipError {
     ResourceLeak(String, usize, usize),
 }
 
+impl OwnershipError {
+    pub fn location(&self) -> (usize, usize) {
+        match self {
+            OwnershipError::UseAfterMove(_, line, col)
+            | OwnershipError::AlreadyBorrowed(_, line, col)
+            | OwnershipError::AlreadyMutBorrowed(_, line, col)
+            | OwnershipError::MoveWhileBorrowed(_, line, col)
+            | OwnershipError::NotFound(_, line, col)
+            | OwnershipError::ResourceLeak(_, line, col) => (*line, *col),
+        }
+    }
+
+    pub fn short_message(&self) -> String {
+        match self {
+            OwnershipError::UseAfterMove(name, _, _) => format!("use after move: '{name}'"),
+            OwnershipError::AlreadyBorrowed(name, _, _) => format!("cannot mutably borrow '{name}'"),
+            OwnershipError::AlreadyMutBorrowed(name, _, _) => format!("cannot borrow '{name}'"),
+            OwnershipError::MoveWhileBorrowed(name, _, _) => format!("cannot move '{name}' while borrowed"),
+            OwnershipError::NotFound(name, _, _) => format!("variable '{name}' not found"),
+            OwnershipError::ResourceLeak(name, _, _) => format!("resource leak: '{name}' is never consumed"),
+        }
+    }
+}
+
 /// Registry of function signatures discovered during pre-scan
 #[derive(Debug, Clone, Default)]
 pub struct FunctionRegistry {
@@ -160,10 +184,10 @@ fn err_span(expr: &Expr, parent: Span) -> Span {
 /// Determine if an expression evaluates to a Copy type
 fn expr_is_copy(expr: &Expr, _registry: &FunctionRegistry) -> bool {
     match expr {
-        Expr::Number(_) | Expr::Bool(_) | Expr::Float(_) => true,
-        Expr::String(_) | Expr::Vector(_, _) => true,
+        Expr::Number(_, _) | Expr::Bool(_, _) | Expr::Float(_, _) => true,
+        Expr::String(_, _) | Expr::Vector(_, _) => true,
         Expr::FnCall { func, .. } => {
-            if let Expr::Symbol(sym) = func.as_ref() {
+            if let Expr::Symbol(sym, _) = func.as_ref() {
                 matches!(sym.0.as_str(),
                     "+" | "-" | "*" | "/" | "%" |
                     "=" | "!=" | "<" | ">" | "<=" | ">=" |
@@ -180,7 +204,7 @@ fn expr_is_copy(expr: &Expr, _registry: &FunctionRegistry) -> bool {
                 false
             }
         }
-        Expr::Symbol(_sym) => false,
+        Expr::Symbol(_sym, _) => false,
         _ => false,
     }
 }
@@ -215,14 +239,14 @@ fn check_expr(
     let span = err_span(expr, parent_span);
 
     match expr {
-        Expr::Number(_) | Expr::Float(_) | Expr::Bool(_) => {
+        Expr::Number(_, _) | Expr::Float(_, _) | Expr::Bool(_, _) => {
             Ok(OwnershipState::Copy)
         }
-        Expr::String(_) | Expr::Keyword(_) => {
+        Expr::String(_, _) | Expr::Keyword(_, _) => {
             Ok(OwnershipState::Owned)
         }
 
-        Expr::Symbol(sym) => {
+        Expr::Symbol(sym, _) => {
             let name = &sym.0;
             match env.get(name) {
                 Some(OwnershipState::Moved) => {
@@ -244,7 +268,7 @@ fn check_expr(
                 // NLL: after binding initializer, release borrows
                 env.release_borrows();
 
-                if let Expr::Symbol(sym) = val_expr {
+                if let Expr::Symbol(sym, _) = val_expr {
                     match env.get(&sym.0) {
                         Some(OwnershipState::Borrowed { .. }) => {
                             return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), span.line, span.col));
@@ -324,7 +348,7 @@ fn check_expr(
             let _val_state = check_expr(value, env, registry, def_span.clone())?;
             env.release_borrows();
 
-            if let Expr::Symbol(sym) = value.as_ref() {
+            if let Expr::Symbol(sym, _) = value.as_ref() {
                 match env.get(&sym.0) {
                     Some(OwnershipState::Borrowed { .. }) => {
                         return Err(OwnershipError::MoveWhileBorrowed(sym.0.clone(), def_span.line, def_span.col));
@@ -379,7 +403,7 @@ fn check_expr(
             check_expr(func_expr, env, registry, call_span.clone())?;
 
             let func_name = match func_expr.as_ref() {
-                Expr::Symbol(sym) => Some(sym.0.clone()),
+                Expr::Symbol(sym, _) => Some(sym.0.clone()),
                 _ => None,
             };
             let param_types: Option<&Vec<Option<AstType>>> = func_name.as_ref().and_then(|n| registry.get(n));
@@ -389,7 +413,7 @@ fn check_expr(
 
                 match arg {
                     Expr::Borrow(inner, is_mut, _) => {
-                        if let Expr::Symbol(sym) = inner.as_ref() {
+                        if let Expr::Symbol(sym, _) = inner.as_ref() {
                             let name = &sym.0;
                             match env.get(name) {
                                 Some(OwnershipState::Moved) => {
@@ -415,7 +439,7 @@ fn check_expr(
                         }
                         check_expr(inner, env, registry, call_span.clone())?;
                     }
-                    Expr::Symbol(sym) => {
+                    Expr::Symbol(sym, _) => {
                         // If function expects a borrow but symbol is passed directly, error
                         // unless it's already borrowed (reborrow) or we can do an implicit borrow.
                         if matches!(expected_ty, Some(AstType::Ref(_)) | Some(AstType::MutRef(_))) {
@@ -456,7 +480,7 @@ fn check_expr(
         }
 
         Expr::Borrow(inner, is_mut, _) => {
-            if let Expr::Symbol(sym) = inner.as_ref() {
+            if let Expr::Symbol(sym, _) = inner.as_ref() {
                 let name = &sym.0;
                 match env.get(name) {
                     Some(OwnershipState::Moved) => {
@@ -488,7 +512,7 @@ fn check_expr(
             for (name, val_expr) in bindings {
                 let _val_state = check_expr(val_expr, env, registry, loop_span.clone())?;
                 env.release_borrows();
-                if let Expr::Symbol(sym) = val_expr {
+                if let Expr::Symbol(sym, _) = val_expr {
                     env.update(&sym.0, OwnershipState::Moved);
                 }
                 env.insert(name.0.clone(), OwnershipState::Owned);
@@ -543,7 +567,7 @@ fn check_expr(
         Expr::Extern { .. } => Ok(OwnershipState::Owned),
 
         Expr::FieldAccess { expr: inner, field, span: field_span } => {
-            if let Expr::Symbol(sym) = inner.as_ref() {
+            if let Expr::Symbol(sym, _) = inner.as_ref() {
                 match env.get(&sym.0) {
                     Some(OwnershipState::Moved) => {
                         return Err(OwnershipError::UseAfterMove(

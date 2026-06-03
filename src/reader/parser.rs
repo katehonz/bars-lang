@@ -92,36 +92,43 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Borrow(Box::new(expr), is_mut, span))
             }
             Token::Number(n) => {
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Number(*n))
+                Ok(Expr::Number(*n, atom_span))
             }
             Token::Float(n) => {
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Float(*n))
+                Ok(Expr::Float(*n, atom_span))
             }
             Token::String(s) => {
                 let s = s.clone();
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::String(s))
+                Ok(Expr::String(s, atom_span))
             }
             Token::Symbol(s) => {
                 let s = s.clone();
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Symbol(Symbol(s)))
+                Ok(Expr::Symbol(Symbol(s), atom_span))
             }
             Token::Keyword(s) => {
                 let s = s.clone();
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Keyword(Keyword(s)))
+                Ok(Expr::Keyword(Keyword(s), atom_span))
             }
             Token::Bool(b) => {
                 let b = *b;
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Bool(b))
+                Ok(Expr::Bool(b, atom_span))
             }
             Token::Nil => {
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Expr::Symbol(Symbol("nil".to_string())))
+                Ok(Expr::Symbol(Symbol("nil".to_string()), atom_span))
             }
             other => bail!("Unexpected token: {} at line {}, col {}", other, span.line, span.col),
         }
@@ -216,7 +223,7 @@ impl<'a> Parser<'a> {
         let cond = self.parse_expr()?;
         let then_branch = self.parse_expr()?;
         let else_branch = if matches!(self.peek(), Some(Token::RParen)) {
-            Expr::Symbol(Symbol("nil".to_string()))
+            Expr::Symbol(Symbol("nil".to_string()), start_span.clone())
         } else {
             self.parse_expr()?
         };
@@ -508,28 +515,33 @@ impl<'a> Parser<'a> {
             }
             Token::Number(n) => {
                 let n = *n;
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Pattern::Literal(Expr::Number(n)))
+                Ok(Pattern::Literal(Expr::Number(n, atom_span)))
             }
             Token::Float(f) => {
                 let f = *f;
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Pattern::Literal(Expr::Float(f)))
+                Ok(Pattern::Literal(Expr::Float(f, atom_span)))
             }
             Token::Bool(b) => {
                 let b = *b;
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Pattern::Literal(Expr::Bool(b)))
+                Ok(Pattern::Literal(Expr::Bool(b, atom_span)))
             }
             Token::String(s) => {
                 let s = s.clone();
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Pattern::Literal(Expr::String(s)))
+                Ok(Pattern::Literal(Expr::String(s, atom_span)))
             }
             Token::Keyword(k) => {
                 let k = k.clone();
+                let atom_span = self.current_span();
                 self.advance();
-                Ok(Pattern::Literal(Expr::Keyword(Keyword(k))))
+                Ok(Pattern::Literal(Expr::Keyword(Keyword(k), atom_span)))
             }
             Token::LBracket => {
                 self.advance(); // consume '['

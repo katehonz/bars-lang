@@ -84,12 +84,12 @@ pub enum Pattern {
 /// Expressions in Bars AST
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Number(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
-    Symbol(Symbol),
-    Keyword(Keyword),
+    Number(i64, Span),
+    Float(f64, Span),
+    Bool(bool, Span),
+    String(String, Span),
+    Symbol(Symbol, Span),
+    Keyword(Keyword, Span),
     List(Vec<Expr>, Span),
     Vector(Vec<Expr>, Span),
 
@@ -183,8 +183,8 @@ pub enum Expr {
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
-            Expr::Number(_) | Expr::Float(_) | Expr::Bool(_) | Expr::String(_) |
-            Expr::Symbol(_) | Expr::Keyword(_) => Span::new(0, 0),
+            Expr::Number(_, s) | Expr::Float(_, s) | Expr::Bool(_, s) | Expr::String(_, s) |
+            Expr::Symbol(_, s) | Expr::Keyword(_, s) => s.clone(),
             Expr::List(_, s) | Expr::Vector(_, s) => s.clone(),
             Expr::Let { span, .. } => span.clone(),
             Expr::If { span, .. } => span.clone(),

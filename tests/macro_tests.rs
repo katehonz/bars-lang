@@ -21,7 +21,7 @@ fn test_thread_first() {
     let expanded = expand_program(&prog).unwrap();
     // Should expand to (mul (add 5 3) 2)
     if let bars::ast::Expr::FnCall { func, args, .. } = &expanded.exprs[0] {
-        assert!(matches!(func.as_ref(), bars::ast::Expr::Symbol(sym) if sym.0 == "mul"));
+        assert!(matches!(func.as_ref(), bars::ast::Expr::Symbol(sym, _) if sym.0 == "mul"));
         assert_eq!(args.len(), 2);
     } else {
         panic!("Expected FnCall");
@@ -34,7 +34,7 @@ fn test_thread_last() {
     let expanded = expand_program(&prog).unwrap();
     // Should expand to (mul 2 (add 3 5))
     if let bars::ast::Expr::FnCall { func, args, .. } = &expanded.exprs[0] {
-        assert!(matches!(func.as_ref(), bars::ast::Expr::Symbol(sym) if sym.0 == "mul"));
+        assert!(matches!(func.as_ref(), bars::ast::Expr::Symbol(sym, _) if sym.0 == "mul"));
         assert_eq!(args.len(), 2);
     } else {
         panic!("Expected FnCall");
@@ -68,9 +68,9 @@ fn test_defmacro_with_syntax_quote() {
     assert_eq!(expanded.exprs.len(), 1); // only defn remains
     if let bars::ast::Expr::Defn { body, .. } = &expanded.exprs[0] {
         if let bars::ast::Expr::If { cond, then_branch, else_branch, .. } = body.as_ref() {
-            assert!(matches!(cond.as_ref(), bars::ast::Expr::Bool(false)));
-            assert!(matches!(then_branch.as_ref(), bars::ast::Expr::Bool(false)));
-            assert!(matches!(else_branch.as_ref(), bars::ast::Expr::Number(42)));
+            assert!(matches!(cond.as_ref(), bars::ast::Expr::Bool(false, _)));
+            assert!(matches!(then_branch.as_ref(), bars::ast::Expr::Bool(false, _)));
+            assert!(matches!(else_branch.as_ref(), bars::ast::Expr::Number(42, _)));
         } else {
             panic!("Expected If in body, got: {:?}", body);
         }

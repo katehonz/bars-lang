@@ -35,11 +35,11 @@ impl MacroVal {
     /// Convert an AST expr to a MacroVal
     pub fn from_expr(expr: &Expr) -> Self {
         match expr {
-            Expr::Number(n) => MacroVal::Number(*n),
-            Expr::Bool(b) => MacroVal::Bool(*b),
-            Expr::String(s) => MacroVal::String(s.clone()),
-            Expr::Keyword(k) => MacroVal::Keyword(k.clone()),
-            Expr::Symbol(s) if s.0 == "nil" => MacroVal::Nil,
+            Expr::Number(n, _) => MacroVal::Number(*n),
+            Expr::Bool(b, _) => MacroVal::Bool(*b),
+            Expr::String(s, _) => MacroVal::String(s.clone()),
+            Expr::Keyword(k, _) => MacroVal::Keyword(k.clone()),
+            Expr::Symbol(s, _) if s.0 == "nil" => MacroVal::Nil,
             other => MacroVal::Expr(other.clone()),
         }
     }
@@ -47,13 +47,13 @@ impl MacroVal {
     /// Convert back to AST expr
     pub fn to_expr(&self) -> Expr {
         match self {
-            MacroVal::Number(n) => Expr::Number(*n),
-            MacroVal::Bool(b) => Expr::Bool(*b),
-            MacroVal::String(s) => Expr::String(s.clone()),
-            MacroVal::Keyword(k) => Expr::Keyword(k.clone()),
+            MacroVal::Number(n) => Expr::Number(*n, Span::new(0, 0)),
+            MacroVal::Bool(b) => Expr::Bool(*b, Span::new(0, 0)),
+            MacroVal::String(s) => Expr::String(s.clone(), Span::new(0, 0)),
+            MacroVal::Keyword(k) => Expr::Keyword(k.clone(), Span::new(0, 0)),
             MacroVal::Expr(e) => e.clone(),
-            MacroVal::Nil => Expr::Symbol(Symbol("nil".to_string())),
-            MacroVal::Fn { .. } => Expr::Symbol(Symbol("<fn>".to_string())),
+            MacroVal::Nil => Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0)),
+            MacroVal::Fn { .. } => Expr::Symbol(Symbol("<fn>".to_string()), Span::new(0, 0)),
         }
     }
 
@@ -105,12 +105,12 @@ impl InterpEnv {
 /// Evaluate an expression in the macro interpreter
 pub fn eval(expr: &Expr, env: &mut InterpEnv) -> Result<MacroVal> {
     match expr {
-        Expr::Number(n) => Ok(MacroVal::Number(*n)),
-        Expr::Bool(b) => Ok(MacroVal::Bool(*b)),
-        Expr::String(s) => Ok(MacroVal::String(s.clone())),
-        Expr::Keyword(k) => Ok(MacroVal::Keyword(k.clone())),
-        Expr::Symbol(s) if s.0 == "nil" => Ok(MacroVal::Nil),
-        Expr::Symbol(s) => {
+        Expr::Number(n, _) => Ok(MacroVal::Number(*n)),
+        Expr::Bool(b, _) => Ok(MacroVal::Bool(*b)),
+        Expr::String(s, _) => Ok(MacroVal::String(s.clone())),
+        Expr::Keyword(k, _) => Ok(MacroVal::Keyword(k.clone())),
+        Expr::Symbol(s, _) if s.0 == "nil" => Ok(MacroVal::Nil),
+        Expr::Symbol(s, _) => {
             match env.get(&s.0) {
                 Some(v) => {
                     // If the bound value is an unevaluated FnCall, evaluate it now
@@ -120,7 +120,7 @@ pub fn eval(expr: &Expr, env: &mut InterpEnv) -> Result<MacroVal> {
                         Ok(v.clone())
                     }
                 }
-                None => Ok(MacroVal::Expr(Expr::Symbol(s.clone()))),
+                None => Ok(MacroVal::Expr(Expr::Symbol(s.clone(), Span::new(0, 0)))),
             }
         }
 
@@ -148,7 +148,7 @@ pub fn eval(expr: &Expr, env: &mut InterpEnv) -> Result<MacroVal> {
                     let result = eval(&body, &mut new_env)?;
                     Ok(result)
                 }
-                MacroVal::Expr(Expr::Symbol(s)) => {
+                MacroVal::Expr(Expr::Symbol(s, _)) => {
                     // Built-in interpreter functions
                     eval_builtin(&s.0, args, env)
                 }
@@ -246,8 +246,8 @@ pub fn expand_syntax_quote(expr: &Expr, env: &mut InterpEnv) -> Result<Expr> {
             let val = eval(inner, env)?;
             Ok(val.to_expr())
         }
-        Expr::Symbol(s) => {
-            Ok(Expr::Quote(Box::new(Expr::Symbol(s.clone())), Span::new(0, 0)))
+        Expr::Symbol(s, _) => {
+            Ok(Expr::Quote(Box::new(Expr::Symbol(s.clone(), Span::new(0, 0))), Span::new(0, 0)))
         }
         Expr::List(items, span) => {
             let mut result = Vec::new();
@@ -467,7 +467,7 @@ fn eval_builtin(name: &str, args: &[Expr], env: &mut InterpEnv) -> Result<MacroV
         "symbol?" => {
             if args.is_empty() { bail!("symbol? requires an argument"); }
             let val = eval(&args[0], env)?;
-            Ok(MacroVal::Bool(matches!(val, MacroVal::Expr(Expr::Symbol(_)))))
+            Ok(MacroVal::Bool(matches!(val, MacroVal::Expr(Expr::Symbol(_, _)))))
         }
         "list?" => {
             if args.is_empty() { bail!("list? requires an argument"); }

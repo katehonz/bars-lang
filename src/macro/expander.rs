@@ -67,7 +67,7 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
             let expanded_args = expanded_args?;
 
             // Check if func is a macro name
-            if let Expr::Symbol(sym) = &expanded_func {
+            if let Expr::Symbol(sym, _) = &expanded_func {
                 if let Some(expanded) = try_expand_macro(&sym.0, &expanded_args, span, macro_env)? {
                     // Recursively expand the macro result (to unwrap quoted funcs, etc.)
                     return expand_expr(&expanded, macro_env);
@@ -94,7 +94,7 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
                     Expr::Quote(inner, _) => *inner.clone(),
                     _ => func,
                 };
-                if let Expr::Symbol(sym) = &func {
+                if let Expr::Symbol(sym, _) = &func {
                     if let Some(expanded) = try_expand_macro(&sym.0, &args, span, macro_env)? {
                         return Ok(expanded);
                     }
@@ -250,7 +250,7 @@ fn expand_when(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
     }
     let cond = args[0].clone();
     let body = if args.len() == 1 {
-        Expr::Symbol(Symbol("nil".to_string()))
+        Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0))
     } else {
         Expr::Do {
             exprs: args[1..].to_vec(),
@@ -260,7 +260,7 @@ fn expand_when(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
     Ok(Some(Expr::If {
         cond: Box::new(cond),
         then_branch: Box::new(body),
-        else_branch: Box::new(Expr::Symbol(Symbol("nil".to_string()))),
+        else_branch: Box::new(Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0))),
         span: span.clone(),
     }))
 }
@@ -272,12 +272,12 @@ fn expand_unless(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError>
         return Err(MacroError::WrongArity("unless".to_string(), 1, 0));
     }
     let cond = Expr::FnCall {
-        func: Box::new(Expr::Symbol(Symbol("not".to_string()))),
+        func: Box::new(Expr::Symbol(Symbol("not".to_string()), Span::new(0, 0))),
         args: vec![args[0].clone()],
         span: span.clone(),
     };
     let body = if args.len() == 1 {
-        Expr::Symbol(Symbol("nil".to_string()))
+        Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0))
     } else {
         Expr::Do {
             exprs: args[1..].to_vec(),
@@ -287,7 +287,7 @@ fn expand_unless(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError>
     Ok(Some(Expr::If {
         cond: Box::new(cond),
         then_branch: Box::new(body),
-        else_branch: Box::new(Expr::Symbol(Symbol("nil".to_string()))),
+        else_branch: Box::new(Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0))),
         span: span.clone(),
     }))
 }
@@ -323,8 +323,8 @@ fn expand_thread_first(args: &[Expr], span: &Span) -> Result<Option<Expr>, Macro
                     span: span.clone(),
                 }
             }
-            Expr::Symbol(sym) => Expr::FnCall {
-                func: Box::new(Expr::Symbol(sym.clone())),
+            Expr::Symbol(sym, _) => Expr::FnCall {
+                func: Box::new(Expr::Symbol(sym.clone(), Span::new(0, 0))),
                 args: vec![result],
                 span: span.clone(),
             },
@@ -367,8 +367,8 @@ fn expand_thread_last(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroE
                     span: span.clone(),
                 }
             }
-            Expr::Symbol(sym) => Expr::FnCall {
-                func: Box::new(Expr::Symbol(sym.clone())),
+            Expr::Symbol(sym, _) => Expr::FnCall {
+                func: Box::new(Expr::Symbol(sym.clone(), Span::new(0, 0))),
                 args: vec![result],
                 span: span.clone(),
             },
@@ -384,16 +384,16 @@ fn expand_thread_last(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroE
 /// => (if p1 e1 (if p2 e2 ...))
 fn expand_cond(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
     if args.is_empty() {
-        return Ok(Some(Expr::Symbol(Symbol("nil".to_string()))));
+        return Ok(Some(Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0))));
     }
     // args should be pairs: [condition1, result1, condition2, result2, ...]
-    let mut result = Expr::Symbol(Symbol("nil".to_string()));
+    let mut result = Expr::Symbol(Symbol("nil".to_string()), Span::new(0, 0));
     // Process in reverse to build nested ifs from inside out
     let mut i = args.len();
     while i >= 2 {
         i -= 2;
         let cond = match &args[i] {
-            Expr::Keyword(_) => Expr::Bool(true),
+            Expr::Keyword(_, _) => Expr::Bool(true, Span::new(0, 0)),
             other => other.clone(),
         };
         let then_val = args[i + 1].clone();

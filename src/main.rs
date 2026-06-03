@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bars::{ast, cli::{Backend, Cli, Commands}, read_file};
+use bars::{ast, cli::{Backend, Cli, Commands}, diagnostics, read_file};
 use clap::Parser;
 use std::io::Write;
 use std::path::Path;
@@ -70,7 +70,10 @@ fn main() -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        eprintln!("❌ Type error: {}", e);
+                        let (line, col) = e.location();
+                        let diag = diagnostics::Diagnostic::error(e.short_message())
+                            .with_location(file.display().to_string(), line, col);
+                        diagnostics::emit(&diag);
                         std::process::exit(1);
                     }
                 }
@@ -78,7 +81,10 @@ fn main() -> Result<()> {
                 match bars::ownership::check_program(&expanded) {
                     Ok(()) => println!("✅ Ownership checks passed."),
                     Err(e) => {
-                        eprintln!("❌ Ownership error: {}", e);
+                        let (line, col) = e.location();
+                        let diag = diagnostics::Diagnostic::error(e.short_message())
+                            .with_location(file.display().to_string(), line, col);
+                        diagnostics::emit(&diag);
                         std::process::exit(1);
                     }
                 }
@@ -89,16 +95,23 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn check_ownership(program: &ast::Program) -> Result<()> {
+fn check_ownership(program: &ast::Program, file: &Path) -> Result<()> {
     match bars::ownership::check_program(program) {
         Ok(()) => Ok(()),
         Err(e) => {
             // ResourceLeak checking is still experimental; treat as warning for now.
             if let bars::ownership::OwnershipError::ResourceLeak(_, _, _) = e {
-                eprintln!("⚠️  Ownership warning: {}", e);
+                let (line, col) = e.location();
+                let diag = diagnostics::Diagnostic::warning(e.short_message())
+                    .with_location(file.display().to_string(), line, col);
+                diagnostics::emit(&diag);
                 Ok(())
             } else {
-                bail!("❌ Ownership error: {}", e)
+                let (line, col) = e.location();
+                let diag = diagnostics::Diagnostic::error(e.short_message())
+                    .with_location(file.display().to_string(), line, col);
+                diagnostics::emit(&diag);
+                bail!("ownership check failed")
             }
         }
     }
@@ -107,7 +120,7 @@ fn check_ownership(program: &ast::Program) -> Result<()> {
 fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
-    check_ownership(&expanded)?;
+    check_ownership(&expanded, file)?;
     let qbe_ir = bars::compile_to_qbe(&expanded)?;
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -147,7 +160,7 @@ fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
 fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
-    check_ownership(&expanded)?;
+    check_ownership(&expanded, file)?;
     let hir_program = bars::lower_and_optimize(&expanded)?;
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -178,7 +191,7 @@ fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
 fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
-    check_ownership(&expanded)?;
+    check_ownership(&expanded, file)?;
     let hir_program = bars::lower_and_optimize(&expanded)?;
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -209,7 +222,7 @@ fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
 fn run_file_qbe(file: &Path) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
-    check_ownership(&expanded)?;
+    check_ownership(&expanded, file)?;
     let qbe_ir = bars::compile_to_qbe(&expanded)?;
 
     // Write QBE IR to temp file
@@ -258,7 +271,7 @@ fn run_file_qbe(file: &Path) -> Result<()> {
 fn run_file_cranelift(file: &Path) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
-    check_ownership(&expanded)?;
+    check_ownership(&expanded, file)?;
     let hir_program = bars::lower_and_optimize(&expanded)?;
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -400,7 +413,7 @@ fn run_repl_jit() -> Result<()> {
                             continue;
                         }
                     };
-                    if let Err(e) = check_ownership(&expanded) {
+                    if let Err(e) = check_ownership(&expanded, Path::new("<repl>")) {
                         eprintln!("{}", e);
                         input.clear();
                         continue;

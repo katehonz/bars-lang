@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod backends;
 pub mod cli;
+pub mod diagnostics;
 pub mod hir;
 pub mod r#macro;
 pub mod ownership;
@@ -39,9 +40,9 @@ fn resolve_loads(program: &mut ast::Program, base: &std::path::Path, loaded: &mu
     let mut new_exprs = Vec::new();
     for expr in std::mem::take(&mut program.exprs) {
         if let ast::Expr::FnCall { func, args, .. } = &expr {
-            if let ast::Expr::Symbol(ast::Symbol(name)) = func.as_ref() {
+            if let ast::Expr::Symbol(ast::Symbol(name), _) = func.as_ref() {
                 if name == "load" && args.len() == 1 {
-                    if let ast::Expr::String(path_str) = &args[0] {
+                    if let ast::Expr::String(path_str, _) = &args[0] {
                         let dep_path = find_file(base, path_str)
                             .ok_or_else(|| anyhow::anyhow!("Cannot resolve load path '{}' from '{}'", path_str, base.display()))?;
                         let canonical = std::fs::canonicalize(&dep_path)
