@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Keyword, Pattern, Program, Span, Symbol, Type};
+use crate::ast::{Expr, Keyword, Pattern, Program, Span, Symbol, Type, Variant};
 use crate::reader::lexer::{SpannedToken, Token};
 use anyhow::{bail, Result};
 
@@ -146,6 +146,7 @@ impl<'a> Parser<'a> {
                 "quote" => return self.parse_quote(start_span),
                 "match" => return self.parse_match(start_span),
                 "defstruct" => return self.parse_defstruct(start_span),
+                "deftype" => return self.parse_deftype(start_span),
                 "fn" => return self.parse_lambda(start_span),
                 _ => {}
             }
@@ -493,6 +494,12 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Pattern::Wildcard)
             }
+            Token::Symbol(s) if s.chars().next().map_or(false, |c| c.is_uppercase()) => {
+                // Uppercase symbols in patterns are constructors (variant/struct)
+                let name = s.clone();
+                self.advance();
+                Ok(Pattern::Struct { name: Symbol(name), fields: vec![] })
+            }
             Token::Symbol(s) => {
                 let s = s.clone();
                 self.advance();
@@ -534,9 +541,10 @@ impl<'a> Parser<'a> {
             }
             Token::LParen => {
                 self.advance(); // consume '('
-                // Check if this is a struct pattern: (StructName field1 field2 ...)
+                // Check if this is a struct/variant pattern: (StructName field1 field2 ...)
                 if let Some(Token::Symbol(s)) = self.peek() {
                     let struct_name = s.clone();
+                    let is_uppercase = struct_name.chars().next().map_or(false, |c| c.is_uppercase());
                     self.advance();
                     let mut fields = Vec::new();
                     while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
@@ -544,11 +552,11 @@ impl<'a> Parser<'a> {
                         fields.push(field_pattern);
                     }
                     self.expect(Token::RParen)?;
-                    // If we consumed a symbol and then sub-patterns, treat as struct pattern
-                    if !fields.is_empty() {
+                    // Uppercase name always means struct/variant pattern, even with no fields
+                    if !fields.is_empty() || is_uppercase {
                         return Ok(Pattern::Struct { name: Symbol(struct_name), fields });
                     }
-                    // Just one symbol with no sub-patterns — treat as binding in a list
+                    // Lowercase symbol with no sub-patterns — treat as binding in a list
                     return Ok(Pattern::List(vec![Pattern::Binding(Symbol(struct_name))], span));
                 }
                 let mut items = Vec::new();
@@ -588,6 +596,67 @@ impl<'a> Parser<'a> {
         self.expect(Token::RBracket)?;
         self.expect(Token::RParen)?;
         Ok(Expr::DefStruct { name, fields, span: start_span })
+    }
+
+    fn parse_deftype(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'deftype'
+        let name = match self.peek() {
+            Some(Token::Symbol(s)) => {
+                let s = s.clone();
+                self.advance();
+                Symbol(s)
+            }
+            _ => bail!("Expected type name after deftype at line {}, col {}", start_span.line, start_span.col),
+        };
+        let mut variants = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                break;
+            }
+            // Each variant is [VariantName Type1 Type2 ...]
+            self.expect(Token::LBracket)?;
+            let variant_name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected variant name in deftype at line {}, col {}", start_span.line, start_span.col),
+            };
+            let mut fields = Vec::new();
+            while !matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+                self.skip_comments();
+                if matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+                    break;
+                }
+                let field_name = match self.peek() {
+                    Some(Token::Symbol(s)) => {
+                        let s = s.clone();
+                        self.advance();
+                        Symbol(s)
+                    }
+                    _ => bail!("Expected field name in variant at line {}, col {}", start_span.line, start_span.col),
+                };
+                // Optional type annotation
+                let field_type = if matches!(self.peek(), Some(Token::Symbol(s)) if is_type_name(s)) {
+                    if let Some(Token::Symbol(s)) = self.peek() {
+                        let ty = parse_type(s);
+                        self.advance();
+                        ty
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                fields.push((field_name, field_type));
+            }
+            self.expect(Token::RBracket)?;
+            variants.push(Variant { name: variant_name, fields });
+        }
+        self.expect(Token::RParen)?;
+        Ok(Expr::DefType { name, variants, span: start_span })
     }
 
     fn parse_field_access(&mut self, start_span: Span) -> Result<Expr> {
@@ -631,6 +700,10 @@ impl<'a> Parser<'a> {
         }
         Ok(())
     }
+}
+
+fn is_type_name(s: &str) -> bool {
+    matches!(s, "i64" | "f64" | "bool" | "void")
 }
 
 fn parse_type(s: &str) -> Option<Type> {

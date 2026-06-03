@@ -276,3 +276,57 @@ fn test_generic_const() {
         other => panic!("Expected function type, got {:?}", other),
     }
 }
+
+#[test]
+fn test_adt_constructor_types() {
+    let prog = reader::read(r#"
+        (deftype Option [Some i64] [None])
+        (defn main [] (Some 42))
+    "#).unwrap();
+    let mut ctx = InferCtx::new();
+    let (_, types) = ctx.infer_program(&prog).unwrap();
+    // main returns Option type (Named("Option"))
+    match &types.iter().find(|(n, _)| n == "main").map(|(_, t)| &t.ty) {
+        Some(Type::Fun(params, ret)) => {
+            assert!(params.is_empty());
+            assert_eq!(ret.as_ref(), &Type::Named("Option".to_string()));
+        }
+        other => panic!("Expected main: () → Option, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_adt_match_inference() {
+    let prog = reader::read(r#"
+        (deftype Option [Some i64] [None])
+        (defn unwrap [opt]
+          (match opt
+            (Some v) v
+            None 0))
+    "#).unwrap();
+    let mut ctx = InferCtx::new();
+    let result = ctx.infer_program(&prog);
+    assert!(result.is_ok(), "Type inference should succeed for ADT match: {:?}", result.err());
+}
+
+#[test]
+fn test_adt_result_type() {
+    let prog = reader::read(r#"
+        (deftype Result [Ok i64] [Err i64])
+        (defn ok-val [] (Ok 1))
+        (defn err-val [] (Err 2))
+    "#).unwrap();
+    let mut ctx = InferCtx::new();
+    let result = ctx.infer_program(&prog);
+    assert!(result.is_ok(), "Type inference should succeed for Result: {:?}", result.err());
+    let (_, types) = result.unwrap();
+    let result_type = Type::Named("Result".to_string());
+    for (name, scheme) in &types {
+        match &scheme.ty {
+            Type::Fun(_, ret) => {
+                assert_eq!(ret.as_ref(), &result_type, "{} should return Result", name);
+            }
+            _ => {}
+        }
+    }
+}

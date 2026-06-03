@@ -63,6 +63,13 @@ impl fmt::Display for Keyword {
     }
 }
 
+/// A variant in an algebraic data type definition
+#[derive(Debug, Clone, PartialEq)]
+pub struct Variant {
+    pub name: Symbol,
+    pub fields: Vec<(Symbol, Option<Type>)>,
+}
+
 /// Patterns for pattern matching
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
@@ -149,6 +156,11 @@ pub enum Expr {
         fields: Vec<Symbol>,
         span: Span,
     },
+    DefType {
+        name: Symbol,
+        variants: Vec<Variant>,
+        span: Span,
+    },
     FieldAccess {
         expr: Box<Expr>,
         field: Symbol,
@@ -179,6 +191,7 @@ impl Expr {
             Expr::Lambda { span, .. } => span.clone(),
             Expr::Match { span, .. } => span.clone(),
             Expr::DefStruct { span, .. } => span.clone(),
+            Expr::DefType { span, .. } => span.clone(),
             Expr::FieldAccess { span, .. } => span.clone(),
             Expr::Quote(_, s) => s.clone(),
             Expr::SyntaxQuote(_, s) => s.clone(),

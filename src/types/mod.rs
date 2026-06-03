@@ -133,6 +133,15 @@ impl InferCtx {
                 let ctor_ty = Type::Fun(param_tys, Box::new(Type::Named(name.0.clone())));
                 env.insert(name.0.clone(), TypeScheme::mono(ctor_ty));
             }
+            if let Expr::DefType { name, variants, .. } = expr {
+                let type_name = Type::Named(name.0.clone());
+                env.insert(name.0.clone(), TypeScheme::mono(type_name.clone()));
+                for variant in variants {
+                    let param_tys: Vec<Type> = variant.fields.iter().map(|_| self.fresh_var()).collect();
+                    let ctor_ty = Type::Fun(param_tys, Box::new(type_name.clone()));
+                    env.insert(variant.name.0.clone(), TypeScheme::mono(ctor_ty));
+                }
+            }
         }
 
         // First pass: register all function names with placeholders for forward references
@@ -162,14 +171,10 @@ impl InferCtx {
                         param_types.push(ity);
                     }
                     let body_ty = self.infer_expr(&mut func_env, body)?;
-                    let ret_constraint = match ret_type {
-                        Some(at) => {
-                            let constraint = Self::from_ast_type(at);
-                            self.constrain(body_ty.clone(), constraint.clone());
-                            constraint
-                        }
-                        None => body_ty.clone(),
-                    };
+                    if let Some(at) = ret_type {
+                        let constraint = Self::from_ast_type(at);
+                        self.constrain(body_ty.clone(), constraint);
+                    }
                     let fn_ty = Type::Fun(param_types, Box::new(body_ty.clone()));
                     let fn_scheme = self.generalize(&env, &fn_ty);
                     env.insert(name.0.clone(), fn_scheme.clone());
@@ -336,6 +341,17 @@ impl InferCtx {
 
             Expr::DefStruct { name, fields: _, .. } => {
                 env.insert(name.0.clone(), TypeScheme::mono(Type::Named(name.0.clone())));
+                Ok(Type::Void)
+            }
+
+            Expr::DefType { name, variants, .. } => {
+                let type_name = Type::Named(name.0.clone());
+                env.insert(name.0.clone(), TypeScheme::mono(type_name.clone()));
+                for variant in variants {
+                    let param_tys: Vec<Type> = variant.fields.iter().map(|_| self.fresh_var()).collect();
+                    let ctor_ty = Type::Fun(param_tys, Box::new(type_name.clone()));
+                    env.insert(variant.name.0.clone(), TypeScheme::mono(ctor_ty));
+                }
                 Ok(Type::Void)
             }
 

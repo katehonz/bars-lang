@@ -2,6 +2,8 @@
 
 > Актуален към: 2026-06-03  
 > Философия: Минимален core, богата екосистема. Като Rust.
+> 
+> Спринт 8 завършен ✅ — ADTs с deftype, exhaustiveness checking, Option/Result stdlib
 
 ---
 
@@ -138,16 +140,16 @@ bars build examples/hello.brs -o hello
 
 ---
 
-## Спринт 8: Algebraic Data Types (ADTs) (3-4 дни)
+## Спринт 8: Algebraic Data Types (ADTs) (3-4 дни) ✅
 
 ### Задачи
-- [ ] **8.1** `deftype` за sum types (enum-like): `(deftype Option [Some i64] [None])`
-- [ ] **8.2** `match` вече работи с ADTs (вече има pattern matching, трябва да се свърже с типовете)
-- [ ] **8.3** `Result` тип в stdlib: `(deftype Result [Ok T] [Err E])`
-- [ ] **8.4** Exhaustiveness checking в `match` — compiler error ако липсва клон
-- [ ] **8.5** Тестове за ADTs + pattern matching
+- [x] **8.1** `deftype` за sum types (enum-like): `(deftype Option [Some i64] [None])`
+- [x] **8.2** `match` вече работи с ADTs (вече има pattern matching, трябва да се свърже с типовете)
+- [x] **8.3** `Result` тип в stdlib: `(deftype Result [Ok T] [Err E])`
+- [x] **8.4** Exhaustiveness checking в `match` — compiler error ако липсва клон
+- [x] **8.5** Тестове за ADTs + pattern matching
 
-**Критерий за приемане:** Можеш да дефинираш `Option` и `Result` и да pattern match-ваш по тях.
+**Критерий за приемане:** ✅ Можеш да дефинираш `Option` и `Result` и да pattern match-ваш по тях.
 
 ---
 

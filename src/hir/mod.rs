@@ -11,11 +11,26 @@ pub mod optimize;
 /// This makes backend code generation trivial: each HIR instruction maps
 /// directly to one or a few target instructions.
 
+/// Variant info for ADT matching
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeInfo {
+    pub name: String,
+    pub variants: Vec<VariantInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantInfo {
+    pub name: String,
+    pub discriminant: usize,
+    pub field_count: usize,
+}
+
 /// A HIR program is a list of function definitions
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub funcs: Vec<Func>,
     pub struct_registry: std::collections::HashMap<String, Vec<String>>,
+    pub adt_registry: std::collections::HashMap<String, TypeInfo>,
 }
 
 /// A function: name, parameters, and a list of basic blocks

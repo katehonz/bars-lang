@@ -160,3 +160,47 @@ fn test_run_set() {
     assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
     assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_run_adt_option() {
+    let output = bars()
+        .args(["run", "examples/adt_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("42"), "Expected '42' in output, got: {}", stdout);
+    assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
+}
+
+#[test]
+fn test_run_adt_result() {
+    let output = bars()
+        .args(["run", "examples/adt_demo2.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("42"), "Expected '42' in output, got: {}", stdout);
+    assert!(stdout.contains("-5"), "Expected '-5' in output, got: {}", stdout);
+}
+
+#[test]
+fn test_run_adt_shape() {
+    let output = bars()
+        .args(["run", "examples/adt_demo3.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("25"), "Expected '25' in output, got: {}", stdout);
+    assert!(stdout.contains("12"), "Expected '12' in output, got: {}", stdout);
+}
+
+#[test]
+fn test_adt_exhaustiveness_error() {
+    let output = bars()
+        .args(["run", "examples/adt_nonexhaustive.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not exhaustive") || stderr.contains("missing variant"),
+        "Expected exhaustiveness error, got: {}", stderr);
+}

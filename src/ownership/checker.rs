@@ -539,6 +539,7 @@ fn check_expr(
         }
 
         Expr::DefStruct { .. } => Ok(OwnershipState::Owned),
+        Expr::DefType { .. } => Ok(OwnershipState::Owned),
 
         Expr::FieldAccess { expr: inner, field, span: field_span } => {
             if let Expr::Symbol(sym) = inner.as_ref() {

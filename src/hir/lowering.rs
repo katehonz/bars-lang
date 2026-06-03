@@ -1,6 +1,7 @@
 use crate::ast::{Expr, Pattern, Program as AstProgram, Symbol};
 use crate::hir::*;
 use anyhow::{bail, Result};
+use std::collections::{HashMap, HashSet};
 
 pub struct LoweringCtx {
     temp_counter: usize,
@@ -11,6 +12,7 @@ pub struct LoweringCtx {
     current_block_active: bool,
     loop_stack: Vec<(String, Vec<String>)>,
     struct_registry: std::collections::HashMap<String, Vec<String>>,
+    adt_registry: std::collections::HashMap<String, TypeInfo>,
     /// Lambda functions extracted during lowering
     lambda_funcs: Vec<Func>,
     lambda_counter: usize,
@@ -27,6 +29,7 @@ impl LoweringCtx {
             current_block_active: false,
             loop_stack: Vec::new(),
             struct_registry: std::collections::HashMap::new(),
+            adt_registry: std::collections::HashMap::new(),
             lambda_funcs: Vec::new(),
             lambda_counter: 0,
         }
@@ -68,11 +71,25 @@ impl LoweringCtx {
         let mut funcs = Vec::new();
         let mut main_exprs = Vec::new();
 
-        // First pass: collect struct definitions
+        // First pass: collect struct and ADT definitions
         for expr in &program.exprs {
             if let Expr::DefStruct { name, fields, .. } = expr {
                 let field_names: Vec<String> = fields.iter().map(|f| f.0.clone()).collect();
                 self.struct_registry.insert(name.0.clone(), field_names);
+            }
+            if let Expr::DefType { name, variants, .. } = expr {
+                let mut variant_infos = Vec::new();
+                for (i, var) in variants.iter().enumerate() {
+                    variant_infos.push(VariantInfo {
+                        name: var.name.0.clone(),
+                        discriminant: i,
+                        field_count: var.fields.len(),
+                    });
+                }
+                self.adt_registry.insert(name.0.clone(), TypeInfo {
+                    name: name.0.clone(),
+                    variants: variant_infos,
+                });
             }
         }
 
@@ -91,6 +108,9 @@ impl LoweringCtx {
                 Expr::DefStruct { .. } => {
                     // Skip - compile-time only
                 }
+                Expr::DefType { .. } => {
+                    // Skip - compile-time only (constructors handled in FnCall lowering)
+                }
                 other => {
                     main_exprs.push(other.clone());
                 }
@@ -107,7 +127,8 @@ impl LoweringCtx {
         }
 
         let struct_registry = std::mem::take(&mut self.struct_registry);
-        Ok(Program { funcs, struct_registry })
+        let adt_registry = std::mem::take(&mut self.adt_registry);
+        Ok(Program { funcs, struct_registry, adt_registry })
     }
 
     fn lower_func(&mut self, name: &str, params: &[(Symbol, Option<crate::ast::Type>)], body: &Expr) -> Result<Func> {
@@ -280,6 +301,12 @@ impl LoweringCtx {
                     Expr::Symbol(sym) => sym.0.clone(),
                     other => bail!("Only direct function calls in HIR lowering: {:?}", other),
                 };
+
+                // Check if this is an ADT variant constructor call
+                if let Some((discriminant, type_name)) = self.find_variant_constructor(&func_name) {
+                    return self.lower_adt_constructor(discriminant, args, type_name);
+                }
+
                 let mut lowered_args = Vec::new();
                 for arg in args {
                     let val = self.lower_expr(arg, false)?;
@@ -385,6 +412,9 @@ impl LoweringCtx {
                 if !self.current_block_active {
                     return Ok(Operand::Const(0));
                 }
+
+                // Exhaustiveness check for ADT matches
+                self.check_match_exhaustiveness(arms)?;
 
                 if is_tail {
                     // Tail position: no merge block, arms return directly
@@ -612,10 +642,27 @@ impl LoweringCtx {
                 }
             }
             Pattern::Struct { name, fields, .. } => {
+                // Check if this is an ADT variant pattern
+                if let Some((_type_name, discriminant, _field_count)) = self.find_pattern_variant(&name.0) {
+                    // Load discriminant from val (index 0 of heap vector)
+                    let disc_temp = self.fresh_temp();
+                    self.emit(Instr::Call {
+                        dest: disc_temp.clone(),
+                        func: "get".to_string(),
+                        args: vec![val.clone(), Operand::Const(0)],
+                    });
+                    // Compare discriminant
+                    let cmp_dest = self.fresh_temp();
+                    self.emit(Instr::BinOp {
+                        dest: cmp_dest.clone(),
+                        op: BinOp::Eq,
+                        lhs: Operand::Var(disc_temp),
+                        rhs: Operand::Const(discriminant as i64),
+                    });
+                    return Ok(Operand::Var(cmp_dest));
+                }
+
                 // Check if val matches struct pattern by comparing fields
-                // For simplicity, we AND together all field comparisons
-                // For binding patterns, we treat them as always matching
-                // For literal patterns, we compare the field value
                 if let Some(field_names) = self.struct_registry.get(&name.0).cloned() {
                     let mut result = Operand::Const(1);
                     for (i, field_pat) in fields.iter().enumerate() {
@@ -654,7 +701,19 @@ impl LoweringCtx {
                 self.emit(Instr::Assign { dest: name.0.clone(), value: val.clone() });
             }
             Pattern::Struct { name, fields, .. } => {
-                if let Some(field_names) = self.struct_registry.get(&name.0).cloned() {
+                // Check if this is an ADT variant pattern
+                if let Some((_type_name, _discriminant, _field_count)) = self.find_pattern_variant(&name.0) {
+                    // Load payload fields from the heap vector (indexes 1, 2, ...)
+                    for (i, field_pat) in fields.iter().enumerate() {
+                        let field_val = self.fresh_temp();
+                        self.emit(Instr::Call {
+                            dest: field_val.clone(),
+                            func: "get".to_string(),
+                            args: vec![val.clone(), Operand::Const((i + 1) as i64)],
+                        });
+                        self.lower_pattern_bindings(&Operand::Var(field_val), field_pat)?;
+                    }
+                } else if let Some(field_names) = self.struct_registry.get(&name.0).cloned() {
                     for (i, field_pat) in fields.iter().enumerate() {
                         if i >= field_names.len() {
                             break;
@@ -674,6 +733,127 @@ impl LoweringCtx {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Find a variant constructor: returns (discriminant, type_name) if found
+    fn find_variant_constructor(&self, name: &str) -> Option<(usize, String)> {
+        for (type_name, type_info) in &self.adt_registry {
+            for variant in &type_info.variants {
+                if variant.name == name {
+                    return Some((variant.discriminant, type_name.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Lower an ADT variant constructor call: allocate vector, push discriminant, push args
+    fn lower_adt_constructor(
+        &mut self,
+        discriminant: usize,
+        args: &[Expr],
+        _type_name: String,
+    ) -> Result<Operand> {
+        let mut lowered_args = Vec::new();
+        for arg in args {
+            let val = self.lower_expr(arg, false)?;
+            if !self.current_block_active {
+                return Ok(Operand::Const(0));
+            }
+            lowered_args.push(val);
+        }
+
+        // Create empty vector
+        let vec_dest = self.fresh_temp();
+        self.emit(Instr::Call {
+            dest: vec_dest.clone(),
+            func: "vector".to_string(),
+            args: vec![],
+        });
+
+        // Push discriminant
+        let _ = self.fresh_temp();
+        self.emit(Instr::Call {
+            dest: "_".to_string(),
+            func: "push".to_string(),
+            args: vec![
+                Operand::Var(vec_dest.clone()),
+                Operand::Const(discriminant as i64),
+            ],
+        });
+
+        // Push each payload field
+        for arg_val in &lowered_args {
+            self.emit(Instr::Call {
+                dest: "_".to_string(),
+                func: "push".to_string(),
+                args: vec![Operand::Var(vec_dest.clone()), arg_val.clone()],
+            });
+        }
+
+        Ok(Operand::Var(vec_dest))
+    }
+
+    /// Check if match arms cover all variants of an ADT type
+    fn check_match_exhaustiveness(&self, arms: &[(Pattern, Expr)]) -> Result<()> {
+        // Collect all variant names used in patterns
+        let mut covered_variants = HashMap::new(); // type_name → set of variant indices
+        let mut has_wildcard = false;
+
+        for (pattern, _) in arms {
+            match pattern {
+                Pattern::Wildcard => {
+                    has_wildcard = true;
+                }
+                Pattern::Struct { name, .. } => {
+                    if let Some((type_name, disc, _)) = self.find_pattern_variant(&name.0) {
+                        covered_variants
+                            .entry(type_name)
+                            .or_insert_with(HashSet::new)
+                            .insert(disc);
+                    }
+                }
+                Pattern::Binding(_) => {
+                    // A binding without a constructor matches everything (wildcard-like)
+                    has_wildcard = true;
+                }
+                _ => {}
+            }
+        }
+
+        if has_wildcard {
+            return Ok(()); // wildcard covers everything
+        }
+
+        // Check each ADT type that appears in patterns
+        for (type_name, covered) in &covered_variants {
+            if let Some(type_info) = self.adt_registry.get(type_name) {
+                let total = type_info.variants.len();
+                for disc in 0..total {
+                    if !covered.contains(&disc) {
+                        let missing = &type_info.variants[disc].name;
+                        bail!(
+                            "Match is not exhaustive: type '{}' is missing variant '{}'",
+                            type_name, missing
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if a pattern name refers to an ADT variant: returns (type_name, discriminant, field_count)
+    fn find_pattern_variant(&self, name: &str) -> Option<(String, usize, usize)> {
+        for (type_name, type_info) in &self.adt_registry {
+            for variant in &type_info.variants {
+                if variant.name == name {
+                    return Some((type_name.clone(), variant.discriminant, variant.field_count));
+                }
+            }
+        }
+        None
     }
 }
 
