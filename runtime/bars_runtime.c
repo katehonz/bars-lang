@@ -478,3 +478,69 @@ bars_string_t* bars_string_join(bars_vector_t* vec, bars_string_t* delim) {
     result->data[pos] = '\0';
     return result;
 }
+
+/* --- String introspection --- */
+
+int64_t bars_string_get(bars_string_t* s, int64_t idx) {
+    if (!s || !s->data || idx < 0 || (size_t)idx >= s->len) return -1;
+    return (int64_t)(unsigned char)s->data[idx];
+}
+
+int64_t bars_string_starts_with(bars_string_t* s, bars_string_t* prefix) {
+    if (!s || !prefix) return 0;
+    if (prefix->len > s->len) return 0;
+    return memcmp(s->data, prefix->data, prefix->len) == 0 ? 1 : 0;
+}
+
+int64_t bars_string_ends_with(bars_string_t* s, bars_string_t* suffix) {
+    if (!s || !suffix) return 0;
+    if (suffix->len > s->len) return 0;
+    return memcmp(s->data + s->len - suffix->len, suffix->data, suffix->len) == 0 ? 1 : 0;
+}
+
+int64_t bars_string_index_of(bars_string_t* s, bars_string_t* needle) {
+    if (!s || !needle || needle->len == 0) return 0;
+    if (needle->len > s->len) return -1;
+    for (size_t i = 0; i <= s->len - needle->len; i++) {
+        if (memcmp(s->data + i, needle->data, needle->len) == 0) {
+            return (int64_t)i;
+        }
+    }
+    return -1;
+}
+
+bars_string_t* bars_string_slice(bars_string_t* s, int64_t start, int64_t end) {
+    if (!s || !s->data || s->len == 0) return bars_string_new("");
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if ((size_t)start >= s->len) return bars_string_new("");
+    if ((size_t)end > s->len) end = (int64_t)s->len;
+    if (end <= start) return bars_string_new("");
+    int64_t len = end - start;
+    return bars_string_substring(s, start, len);
+}
+
+/* --- CLI args --- */
+
+static int bars_argc = 0;
+static char** bars_argv = NULL;
+
+void bars_set_args(int argc, char** argv) {
+    bars_argc = argc;
+    bars_argv = argv;
+}
+
+int64_t bars_args_count(void) {
+    return (int64_t)bars_argc;
+}
+
+bars_string_t* bars_args_get(int64_t idx) {
+    if (idx < 0 || idx >= bars_argc) return bars_string_new("");
+    return bars_string_new(bars_argv[(int)idx]);
+}
+
+/* --- Process --- */
+
+void bars_exit(int64_t status) {
+    exit((int)status);
+}

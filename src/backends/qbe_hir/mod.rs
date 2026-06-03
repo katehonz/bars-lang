@@ -497,6 +497,94 @@ impl QbeHIRBackend {
                             ),
                         );
                     }
+                    "str-get" | "str_get" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_get".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-starts-with?" | "str_starts_with" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_starts_with".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-ends-with?" | "str_ends_with" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_ends_with".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-index-of" | "str_index_of" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_index_of".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-slice" | "str_slice" | "slice" if compiled_args.len() == 3 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_slice".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "args-count" | "args_count" if compiled_args.is_empty() => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_args_count".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "args-get" | "args_get" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_args_get".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "exit" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_exit".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
                     _ => {
                         func.assign_instr(
                             Value::Temporary(sanitize_name(&dest)),

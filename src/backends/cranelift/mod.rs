@@ -510,6 +510,30 @@ fn compile_instr<M: Module>(
                 "str-join" | "str_join" | "join" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_string_join", &arg_vals)?
                 }
+                "str-get" | "str_get" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_get", &arg_vals)?
+                }
+                "str-starts-with?" | "str_starts_with" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_starts_with", &arg_vals)?
+                }
+                "str-ends-with?" | "str_ends_with" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_ends_with", &arg_vals)?
+                }
+                "str-index-of" | "str_index_of" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_index_of", &arg_vals)?
+                }
+                "str-slice" | "str_slice" | "slice" if arg_vals.len() == 3 => {
+                    call_runtime(builder, module, "bars_string_slice", &arg_vals)?
+                }
+                "args-count" | "args_count" if arg_vals.is_empty() => {
+                    call_runtime(builder, module, "bars_args_count", &arg_vals)?
+                }
+                "args-get" | "args_get" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_args_get", &arg_vals)?
+                }
+                "exit" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_exit", &arg_vals)?
+                }
                 _ => {
                     if let Some(&func_id) = functions.get(func_name) {
                         let func_ref = module.declare_func_in_func(func_id, builder.func);

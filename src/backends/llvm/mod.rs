@@ -558,6 +558,45 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         let result = self.call_runtime_ptr("bars_string_join", &[vec, delim])?;
                         self.ptr_to_i64(result)
                     }
+                    "str-get" | "str_get" if arg_vals.len() == 2 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let idx = arg_vals[1];
+                        self.call_runtime_i64("bars_string_get", &[s, idx])?
+                    }
+                    "str-starts-with?" | "str_starts_with" if arg_vals.len() == 2 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let prefix = self.i64_to_ptr(arg_vals[1]);
+                        self.call_runtime_i64("bars_string_starts_with", &[s, prefix])?
+                    }
+                    "str-ends-with?" | "str_ends_with" if arg_vals.len() == 2 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let suffix = self.i64_to_ptr(arg_vals[1]);
+                        self.call_runtime_i64("bars_string_ends_with", &[s, suffix])?
+                    }
+                    "str-index-of" | "str_index_of" if arg_vals.len() == 2 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let needle = self.i64_to_ptr(arg_vals[1]);
+                        self.call_runtime_i64("bars_string_index_of", &[s, needle])?
+                    }
+                    "str-slice" | "str_slice" | "slice" if arg_vals.len() == 3 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let start = arg_vals[1];
+                        let end = arg_vals[2];
+                        let result = self.call_runtime_ptr("bars_string_slice", &[s, start, end])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "args-count" | "args_count" if arg_vals.is_empty() => {
+                        self.call_runtime_i64("bars_args_count", &[])?
+                    }
+                    "args-get" | "args_get" if arg_vals.len() == 1 => {
+                        let idx = arg_vals[0];
+                        let result = self.call_runtime_ptr("bars_args_get", &[idx])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "exit" if arg_vals.len() == 1 => {
+                        let status = arg_vals[0];
+                        self.call_runtime_i64("bars_exit", &[status])?
+                    }
                     _ => {
                         if let Some(user_func) = self.functions.get(func_name).copied() {
                             let args_meta: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = arg_vals.iter()

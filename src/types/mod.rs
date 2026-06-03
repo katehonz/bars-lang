@@ -540,6 +540,20 @@ impl InferCtx {
         env.insert("slurp".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
         env.insert("spit".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
 
+        // String introspection
+        env.insert("str-get".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-starts-with?".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-ends-with?".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-index-of".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-slice".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64, Type::I64], Box::new(Type::I64))));
+
+        // CLI args
+        env.insert("args-count".to_string(), TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64))));
+        env.insert("args-get".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+
+        // Process
+        env.insert("exit".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::Void))));
+
         // Higher-order: map, filter, reduce
         env.insert("map".to_string(), TypeScheme::mono(
             Type::Fun(vec![

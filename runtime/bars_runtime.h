@@ -140,4 +140,19 @@ bars_string_t* bars_string_join(bars_vector_t* vec, bars_string_t* delim);
 bars_string_t* bars_slurp(const char* path);
 int64_t bars_spit(const char* path, bars_string_t* content);
 
+/* String introspection */
+int64_t bars_string_get(bars_string_t* s, int64_t idx);
+int64_t bars_string_starts_with(bars_string_t* s, bars_string_t* prefix);
+int64_t bars_string_ends_with(bars_string_t* s, bars_string_t* suffix);
+int64_t bars_string_index_of(bars_string_t* s, bars_string_t* needle);
+bars_string_t* bars_string_slice(bars_string_t* s, int64_t start, int64_t end);
+
+/* CLI args */
+void bars_set_args(int argc, char** argv);
+int64_t bars_args_count(void);
+bars_string_t* bars_args_get(int64_t idx);
+
+/* Process */
+void bars_exit(int64_t status);
+
 #endif

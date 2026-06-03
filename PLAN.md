@@ -210,11 +210,66 @@ bars build examples/hello.brs -o hello
 
 ## Бъдещи подобрения (компилатор)
 
-- [ ] Generic ADTs: `(deftype Option [Some T] [None])`
-- [ ] Още string операции: `split`, `join`, `trim`, `substring`
-- [x] `--release` флаг за всички backend-ове (QBE: `cc -O2`, Cranelift: `speed_and_size`, LLVM: `Aggressive`)
-- [ ] Подобрени error messages
-- [ ] LSP сървър
+- [x] Generic ADTs: `(deftype Option [Some T] [None])`
+- [x] Още string операции: `split`, `join`, `trim`, `substring`
+- [x] `--release` флаг за всички backend-ове
+- [x] Подобрени error messages — цветни, с source context
+- [x] LSP сървър
+- [ ] Debugger интеграция
+
+---
+
+## Фаза 12: Self-Hosting Bootstrapping 🚧
+
+> **Цел:** Компилаторът на Bars да бъде написан на Bars.
+> 
+> **Философия:** Не добавяме повече фичъри към езика — само tooling, който е необходим за компилатора. Колкото по-малко фичъри има езикът, толкова по-лесно е self-hosting.
+
+### Предпоставки (Stage 0) — Подготовка на терена
+
+Преди да започнем писането на компилатора на Bars, трябва:
+
+- [ ] **12.1** String tooling за lexer: `str-get`, `str-slice`, `str-starts-with?`, `str-ends-with?`, `str-index-of`, `str-char-at`
+- [ ] **12.2** CLI args: `*args*` или `(command-line-args)` — вектор от низове
+- [ ] **12.3** `char` тип или `char-code` / `code-char` функции за ASCII работа
+- [ ] **12.4** `exit` функция за връщане на status code
+
+**Критерий:** Можем да напишем lexer на Bars, който чете файл и разбива го на tokens.
+
+### Stage 1: Reader (Lexer + Parser) на Bars
+
+- [ ] **12.5** `bars-reader` — пакет/модул, който чете `.brs` файл и произвежда AST (S-expressions)
+- [ ] **12.6** Поддръжка на всички текущи constructs: atoms, lists, vectors, strings, keywords, quotes
+- [ ] **12.7** Location info (line, col) за error reporting
+
+**Критерий:** `bars run reader.brs < file.brs` произвежда валиден AST.
+
+### Stage 2: AST → HIR на Bars
+
+- [ ] **12.8** `bars-hir` — lowering pass от AST към HIR
+- [ ] **12.9** Tail call recognition, constant folding, dead block elimination
+
+**Критерий:** Произвежда HIR, идентичен на този от Rust компилатора за прост пример.
+
+### Stage 3: HIR → QBE IR на Bars
+
+- [ ] **12.10** `bars-qbe` — codegen от HIR към QBE SSA IR
+- [ ] **12.11** Поддръжка на всички HIR инструкции: Const, Call, Assign, Branch, Jump, Return, Alloc, Load, Store
+
+**Критерий:** Произвежда валиден `.ssa` файл, който `qbe` приема.
+
+### Stage 4: Build Pipeline на Bars
+
+- [ ] **12.12** `bars-build` — оркестрация: read → expand → lower → codegen → qbe → cc → binary
+- [ ] **12.13** Интеграция с C runtime и Boehm GC
+
+**Критерий:** `bars build hello.brs -o hello` работи цялостно написано на Bars.
+
+### Stage 5: Bootstrap
+
+- [ ] **12.14** Компилираме Bars компилатора със себе си
+- [ ] **12.15** Двата компилатора (Rust и Bars) произвеждат идентичен output за тестов набор
+- [ ] **12.16** Заместваме Rust компилатора с Bars версията в CI/build
 
 ---
 
@@ -229,4 +284,4 @@ bars build examples/hello.brs -o hello
 
 ---
 
-*План версия: 3.0 | Актуализиран: 2026-06-03*
+*План версия: 4.0 | Актуализиран: 2026-06-04*
