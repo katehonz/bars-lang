@@ -493,10 +493,13 @@ impl InferCtx {
         env.insert("print-str".to_string(), print_poly);
         env.insert("newline".to_string(), print_none);
 
-        // Collection ops — all collections are i64 pointers at runtime
-        let vec_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
-        let push = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
-        let get = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
+        // Collection ops — polymorphic over GC-managed types
+        let t = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
+        let vec_new = TypeScheme { vars: vec![t], ty: Type::Fun(vec![], Box::new(Type::Var(t))) };
+        let t2 = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
+        let push = TypeScheme { vars: vec![t2], ty: Type::Fun(vec![Type::Var(t2), Type::Var(t2)], Box::new(Type::I64)) };
+        let t3 = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
+        let get = TypeScheme { vars: vec![t3], ty: Type::Fun(vec![Type::Var(t3), Type::I64], Box::new(Type::Var(t3))) };
         let count = TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64)));
         env.insert("vector".to_string(), vec_new);
         env.insert("push".to_string(), push);

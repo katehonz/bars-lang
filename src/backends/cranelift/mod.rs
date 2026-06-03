@@ -34,6 +34,7 @@ unsafe extern "C" {
     fn bars_print_any_i64(val: i64);
     fn bars_string_length(s: *const u8) -> i64;
     fn bars_string_concat(a: *const u8, b: *const u8) -> *mut u8;
+    fn bars_alloc(size: usize) -> *mut u8;
     fn bars_string_trim(s: *const u8) -> *mut u8;
     fn bars_string_substring(s: *const u8, start: i64, len: i64) -> *mut u8;
     fn bars_string_split(s: *const u8, delim: *const u8) -> *mut u8;
@@ -87,6 +88,7 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_print_any_i64", bars_print_any_i64 as *const u8);
         jit_builder.symbol("bars_string_length", bars_string_length as *const u8);
         jit_builder.symbol("bars_string_concat", bars_string_concat as *const u8);
+        jit_builder.symbol("bars_alloc", bars_alloc as *const u8);
         jit_builder.symbol("bars_string_trim", bars_string_trim as *const u8);
         jit_builder.symbol("bars_string_substring", bars_string_substring as *const u8);
         jit_builder.symbol("bars_string_split", bars_string_split as *const u8);
@@ -367,9 +369,10 @@ fn compile_instr<M: Module>(
             // Check for struct constructor
             if let Some(fields) = struct_registry.get(func_name) {
                 let size = fields.len() * 8;
-                let slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32, 3);
-                let slot = builder.create_sized_stack_slot(slot_data);
-                let ptr = builder.ins().stack_addr(types::I64, slot, 0);
+                // Allocate on the GC heap via runtime instead of stack
+                let size_val = builder.ins().iconst(types::I64, size as i64);
+                let alloc_result = call_runtime(builder, module, "bars_alloc", &[size_val])?;
+                let ptr = alloc_result;
                 for (i, arg) in arg_vals.iter().enumerate() {
                     let offset = (i * 8) as i64;
                     let offset_val = builder.ins().iconst(types::I64, offset);

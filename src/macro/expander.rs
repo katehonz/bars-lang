@@ -392,17 +392,26 @@ fn expand_cond(args: &[Expr], span: &Span) -> Result<Option<Expr>, MacroError> {
     let mut i = args.len();
     while i >= 2 {
         i -= 2;
-        let cond = match &args[i] {
-            Expr::Keyword(_, _) => Expr::Bool(true, Span::new(0, 0)),
-            other => other.clone(),
-        };
+        let is_else = matches!(&args[i], Expr::Keyword(_, _));
+        let is_last_pair = i + 2 == args.len();
         let then_val = args[i + 1].clone();
-        result = Expr::If {
-            cond: Box::new(cond),
-            then_branch: Box::new(then_val),
-            else_branch: Box::new(result),
-            span: span.clone(),
-        };
+        if is_else && is_last_pair {
+            // :else is the final fallback — use its value directly without
+            // wrapping in (if true value nil) which breaks type inference
+            // when value is an ADT (unifies with nil's i64 type).
+            result = then_val;
+        } else {
+            let cond = match &args[i] {
+                Expr::Keyword(_, _) => Expr::Bool(true, Span::new(0, 0)),
+                other => other.clone(),
+            };
+            result = Expr::If {
+                cond: Box::new(cond),
+                then_branch: Box::new(then_val),
+                else_branch: Box::new(result),
+                span: span.clone(),
+            };
+        }
     }
     Ok(Some(result))
 }
