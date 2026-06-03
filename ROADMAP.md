@@ -1,23 +1,23 @@
-# Bars — Пътна Карта (v4.0)
+# Bars — Пътна Карта (v5.0)
 
 > Актуална към: 2026-06-03  
-> Състояние: Фази 0–5 завършени. Фаза 6 е следваща.  
+> Състояние: Фази 0–9 завършени. Фаза 10 в прогрес.  
 > Философия: Минимален core, богата екосистема.
 
 ---
 
 ## Обобщение
 
-Bars вече е работещ компилатор за системен Lisp с ownership.  
-**~4000 реда Rust**, **~400 реда C runtime**, 3 backend-а, макросистема, pattern matching, структури, колекции, REPL, build pipeline, return type annotations.
+Bars е работещ компилатор за системен Lisp с ownership.  
+**~5000 реда Rust**, **~380 реда C runtime**, 3 backend-а, ADTs, FFI, макросистема, pattern matching, структури, колекции, REPL, build pipeline, generics, type inference, stdlib.
 
 ```
-.brs файл → Reader → AST → Macros → HIR → Ownership → Type Inference → Backend (QBE/Cranelift/LLVM)
+.brs файл → Reader → AST → Macros → Ownership → Type Inference → HIR Lowering → HIR Optimizations → Backend (QBE/Cranelift/LLVM) → Binary
 ```
 
 ---
 
-## Фаза 0: Инфраструктура ✅ ЗАВЪРШЕНА
+## Фаза 0: Инфраструктура ✅
 
 - [x] Проектна структура (Cargo, crates)
 - [x] Reader: lexer + parser за S-expressions
@@ -25,162 +25,118 @@ Bars вече е работещ компилатор за системен Lisp 
 - [x] Коментари `;`, низове `"`
 - [x] CLI скелет с `clap`
 
-**Резултат:** `bars read file.brs` → AST
-
 ---
 
-## Фаза 1: AST → Нативен Код ✅ ЗАВЪРШЕНА
+## Фаза 1: AST → Нативен Код ✅
 
-- [x] AST типове (`Expr`, `Stmt`, `FnDef`)
-- [x] QBE IR generation — стар AST backend
-- [x] `main` функция и entry point
-- [x] Build pipeline: `.brs` → `.ssa` → `.c` → binary
+- [x] AST типове (`Expr`, `Pattern`, `Program`)
+- [x] QBE IR generation
+- [x] Build pipeline: `.brs` → `.ssa` → binary
 - [x] Базови конструкции: константи, аритметика, `let`, `if`, `defn`
 
-**Резултат:** `(+ 1 2)` се компилира до работещ бинарен файл.
-
 ---
 
-## Фаза 2: Архитектурен Рефактор ✅ ЗАВЪРШЕНА
+## Фаза 2: Архитектурен Рефактор ✅
 
-### 2.1 Ownership Анализатор
-- [x] Borrow checker с `^` и `^mut`
-- [x] Move semantics по подразбиране
-- [x] Use-after-move проверка
-- [x] NLL (Non-Lexical Lifetimes) — borrow изтича след последна употреба
-- [x] Struct field tracking — забрана за достъп след move
-- [x] Implicit borrow за owned стойности, подадени на borrow параметри
-- [x] Drop checking — warnings за resource leaks (GC обектите са exempt)
-- [x] Span/локация в OwnershipError
-
-### 2.2 HIR (High-level IR)
-- [x] HIR типове: `Const`, `Load`, `Store`, `Alloc`, `FieldLoad`, `Call`, `Branch`, `Jump`, `Label`, `Return`
+- [x] Ownership анализатор: borrow checker, move semantics, NLL, drop checking
+- [x] HIR (High-level IR): `Const`, `Call`, `Load`, `Store`, `Alloc`, `Branch`, `Jump`, `Return`
 - [x] Lowering pass: AST → HIR
-- [x] HIR optimizations
-
-### 2.3 Бекенди върху HIR
-- [x] QBE backend (нов, HIR-based)
-- [x] Cranelift JIT backend
-- [x] Cranelift AOT backend (`--backend cranelift`)
-- [x] LLVM backend (`inkwell`, `--backend llvm`)
-
-**Резултат:** Всички backend-ове работят през HIR. Старият QBE AST backend е премахнат.
+- [x] QBE backend (HIR-based)
+- [x] Cranelift JIT + AOT backend
+- [x] LLVM backend (`inkwell`, зад feature gate)
 
 ---
 
-## Фаза 3: Езикови Възможности ✅ ЗАВЪРШЕНА
+## Фаза 3: Езикови Възможности ✅
 
 - [x] Функции с параметри (`defn`)
 - [x] Return type annotations: `(defn add [a b] -> i64 (+ a b))`
-- [x] Lexical scope
-- [x] Рекурсия (включително `loop`/`recur`)
-- [x] Lambda функции (анонимни)
+- [x] Lexical scope, рекурсия
+- [x] `loop`/`recur` (TCO)
+- [x] Lambda функции
 - [x] Pattern matching (`match`)
 - [x] Structs/records (`defstruct`, field access `.x`)
 - [x] Макроси (`defmacro`, `` ` ``, `~`, `~@`)
 - [x] `load` за модули
-- [x] Типов inference за locals и функции
-
-**Резултат:** Можеш да пишеш сложни програми с макроси, pattern matching и type annotations.
 
 ---
 
-## Фаза 4: Runtime и Колекции ✅ ЗАВЪРШЕНА
+## Фаза 4: Runtime и Колекции ✅
 
 - [x] Boehm GC интеграция (C runtime)
-- [x] Runtime типове: `bars_value_t` с tag
-- [x] String (pointer + length)
-- [x] Vector (динамичен масив, i64-only helpers)
-- [x] Map (hash map, i64-only helpers)
-- [x] Set (backed by map)
-- [x] Nested collections (вектори от вектори, maps с ключови думи)
+- [x] String, Vector, Map, Set
+- [x] Nested collections
 - [x] Runtime функции: `println`, `count`, `get`, `push`, `map-set`, `set-add`
-- [x] Pretty-print на колекции чрез `bars_print_any_i64`
-
-**Резултат:** Колекциите работят и се отпечатват четимо.
+- [x] Pretty-print чрез `bars_print_any_i64`
 
 ---
 
-## Фаза 5: REPL, CLI и Build Pipeline ✅ ЗАВЪРШЕНА
+## Фаза 5: REPL, CLI, Build Pipeline ✅
 
-- [x] Read-Eval-Print Loop (Cranelift JIT)
-- [x] `bars run file.brs`
-- [x] `bars check file.brs`
-- [x] `bars read file.brs`
-- [x] `bars repl` — с history, multi-line, pretty-print
-- [x] `bars build file.brs -o binary` — реален изпълним файл за трите backend-а
-- [x] `--backend` флаг (`qbe`, `cranelift`, `llvm`)
+- [x] `bars run file.brs` (3 backend-а)
+- [x] `bars check file.brs` (ownership + types)
+- [x] `bars read file.brs` (AST dump)
+- [x] `bars repl` — history, multi-line, pretty-print
+- [x] `bars build file.brs -o binary`
 - [x] REPL команди: `:quit`, `:help`, `:ast`, `:type`
 
-**Резултат:** Пълен pipeline от `.brs` до binary. Интерактивен REPL.
+---
+
+## Фаза 6: TCO и Оптимизации ✅
+
+- [x] HIR TailCall terminator
+- [x] Tail Call Recognition pass
+- [x] HIR-level constant folding
+- [x] Dead block elimination
+- [x] Tail-recursive `sum` и `factorial`
 
 ---
 
-## Фаза 6: TCO и Оптимизации 📋 СЛЕДВАЩА
+## Фаза 7: Generics — Implicit Polymorphism ✅
 
-> **Приоритет: КРИТИЧЕН.** Без TCO рекурсията в Lisp е опасна.
-
-- [ ] Tail Call Optimization (TCO) — jump вместо call за tail calls
-- [ ] HIR-level constant folding
-- [ ] Dead code elimination
-- [ ] Inline на малки функции
-
-**Резултат:** `(defn sum [n acc] (if (= n 0) acc (sum (- n 1) (+ acc n))))` работи за n=1_000_000.
-
----
-
-## Фаза 7: Типова Система 📋 ПЛАНИРАНА
-
-- [ ] Generic функции (`defn id [x] x`) с monomorphization
-- [ ] Generic структури (`defstruct Pair [a b]`)
-- [ ] Algebraic Data Types (`deftype`, `defvariant`)
-- [ ] `Result` и `Option` типове в stdlib
-- [ ] Exhaustiveness checking в `match`
-
-**Резултат:** Можеш да пишеш generic функции и ADTs с exhaustiveness checking.
+- [x] Let-polymorphism / generalization в type inference
+- [x] `instantiate` с fresh type vars
+- [x] Type checking в compilation pipeline
+- [x] Recursive functions support
+- [x] Forward-referenced functions
+- [x] Pattern match bindings в type environment
+- [x] Generic `(defn id [x] x)` работи за i64, f64, bool, string, vector
 
 ---
 
-## Фаза 8: FFI и Системно Програмиране 📋 ПЛАНИРАНА
+## Фаза 8: ADT — Algebraic Data Types ✅
 
-- [ ] `extern` за C функции: `(extern "printf" [fmt & args] -> i32)`
-- [ ] Pointer типове за C структури: `*T` или `^c T`
-- [ ] Struct layout съвместим с C
-- [ ] `sizeof`, `alignof`
-- [ ] Модули и namespaces
-
-**Резултат:** Можеш да пишеш системен код и да ползваш C библиотеки.
-
----
-
-## Фаза 9: Минимална Стандартна Библиотека 📋 ПЛАНИРАНА
-
-> **Философия: Само базови неща. Като Rust std — thin, но достатъчна.**  
-> Всичко специфично (async, web, crypto, GUI) е за пакети.
-
-### Включва
-- [ ] Higher-order функции: `map`, `filter`, `reduce`, `for-each`
-- [ ] String manipulation: `split`, `join`, `trim`, `substring`, `concat`
-- [ ] Math: `pow`, `sqrt`, `sin`, `cos` (C math library wrappers)
-- [ ] Error handling: `Result`/`Option` + helper macros (`try!`, `when-let`)
-- [ ] Basic I/O: `read-line`, `slurp` (цял файл в string), `spit` (string в файл)
-- [ ] Testing: `assert`, `assert=`
-
-### Изрично НЕ включва
-- ❌ Async/await — няма вградена async рунтайм (tokio и подобни са за пакети)
-- ❌ HTTP client/server — за пакети
-- ❌ TCP/UDP sockets — за пакети
-- ❌ Database drivers — за пакети
-- ❌ GUI bindings — за пакети
-- ❌ Cryptography — за пакети
-
-**Резултат:** Можеш да напишеш скрипт, който чете файл, обработва string-ове, и пише резултат. Без нужда от външни пакети за базови неща.
+- [x] `(deftype Option [Some i64] [None])` синтаксис
+- [x] `(deftype Result [Ok i64] [Err i64])`
+- [x] Конструктори като функции (Some, None, Ok, Err)
+- [x] Pattern matching с варианти по главна буква
+- [x] Exhaustiveness checking в `match`
+- [x] `Option`/`Result` в stdlib (`lib/adt.brs`)
 
 ---
 
-## Фаза 10: Пакетна Система 📋 ПЛАНИРАНА
+## Фаза 9: FFI — Foreign Function Interface ✅
 
-> **Като Cargo за Rust. Отделна от компилатора.**
+- [x] `(extern "putchar" [c i64] -> i64)` синтаксис
+- [x] HIR `Func` има `is_extern`/`c_name` полета
+- [x] QBE: пропуска body за extern, линкер резолва от libc
+- [x] Cranelift: `Linkage::Import` за extern функции
+- [x] LLVM: само declare без define
+
+---
+
+## Фаза 10: Минимална Stdlib 🚧
+
+- [x] Math: `sqrt`, `pow`, `abs` — libm wrappers в C runtime
+- [x] String ops: `str-count`, `str-concat` — C runtime
+- [x] I/O: `slurp`, `spit` — C runtime файлов I/O
+- [x] Тестови helper: `assert` macro (`lib/test.brs`)
+- [x] Error handling: `Option`/`Result` ADTs (`lib/adt.brs`)
+- [ ] Higher-order functions: `map`, `filter`, `reduce` (изискват first-class functions)
+
+---
+
+## Фаза 11: Пакетна Система 📋 ПЛАНИРАНА
 
 - [ ] `Bars.toml` манифест формат
 - [ ] `bars new my-project` — scaffold проект
@@ -188,23 +144,18 @@ Bars вече е работещ компилатор за системен Lisp 
 - [ ] Git-based разрешаване на dependencies
 - [ ] Semantic versioning и `Bars.lock`
 - [ ] Модули и namespaces: `(require "http" :as http)`
-- [ ] (Бъдеще) Central registry
-
-**Резултат:** Екосистема от пакети. Потребителите могат да публикуват и ползват библиотеки.
 
 ---
 
-## Фаза 11: Екосистема и Tooling (Далечно бъдеще) 📋 ПЛАНИРАНА
+## Фаза 12: Екосистема и Tooling 📋 ПЛАНИРАНА
 
-- [ ] Language Server Protocol (LSP) — autocomplete, go-to-definition, hover types
+- [ ] Language Server Protocol (LSP)
 - [ ] Formatter (`bars fmt`)
 - [ ] Linter (`bars lint`)
 - [ ] Documentation generator (`bars doc`)
 - [ ] Debugger integration
 - [ ] Cross-compilation (`--target`)
-- [ ] `--release` флаг с LLVM + O2/O3
-
-**Резултат:** Bars е пълноценен инструмент за production разработка.
+- [ ] `--release` флаг с оптимизации
 
 ---
 
@@ -213,8 +164,9 @@ Bars вече е работещ компилатор за системен Lisp 
 | Символ | Значение |
 |--------|----------|
 | ✅ | Завършено |
+| 🚧 | В прогрес |
 | 📋 | Планирано |
 
 ---
 
-*Версия: 4.0 | Актуализирано: 2026-06-03*
+*Версия: 5.0 | Актуализирано: 2026-06-03*

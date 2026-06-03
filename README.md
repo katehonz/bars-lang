@@ -210,6 +210,32 @@ $ bars check --types examples/hello.brs
   main : i64
 ```
 
+### Algebraic Data Types
+
+```clojure
+(deftype Option [Some i64] [None])
+(deftype Result [Ok i64] [Err i64])
+
+(defn handle [res]
+  (match res
+    (Ok v) (+ v 1)
+    (Err e) (* e -1)))
+```
+
+Конструкторите се разпознават по главна буква. `match` проверява за exhaustiveness.
+
+### FFI — Foreign Function Interface
+
+```clojure
+;; Деклариране на C функция
+(extern "putchar" [c i64] -> i64)
+
+(defn main []
+  (putchar 65))  ;; отпечатва 'A'
+```
+
+Работи с QBE, Cranelift и LLVM — генерира правилни extern declarations.
+
 ---
 
 ## CLI Reference
@@ -271,6 +297,20 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 - `lib/vector.brs` — `last`, `rest`, `take`, `drop`, `reverse`, `contains?`, `index-of`
 - `lib/string.brs` — `str-empty?`, `str-count`
 - `lib/map.brs` — `map-empty?`, `map-has?`
+- `lib/adt.brs` — `Option`, `Result` типове с helper функции
+- `lib/test.brs` — `assert` макрос за тестове
+
+### Built-in Runtime Functions
+
+| Функция | Описание |
+|---------|----------|
+| `sqrt n` | Корен квадратен |
+| `pow base exp` | Степенуване |
+| `abs n` | Абсолютна стойност |
+| `str-count s` | Дължина на низ |
+| `str-concat a b` | Конкатенация на низове |
+| `slurp path` | Прочита файл като низ |
+| `spit path content` | Записва низ във файл |
 
 ---
 
@@ -308,6 +348,9 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | Nested collections | ✅ |
 | Sets | ✅ |
 | Cranelift AOT | ✅ |
+| Generics (implicit polymorphism) | ✅ |
+| ADT (`deftype`, exhaustiveness check) | ✅ |
+| FFI (`extern` C functions) | ✅ |
 
 ---
 
