@@ -2,7 +2,14 @@
 
 ## Syntax
 
-Bars uses Clojure-style S-expressions.
+Bars uses Clojure-style S-expressions with **only two bracket types**:
+
+| Brackets | Meaning |
+|----------|---------|
+| `(...)` | Function calls, special forms (`defn`, `let`, `if`, `do`, `loop`) |
+| `[...]` | Vectors, function parameters, `let` bindings |
+
+> **Note:** There is no `{}` syntax in Bars. Maps and sets are created with functions.
 
 ### Literals
 
@@ -13,7 +20,7 @@ Bars uses Clojure-style S-expressions.
 true        ;; boolean
 false
 "hello"     ;; string
-:keyword    ;; keyword
+:keyword    ;; keyword (represented as string at runtime)
 nil         ;; null
 ```
 
@@ -123,13 +130,42 @@ Returns the value of the last expression.
 (count v)                 ;; length → 4
 ```
 
+Vectors can be nested:
+
+```clojure
+(def v [1 [2 3] 4])
+(println (get (get v 1) 0))  ;; → 2
+```
+
 ### Maps
+
+Maps are created with functions (no `{}` literal syntax):
 
 ```clojure
 (def m (map))             ;; create
 (map-set m 1 100)         ;; set key-value
 (map-get m 1)             ;; get → 100
 (map-count m)             ;; size
+```
+
+Maps can hold vectors and other collections as values:
+
+```clojure
+(def m (map))
+(map-set m 1 [10 20])
+(println (get (map-get m 1) 0))  ;; → 10
+```
+
+### Sets
+
+Sets are created with the `set` function:
+
+```clojure
+(def s (set))             ;; create empty set
+(set-add s 42)            ;; add element
+(set-contains? s 42)      ;; → 1 (true)
+(set-contains? s 99)      ;; → 0 (false)
+(set-count s)             ;; → 1
 ```
 
 ### Strings
@@ -184,11 +220,25 @@ bars check file.brs
   (push vec 42))
 ```
 
+### Implicit Borrow
+
+When passing an owned value to a function that expects a borrow, Bars automatically borrows it for you:
+
+```clojure
+(defn inspect [^i64 vec]
+  (println (count vec)))
+
+(let [v (vector 1 2 3)]
+  (inspect v)           ;; implicit borrow — no need for ^v
+  (inspect v))          ;; OK: borrow was released after the call
+```
+
 ### Ownership Rules
 
 1. A value can have any number of immutable borrows OR exactly one mutable borrow.
 2. You cannot use a value after it has been moved (unless it implements `Copy`, like integers).
 3. Borrowed values cannot be moved.
+4. Parameters of functions are not checked for resource leaks — they are owned by the caller.
 
 ## Macros
 

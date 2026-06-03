@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub enum Backend {
     /// QBE backend (fast AOT, default)
     Qbe,
+    /// Cranelift backend (fast AOT/JIT)
+    Cranelift,
     /// LLVM backend (optimized AOT, for --release)
     #[cfg(feature = "llvm-backend")]
     Llvm,

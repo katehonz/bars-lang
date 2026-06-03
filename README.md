@@ -21,10 +21,10 @@ Hello, World!
 
 ## Why Bars?
 
-- **Clojure syntax** — parentheses naturally express scope and structure.
+- **Clojure syntax** — parentheses naturally express scope and structure. Only `()` and `[]` brackets.
 - **Lightweight ownership** — NLL borrow checking, drop checking, no lifetime annotations.
 - **Type inference** — Hindley-Milner type system with `bars check --types`.
-- **Three backends** — QBE for fast AOT, Cranelift for JIT/REPL, LLVM for `--release`.
+- **Three backends** — QBE for fast AOT, Cranelift for JIT/REPL and fast AOT, LLVM for `--release`.
 - **Lambda functions** — anonymous `(fn [x] body)` with full pipeline support.
 - **Zero-cost FFI** — direct C ABI access through the runtime.
 - **GC when you want it** — stack + ownership + Boehm GC for complex data.
@@ -58,8 +58,11 @@ bars read examples/hello.brs
 # Compile to QBE IR
 bars build examples/hello.brs
 
-# Compile and run
+# Compile and run (default QBE backend)
 bars run examples/math.brs
+
+# Compile and run with Cranelift backend
+bars run --backend cranelift examples/math.brs
 
 # REPL (Cranelift JIT)
 bars repl
@@ -119,13 +122,41 @@ bars repl
     (println (get v 2))))      ;; 3
 ```
 
+Vectors can be nested:
+
+```clojure
+(def v [1 [2 3] 4])
+(println (get (get v 1) 0))  ;; 2
+```
+
 ### Maps
+
+Maps are created with functions (no `{}` literal syntax):
 
 ```clojure
 (defn main []
   (let [m (map)]
     (map-set m 1 100)
     (println (map-get m 1))))  ;; 100
+```
+
+Maps can hold vectors as values:
+
+```clojure
+(def m (map))
+(map-set m 1 [10 20])
+(println (get (map-get m 1) 0))  ;; 10
+```
+
+### Sets
+
+```clojure
+(defn main []
+  (let [s (set)]
+    (set-add s 1)
+    (set-add s 2)
+    (println (set-count s))          ;; 2
+    (println (set-contains? s 2))))  ;; 1 (true)
 ```
 
 ### Borrowing (Ownership)
@@ -138,6 +169,11 @@ bars repl
 (defn mutate-buf [^mut buf data]
   ;; mutable borrow
   (push data 42))
+
+;; Implicit borrow: ^ is optional when passing owned values
+(let [v (vector 1 2 3)]
+  (use-buf v)           ;; automatic borrow
+  (use-buf v))          ;; OK — borrow released after each call
 ```
 
 ### Loading Libraries
@@ -182,9 +218,11 @@ $ bars check --types examples/hello.brs
 |---------|-------------|
 | `bars read <file>` | Parse and print AST |
 | `bars build <file>` | Compile to QBE IR via HIR (stdout) |
+| `bars build --backend cranelift <file>` | Compile via Cranelift to object file |
 | `bars build --backend llvm <file>` | Compile via LLVM to object file |
 | `bars build --release <file>` | Release build with optimizations |
-| `bars run <file>` | Compile, link, and execute (QBE) |
+| `bars run <file>` | Compile, link, and execute (default QBE) |
+| `bars run --backend cranelift <file>` | Compile, link, and execute (Cranelift) |
 | `bars run --backend llvm <file>` | Compile, link, and execute (LLVM) |
 | `bars repl` | Interactive Cranelift JIT session |
 | `bars check <file>` | Run ownership analysis |
@@ -219,7 +257,7 @@ $ bars check --types examples/hello.brs
 | Backend | Mode | Status |
 |---------|------|--------|
 | **QBE HIR** | Fast AOT debug/release | ✅ Working |
-| **Cranelift** | JIT / REPL | ✅ Working |
+| **Cranelift** | JIT / REPL / AOT | ✅ Working |
 | **LLVM** | Optimized release (--release) | ✅ Working |
 
 ---
@@ -241,7 +279,7 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 ```
 .brs → Reader → AST → Macro Expansion → Ownership Check → HIR → Backend → Native Code
                                                                     ├── QBE IR → qbe → cc
-                                                                    ├── Cranelift → JIT
+                                                                    ├── Cranelift → cc
                                                                     └── LLVM IR → llc → cc
 ```
 
@@ -267,6 +305,9 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | User-defined macros (`defmacro`) | ✅ |
 | Type inference (`check --types`) | ✅ |
 | Lambda functions (`fn [x] body`) | ✅ |
+| Nested collections | ✅ |
+| Sets | ✅ |
+| Cranelift AOT | ✅ |
 
 ---
 

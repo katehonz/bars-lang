@@ -224,14 +224,6 @@ pub fn eval(expr: &Expr, env: &mut InterpEnv) -> Result<MacroVal> {
             Ok(MacroVal::Expr(Expr::Vector(vals, span.clone())))
         }
 
-        Expr::Map(items, span) => {
-            let vals: Vec<(Expr, Expr)> = items.iter().map(|(k, v)| {
-                (eval(k, env).map(|v| v.to_expr()).unwrap_or_else(|_| k.clone()),
-                 eval(v, env).map(|v| v.to_expr()).unwrap_or_else(|_| v.clone()))
-            }).collect();
-            Ok(MacroVal::Expr(Expr::Map(vals, span.clone())))
-        }
-
         Expr::Defn { params, body, .. } => {
             let param_names: Vec<Symbol> = params.iter().map(|(s, _)| s.clone()).collect();
             let captured = env.scopes.first().cloned().unwrap_or_default();

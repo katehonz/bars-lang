@@ -16,6 +16,7 @@ cranelift-frontend = "0.132.0"
 cranelift-jit = "0.132.0"
 cranelift-module = "0.132.0"
 cranelift-native = "0.132.0"
+cranelift-object = "0.132.0"
 inkwell = { version = "0.5", features = ["llvm14-0"], optional = true }
 llvm-sys = { version = "140", features = ["prefer-dynamic"], optional = true }
 

@@ -324,6 +324,46 @@ impl QbeHIRBackend {
                             ),
                         );
                     }
+                    "set" => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call("bars_set_new_i64".to_string(), vec![], None),
+                        );
+                    }
+                    "set_add" | "set-add" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_set_add_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "set_contains?" | "set-contains?" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_set_contains_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "set_count" | "set-count" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_set_count_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
                     _ => {
                         func.assign_instr(
                             Value::Temporary(dest.clone()),

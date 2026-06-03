@@ -344,7 +344,7 @@ fn check_expr(
         }
 
         Expr::Defn { name: _, params, body, span: defn_span, .. } => {
-            env.push_scope();
+            // Insert params into the current scope so they survive release_borrows in the body.
             for (param, param_ty) in params {
                 let state = match param_ty {
                     Some(AstType::MutRef(_)) => OwnershipState::MutBorrowed,
@@ -353,15 +353,14 @@ fn check_expr(
                 };
                 env.insert(param.0.clone(), state);
             }
+            env.push_scope();
             check_expr(body, env, registry, defn_span.clone())?;
 
             // Drop check: warn about owned resources not consumed before function end.
-            // Skip params that are already borrows (Ref/MutRef) — they don't own the value.
+            // Skip function parameters — they are owned by the caller, not locally allocated.
+            let param_names: std::collections::HashSet<String> = params.iter().map(|(p, _)| p.0.clone()).collect();
             for (var_name, _state) in env.owned_vars() {
-                let is_borrow_param = params.iter().any(|(p, pty)| {
-                    p.0 == var_name && matches!(pty, Some(AstType::Ref(_)) | Some(AstType::MutRef(_)))
-                });
-                if !is_borrow_param {
+                if !param_names.contains(&var_name) {
                     return Err(OwnershipError::ResourceLeak(
                         var_name, defn_span.line, defn_span.col,
                     ));
@@ -415,11 +414,31 @@ fn check_expr(
                     }
                     Expr::Symbol(sym) => {
                         // If function expects a borrow but symbol is passed directly, error
+                        // unless it's already borrowed (reborrow) or we can do an implicit borrow.
                         if matches!(expected_ty, Some(AstType::Ref(_)) | Some(AstType::MutRef(_))) {
-                            return Err(OwnershipError::AlreadyBorrowed(format!(
-                                "passing '{}' to function expecting borrow - use '^{}' instead",
-                                sym.0, sym.0
-                            ), call_span.line, call_span.col));
+                            match env.get(&sym.0) {
+                                Some(OwnershipState::Borrowed { .. })
+                                | Some(OwnershipState::MutBorrowed) => {
+                                    // Reborrow of an already-borrowed value is allowed.
+                                }
+                                Some(OwnershipState::Owned) => {
+                                    // Implicit borrow for owned values passed to borrow parameters.
+                                    if matches!(expected_ty, Some(AstType::MutRef(_))) {
+                                        env.update(&sym.0, OwnershipState::MutBorrowed);
+                                    } else {
+                                        env.update(&sym.0, OwnershipState::Borrowed { count: 1 });
+                                    }
+                                }
+                                Some(OwnershipState::Copy) => {
+                                    // Copy types don't need explicit borrow, they are trivially copyable.
+                                }
+                                _ => {
+                                    return Err(OwnershipError::AlreadyBorrowed(format!(
+                                        "passing '{}' to function expecting borrow - use '^{}' instead",
+                                        sym.0, sym.0
+                                    ), call_span.line, call_span.col));
+                                }
+                            }
                         }
                         check_expr(arg, env, registry, call_span.clone())?;
                     }
@@ -486,10 +505,10 @@ fn check_expr(
         }
 
         Expr::DefMacro { params, body, span: macro_span, .. } => {
-            env.push_scope();
             for (param, _) in params {
                 env.insert(param.0.clone(), OwnershipState::Owned);
             }
+            env.push_scope();
             check_expr(body, env, registry, macro_span.clone())?;
             env.release_borrows();
             env.pop_scope();
@@ -497,7 +516,6 @@ fn check_expr(
         }
 
         Expr::Lambda { params, body, span: lambda_span } => {
-            env.push_scope();
             for (param, param_ty) in params {
                 let state = match param_ty {
                     Some(AstType::MutRef(_)) => OwnershipState::MutBorrowed,
@@ -506,6 +524,7 @@ fn check_expr(
                 };
                 env.insert(param.0.clone(), state);
             }
+            env.push_scope();
             check_expr(body, env, registry, lambda_span.clone())?;
             env.release_borrows();
             env.pop_scope();
@@ -533,7 +552,7 @@ fn check_expr(
             check_expr(inner, env, registry, field_span.clone())
         }
 
-        Expr::List(_, _) | Expr::Vector(_, _) | Expr::Map(_, _) | Expr::Quote(_, _) => {
+        Expr::List(_, _) | Expr::Vector(_, _) | Expr::Quote(_, _) => {
             Ok(OwnershipState::Owned)
         }
     }

@@ -55,7 +55,6 @@ impl<'a> Parser<'a> {
             }
             Token::LParen => self.parse_list(),
             Token::LBracket => self.parse_vector(),
-            Token::LBrace => self.parse_map(),
             Token::Quote => {
                 self.advance();
                 let expr = self.parse_expr()?;
@@ -605,19 +604,6 @@ impl<'a> Parser<'a> {
         Ok(Expr::Vector(items, start_span))
     }
 
-    fn parse_map(&mut self) -> Result<Expr> {
-        let start_span = self.current_span();
-        self.advance(); // consume '{'
-        let mut items = Vec::new();
-        while !matches!(self.peek(), Some(Token::RBrace) | Some(Token::Eof) | None) {
-            let key = self.parse_expr()?;
-            let val = self.parse_expr()?;
-            items.push((key, val));
-        }
-        self.expect(Token::RBrace)?;
-        Ok(Expr::Map(items, start_span))
-    }
-
     fn expect(&mut self, expected: Token) -> Result<()> {
         let tok = self.advance().ok_or_else(|| anyhow::anyhow!("Unexpected EOF"))?;
         let matches = match (&tok.token, &expected) {
@@ -625,8 +611,7 @@ impl<'a> Parser<'a> {
             (Token::LParen, Token::LParen) => true,
             (Token::RBracket, Token::RBracket) => true,
             (Token::LBracket, Token::LBracket) => true,
-            (Token::RBrace, Token::RBrace) => true,
-            (Token::LBrace, Token::LBrace) => true,
+
             _ => false,
         };
         if !matches {

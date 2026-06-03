@@ -18,7 +18,10 @@ fn main() -> Result<()> {
         Commands::Build { file, output, backend, release: _release } => {
             match backend {
                 Backend::Qbe => {
-                    let qbe_ir = bars::compile_file(&file)?;
+                    let program = read_file(&file)?;
+                    let expanded = bars::expand_macros(&program)?;
+                    check_ownership(&expanded)?;
+                    let qbe_ir = bars::compile_to_qbe(&expanded)?;
                     if let Some(out) = output {
                         std::fs::write(&out, qbe_ir)?;
                         println!("Written to {}", out.display());
@@ -26,10 +29,42 @@ fn main() -> Result<()> {
                         println!("{}", qbe_ir);
                     }
                 }
+                Backend::Cranelift => {
+                    let program = read_file(&file)?;
+                    let expanded = bars::expand_macros(&program)?;
+                    check_ownership(&expanded)?;
+                    let hir_program = bars::lower_and_optimize(&expanded)?;
+
+                    let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+                    let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
+
+                    bars::backends::cranelift::compile_hir_to_object(
+                        &hir_program,
+                        std::path::Path::new(&obj_file),
+                    )?;
+
+                    if let Some(out) = output {
+                        let bin_out = out;
+                        let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
+                        let cc_compile = Command::new("cc")
+                            .args([&obj_file, &runtime_obj, "-lgc", "-o"])
+                            .arg(&bin_out)
+                            .output()?;
+                        if !cc_compile.status.success() {
+                            let stderr = String::from_utf8_lossy(&cc_compile.stderr);
+                            bail!("Link step failed:\n{}", stderr);
+                        }
+                        println!("Binary written to {}", bin_out.display());
+                        let _ = std::fs::remove_file(&obj_file);
+                    } else {
+                        println!("Object file written to {}", obj_file);
+                    }
+                }
                 #[cfg(feature = "llvm-backend")]
                 Backend::Llvm => {
                     let program = read_file(&file)?;
                     let expanded = bars::expand_macros(&program)?;
+                    check_ownership(&expanded)?;
                     let hir_program = bars::lower_and_optimize(&expanded)?;
 
                     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -64,6 +99,9 @@ fn main() -> Result<()> {
             match backend {
                 Backend::Qbe => {
                     run_file_qbe(&file)?;
+                }
+                Backend::Cranelift => {
+                    run_file_cranelift(&file)?;
                 }
                 #[cfg(feature = "llvm-backend")]
                 Backend::Llvm => {
@@ -106,14 +144,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn compile_to_qbe(program: &ast::Program) -> Result<String> {
-    let expanded = bars::expand_macros(program)?;
-    bars::compile_to_qbe(&expanded)
+fn check_ownership(program: &ast::Program) -> Result<()> {
+    match bars::ownership::check_program(program) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // ResourceLeak checking is still experimental; treat as warning for now.
+            if let bars::ownership::OwnershipError::ResourceLeak(_, _, _) = e {
+                eprintln!("⚠️  Ownership warning: {}", e);
+                Ok(())
+            } else {
+                bail!("❌ Ownership error: {}", e)
+            }
+        }
+    }
 }
 
 fn run_file_qbe(file: &Path) -> Result<()> {
     let program = read_file(file)?;
-    let qbe_ir = compile_to_qbe(&program)?;
+    let expanded = bars::expand_macros(&program)?;
+    check_ownership(&expanded)?;
+    let qbe_ir = bars::compile_to_qbe(&expanded)?;
 
     // Write QBE IR to temp file
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -158,6 +208,40 @@ fn run_file_qbe(file: &Path) -> Result<()> {
     Ok(())
 }
 
+fn run_file_cranelift(file: &Path) -> Result<()> {
+    let program = read_file(file)?;
+    let expanded = bars::expand_macros(&program)?;
+    check_ownership(&expanded)?;
+    let hir_program = bars::lower_and_optimize(&expanded)?;
+
+    let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+    let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
+    let bin_file = format!("/tmp/{}_{}", stem, std::process::id());
+
+    bars::backends::cranelift::compile_hir_to_object(&hir_program, Path::new(&obj_file))?;
+
+    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
+    let cc_compile = Command::new("cc")
+        .args([&obj_file, &runtime_obj, "-lgc", "-o", &bin_file])
+        .output()?;
+
+    if !cc_compile.status.success() {
+        let stderr = String::from_utf8_lossy(&cc_compile.stderr);
+        bail!("Link step failed:\n{}", stderr);
+    }
+
+    // Run binary
+    let run = Command::new(&bin_file).output()?;
+    std::io::stdout().write_all(&run.stdout)?;
+    std::io::stderr().write_all(&run.stderr)?;
+
+    // Cleanup
+    let _ = std::fs::remove_file(&obj_file);
+    let _ = std::fs::remove_file(&bin_file);
+
+    Ok(())
+}
+
 fn run_repl_jit() -> Result<()> {
     println!("Bars REPL v0.1.0 (Cranelift JIT)");
     println!("Натисни Ctrl+D за изход.");
@@ -194,8 +278,8 @@ fn run_repl_jit() -> Result<()> {
 
         for ch in line.chars() {
             match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => depth -= 1,
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
                 _ => {}
             }
         }
@@ -213,6 +297,11 @@ fn run_repl_jit() -> Result<()> {
                             continue;
                         }
                     };
+                    if let Err(e) = check_ownership(&expanded) {
+                        eprintln!("{}", e);
+                        input.clear();
+                        continue;
+                    }
                     match bars::lower_and_optimize(&expanded) {
                         Ok(hir_program) => {
                             match backend.compile_hir(&hir_program) {

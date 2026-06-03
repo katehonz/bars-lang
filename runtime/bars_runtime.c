@@ -63,45 +63,22 @@ bars_string_t* bars_string_from_i64(int64_t n) {
     return bars_string_new(buf);
 }
 
-int64_t bars_string_len(const bars_string_t* s) {
-    return s ? (int64_t)s->len : 0;
-}
-
 /* --- Vector --- */
 
 bars_vector_t* bars_vector_new(void) {
     bars_vector_t* vec = (bars_vector_t*)bars_alloc(sizeof(bars_vector_t));
-    vec->len = 0;
     vec->cap = 8;
+    vec->len = 0;
     vec->data = (bars_value_t*)bars_alloc(sizeof(bars_value_t) * vec->cap);
     return vec;
 }
 
 void bars_vector_push(bars_vector_t* vec, bars_value_t val) {
-    if (!vec) return;
     if (vec->len >= vec->cap) {
         vec->cap *= 2;
-        bars_value_t* new_data = (bars_value_t*)bars_alloc(sizeof(bars_value_t) * vec->cap);
-        memcpy(new_data, vec->data, sizeof(bars_value_t) * vec->len);
-        vec->data = new_data;
+        vec->data = (bars_value_t*)GC_realloc(vec->data, sizeof(bars_value_t) * vec->cap);
     }
     vec->data[vec->len++] = val;
-}
-
-bars_value_t bars_vector_get(const bars_vector_t* vec, size_t idx) {
-    bars_value_t nil = { .tag = BARS_NIL };
-    if (!vec || idx >= vec->len) return nil;
-    return vec->data[idx];
-}
-
-int64_t bars_vector_len(const bars_vector_t* vec) {
-    return vec ? (int64_t)vec->len : 0;
-}
-
-/* --- Simple i64 vector helpers --- */
-
-bars_vector_t* bars_vector_new_i64(void) {
-    return bars_vector_new();
 }
 
 void bars_vector_push_i64(bars_vector_t* vec, int64_t val) {
@@ -110,32 +87,33 @@ void bars_vector_push_i64(bars_vector_t* vec, int64_t val) {
 }
 
 int64_t bars_vector_get_i64(bars_vector_t* vec, int64_t idx) {
-    bars_value_t v = bars_vector_get(vec, (size_t)idx);
+    if (idx < 0 || idx >= (int64_t)vec->len) return 0;
+    bars_value_t v = vec->data[idx];
     if (v.tag == BARS_I64) return v.data.i64;
     return 0;
 }
 
 int64_t bars_vector_count_i64(bars_vector_t* vec) {
-    return bars_vector_len(vec);
+    return vec ? (int64_t)vec->len : 0;
+}
+
+/* Simple i64 vector helpers */
+
+bars_vector_t* bars_vector_new_i64(void) {
+    return bars_vector_new();
 }
 
 /* --- Map --- */
 
-static uint64_t hash_i64(int64_t x) {
-    return (uint64_t)x * 0x9e3779b97f4a7c15ULL;
-}
-
-uint64_t bars_hash_value(bars_value_t val) {
-    switch (val.tag) {
-        case BARS_I64: return hash_i64(val.data.i64);
-        case BARS_BOOL: return val.data.i64 ? 1 : 0;
-        case BARS_STRING:
-        case BARS_KEYWORD: {
-            uint64_t h = 0;
-            if (val.data.string) {
-                for (size_t i = 0; i < val.data.string->len; i++) {
-                    h = h * 31 + (unsigned char)val.data.string->data[i];
-                }
+uint64_t bars_hash_value(bars_value_t v) {
+    switch (v.tag) {
+        case BARS_I64: return (uint64_t)v.data.i64;
+        case BARS_BOOL: return v.data.i64 ? 1 : 0;
+        case BARS_STRING: {
+            uint64_t h = 14695981039346656037ULL;
+            for (size_t i = 0; i < v.data.string->len; i++) {
+                h ^= (unsigned char)v.data.string->data[i];
+                h *= 1099511628211ULL;
             }
             return h;
         }
@@ -146,14 +124,12 @@ uint64_t bars_hash_value(bars_value_t val) {
 int bars_value_eq(bars_value_t a, bars_value_t b) {
     if (a.tag != b.tag) return 0;
     switch (a.tag) {
-        case BARS_NIL: return 1;
         case BARS_I64: return a.data.i64 == b.data.i64;
-        case BARS_F64: return a.data.f64 == b.data.f64;
         case BARS_BOOL: return a.data.i64 == b.data.i64;
-        case BARS_STRING:
-        case BARS_KEYWORD:
+        case BARS_STRING: {
             if (a.data.string->len != b.data.string->len) return 0;
             return memcmp(a.data.string->data, b.data.string->data, a.data.string->len) == 0;
+        }
         default: return 0;
     }
 }
@@ -168,9 +144,8 @@ bars_map_t* bars_map_new(void) {
 }
 
 void bars_map_set(bars_map_t* map, bars_value_t key, bars_value_t val) {
-    if (!map) return;
     uint64_t h = bars_hash_value(key);
-    size_t idx = h % map->cap;
+    size_t idx = h & (map->cap - 1);
     bars_map_entry_t* entry = map->buckets[idx];
     while (entry) {
         if (bars_value_eq(entry->key, key)) {
@@ -188,10 +163,8 @@ void bars_map_set(bars_map_t* map, bars_value_t key, bars_value_t val) {
 }
 
 bars_value_t bars_map_get(const bars_map_t* map, bars_value_t key) {
-    bars_value_t nil = { .tag = BARS_NIL };
-    if (!map) return nil;
     uint64_t h = bars_hash_value(key);
-    size_t idx = h % map->cap;
+    size_t idx = h & (map->cap - 1);
     bars_map_entry_t* entry = map->buckets[idx];
     while (entry) {
         if (bars_value_eq(entry->key, key)) {
@@ -199,6 +172,7 @@ bars_value_t bars_map_get(const bars_map_t* map, bars_value_t key) {
         }
         entry = entry->next;
     }
+    bars_value_t nil = { .tag = BARS_NIL };
     return nil;
 }
 
@@ -227,4 +201,26 @@ int64_t bars_map_get_i64(bars_map_t* map, int64_t key) {
 
 int64_t bars_map_count_i64(bars_map_t* map) {
     return bars_map_len(map);
+}
+
+/* --- Simple i64 set helpers (backed by map with dummy values) --- */
+
+bars_map_t* bars_set_new_i64(void) {
+    return bars_map_new();
+}
+
+void bars_set_add_i64(bars_map_t* set, int64_t val) {
+    bars_value_t k = { .tag = BARS_I64, .data = { .i64 = val } };
+    bars_value_t v = { .tag = BARS_I64, .data = { .i64 = 1 } };
+    bars_map_set(set, k, v);
+}
+
+int64_t bars_set_contains_i64(bars_map_t* set, int64_t val) {
+    bars_value_t k = { .tag = BARS_I64, .data = { .i64 = val } };
+    bars_value_t v = bars_map_get(set, k);
+    return (v.tag == BARS_I64) ? 1 : 0;
+}
+
+int64_t bars_set_count_i64(bars_map_t* set) {
+    return bars_map_len(set);
 }

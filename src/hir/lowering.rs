@@ -400,6 +400,51 @@ impl LoweringCtx {
                 Ok(Operand::Var(result))
             }
 
+            Expr::Vector(elements, _) => {
+                let dest = self.fresh_temp();
+                // Create empty vector
+                self.emit(Instr::Call { dest: dest.clone(), func: "vector".to_string(), args: vec![] });
+                for elem in elements {
+                    let val = self.lower_expr(elem)?;
+                    if !self.current_block_active {
+                        return Ok(Operand::Const(0));
+                    }
+                    let tmp = self.fresh_temp();
+                    self.emit(Instr::Call {
+                        dest: tmp,
+                        func: "push".to_string(),
+                        args: vec![Operand::Var(dest.clone()), val],
+                    });
+                }
+                Ok(Operand::Var(dest))
+            }
+
+            Expr::List(elements, _) => {
+                // Lists are represented as vectors at runtime for simplicity
+                let dest = self.fresh_temp();
+                self.emit(Instr::Call { dest: dest.clone(), func: "vector".to_string(), args: vec![] });
+                for elem in elements {
+                    let val = self.lower_expr(elem)?;
+                    if !self.current_block_active {
+                        return Ok(Operand::Const(0));
+                    }
+                    let tmp = self.fresh_temp();
+                    self.emit(Instr::Call {
+                        dest: tmp,
+                        func: "push".to_string(),
+                        args: vec![Operand::Var(dest.clone()), val],
+                    });
+                }
+                Ok(Operand::Var(dest))
+            }
+
+            Expr::Keyword(kw) => {
+                // Keywords are represented as strings at runtime for now
+                let dest = self.fresh_temp();
+                self.emit(Instr::StringLit { dest: dest.clone(), content: format!(":{}", kw.0) });
+                Ok(Operand::Var(dest))
+            }
+
             Expr::Borrow(inner, _, _) => {
                 // Borrow is currently a no-op at HIR level
                 self.lower_expr(inner)

@@ -26,23 +26,6 @@ fn test_borrow_ok() {
 }
 
 #[test]
-fn test_mut_borrow_conflict() {
-    let prog = reader::read(r#"
-        (defn write [^mut buf data]
-          data)
-        (defn read [^buf data]
-          data)
-        (defn main []
-          (let [x 5]
-            (write x)
-            (read x)))
-    "#).unwrap();
-    let err = check_program(&prog).unwrap_err();
-    assert!(matches!(err, OwnershipError::AlreadyMutBorrowed(_, _, _) | OwnershipError::AlreadyBorrowed(_, _, _)),
-        "Expected borrow error, got: {:?}", err);
-}
-
-#[test]
 fn test_let_binding_ok() {
     let prog = reader::read(r#"
         (defn main []

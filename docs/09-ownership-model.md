@@ -37,7 +37,7 @@ Primitive types are copied, not moved:
 | Type | Behavior |
 |------|----------|
 | `i64`, `bool`, `f64` | **Copy** — passed by value, original stays valid |
-| `String`, `Vector`, `Map` | **Move** — ownership transfers, original becomes invalid |
+| `String`, `Vector`, `Map`, `Set` | **Move** — ownership transfers, original becomes invalid |
 | User-defined structs | **Move** by default, opt-in `Copy` |
 
 ```clojure
@@ -55,11 +55,11 @@ Primitive types are copied, not moved:
 Borrowing lets you temporarily access a value without taking ownership:
 
 ```clojure
-(defn inspect [^i64 data]        ;; immutable borrow
-  (println (count data)))
+(defn inspect [^i64 vec]        ;; immutable borrow
+  (println (count vec)))
 
-(defn fill [^mut i64 data]       ;; mutable borrow
-  (push data 42))
+(defn fill [^mut i64 vec]       ;; mutable borrow
+  (push vec 42))
 
 (let [v (vector 1 2 3)]
   (inspect v)                    ;; borrow v immutably
@@ -67,9 +67,27 @@ Borrowing lets you temporarily access a value without taking ownership:
   (fill v))                      ;; ERROR: can't mutably borrow while immutably borrowed
 ```
 
-### 4. Move by Default
+### 4. Implicit Borrow
 
-When passing a non-Copy value to a function, ownership moves:
+Bars automatically borrows owned values when passing them to functions that expect a borrow parameter. You don't need to write `^` every time:
+
+```clojure
+(defn inspect [^i64 vec]
+  (println (count vec)))
+
+(let [v (vector 1 2 3)]
+  (inspect v)           ;; implicit borrow — no need for ^v
+  (inspect v))          ;; OK: borrow was released after each call
+```
+
+This works because:
+- **Copy types** (`i64`, `bool`) are trivially copyable — no borrow needed.
+- **Owned values** passed to `^` parameters are automatically borrowed for the duration of the call.
+- **Already-borrowed values** can be "reborrowed" without explicit `^`.
+
+### 5. Move by Default
+
+When passing a non-Copy value to a function that does NOT expect a borrow, ownership moves:
 
 ```clojure
 (defn consume [data]
@@ -88,7 +106,7 @@ To keep the value, pass a borrow instead:
   v)                             ;; OK
 ```
 
-### 5. Automatic Drop at Scope End
+### 6. Automatic Drop at Scope End
 
 When a scope ends, all owned values that haven't been moved are automatically dropped (cleaned up):
 
@@ -105,7 +123,9 @@ This applies to:
 - Function parameters
 - `loop` bindings
 
-### 6. The Stack Is the Owner
+Note: function parameters are owned by the **caller**, not locally allocated, so they are not checked for resource leaks at function end.
+
+### 7. The Stack Is the Owner
 
 Stack-allocated values (primitives, small structs) never need heap allocation. The stack frame itself is the owner:
 
@@ -134,7 +154,7 @@ Bars uses a hybrid model:
 |----------|-----------|---------------|
 | Stack primitives (`i64`, `bool`) | Automatic | No-op (Copy types) |
 | Owned heap values (custom structs) | Ownership + explicit drop | Drop at scope end or move |
-| GC-managed (`Vector`, `Map`, `String`) | Boehm GC | GC collects when unreachable |
+| GC-managed (`Vector`, `Map`, `Set`, `String`) | Boehm GC | GC collects when unreachable |
 
 You choose the trade-off:
 - Use ownership for performance-critical code (no GC pauses)

@@ -101,6 +101,12 @@ void bars_map_set_i64(bars_map_t* map, int64_t key, int64_t val);
 int64_t bars_map_get_i64(bars_map_t* map, int64_t key);
 int64_t bars_map_count_i64(bars_map_t* map);
 
+/* Simple i64 set helpers (backed by map) */
+bars_map_t* bars_set_new_i64(void);
+void bars_set_add_i64(bars_map_t* set, int64_t val);
+int64_t bars_set_contains_i64(bars_map_t* set, int64_t val);
+int64_t bars_set_count_i64(bars_map_t* set);
+
 /* Utility */
 uint64_t bars_hash_value(bars_value_t val);
 int bars_value_eq(bars_value_t a, bars_value_t b);

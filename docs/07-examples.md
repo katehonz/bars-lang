@@ -102,6 +102,8 @@ bars run examples/vector.brs
 
 ## Maps
 
+Maps are created with functions (no `{}` literal syntax):
+
 ```clojure
 ;; examples/map.brs
 (defn main []
@@ -119,6 +121,56 @@ bars run examples/map.brs
 # 2
 # 100
 # 200
+```
+
+## Sets
+
+```clojure
+;; examples/set_demo.brs
+(defn main []
+  (def s (set))
+  (set-add s 1)
+  (set-add s 2)
+  (set-add s 3)
+  (println (set-count s))
+  (println (set-contains? s 2))
+  (println (set-contains? s 99))
+  0)
+```
+
+```bash
+bars run examples/set_demo.brs
+# 3
+# 1
+# 0
+```
+
+## Nested Collections
+
+Vectors and maps can be nested freely:
+
+```clojure
+;; examples/nested_demo.brs
+(defn main []
+  (def v [1 [2 3] 4])
+  (println (count v))
+  (println (get (get v 1) 0))
+
+  (def m (map))
+  (map-set m 1 [10 20])
+  (map-set m 2 [30 40])
+  (println (map-count m))
+  (println (get (map-get m 1) 0))
+
+  0)
+```
+
+```bash
+bars run examples/nested_demo.brs
+# 3
+# 2
+# 2
+# 10
 ```
 
 ## Cond Macro
@@ -180,4 +232,13 @@ Goodbye!
 ```bash
 bars check examples/ownership.brs
 # ✅ Ownership checks passed.
+```
+
+## Cranelift Backend
+
+Use the Cranelift backend for fast compilation:
+
+```bash
+bars run --backend cranelift examples/math.brs
+bars build --backend cranelift examples/math.brs -o math.o
 ```

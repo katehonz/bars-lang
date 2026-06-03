@@ -129,3 +129,27 @@ fn test_run_struct_match() {
     assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
     assert!(stdout.contains("7"), "Expected '7' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_run_nested_collections() {
+    let output = bars()
+        .args(["run", "examples/nested_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("3"), "Expected '3' in output, got: {}", stdout);
+    assert!(stdout.contains("2"), "Expected '2' in output, got: {}", stdout);
+    assert!(stdout.contains("10"), "Expected '10' in output, got: {}", stdout);
+}
+
+#[test]
+fn test_run_set() {
+    let output = bars()
+        .args(["run", "examples/set_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("3"), "Expected '3' in output, got: {}", stdout);
+    assert!(stdout.contains("1"), "Expected '1' in output, got: {}", stdout);
+    assert!(stdout.contains("0"), "Expected '0' in output, got: {}", stdout);
+}

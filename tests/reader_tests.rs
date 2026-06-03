@@ -43,13 +43,6 @@ fn test_parse_vector() {
 }
 
 #[test]
-fn test_parse_map() {
-    let prog = reader::read("{:a 1 :b 2}").unwrap();
-    assert_eq!(prog.exprs.len(), 1);
-    assert!(matches!(prog.exprs[0], bars::ast::Expr::Map(_, _)));
-}
-
-#[test]
 fn test_parse_keyword() {
     let prog = reader::read(":hello").unwrap();
     assert_eq!(prog.exprs.len(), 1);

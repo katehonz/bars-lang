@@ -10,6 +10,63 @@ Bars ships with a standard library written in Bars itself under `lib/`.
 (load "lib/vector.brs")
 ```
 
+## Built-in Collection Functions
+
+These are implemented in the C runtime and available without `load`:
+
+### Vectors
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `vector` | `(vector x y z ...)` | Create a vector with elements |
+| `push` | `(push vec val)` | Append value to vector |
+| `get` | `(get vec idx)` | Element at index (0-based) |
+| `count` | `(count vec)` | Number of elements |
+
+Vectors can be nested:
+
+```clojure
+(def v [1 [2 3] 4])
+(println (get (get v 1) 0))  ;; → 2
+```
+
+### Maps
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `map` | `(map)` | Create empty map |
+| `map-set` | `(map-set m key val)` | Set key-value pair |
+| `map-get` | `(map-get m key)` | Get value by key |
+| `map-count` | `(map-count m)` | Number of entries |
+
+Maps can hold vectors and other collections:
+
+```clojure
+(def m (map))
+(map-set m 1 [10 20])
+(map-set m 2 [30 40])
+(println (get (map-get m 1) 0))  ;; → 10
+```
+
+### Sets
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `set` | `(set)` | Create empty set |
+| `set-add` | `(set-add s val)` | Add element to set |
+| `set-contains?` | `(set-contains? s val)` | Check membership (1 or 0) |
+| `set-count` | `(set-count s)` | Number of unique elements |
+
+```clojure
+(def s (set))
+(set-add s 1)
+(set-add s 2)
+(set-add s 3)
+(println (set-count s))          ;; → 3
+(println (set-contains? s 2))    ;; → 1
+(println (set-contains? s 99))   ;; → 0
+```
+
 ## `lib/core.brs`
 
 ### Numeric Helpers

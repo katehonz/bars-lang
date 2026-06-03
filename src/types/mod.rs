@@ -316,7 +316,7 @@ impl InferCtx {
             }
 
             Expr::DefMacro { .. } => Ok(Type::Void),
-            Expr::Vector(_, _) | Expr::List(_, _) | Expr::Map(_, _) => {
+            Expr::Vector(_, _) | Expr::List(_, _) => {
                 Ok(Type::Named("collection".to_string()))
             }
         }

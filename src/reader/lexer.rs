@@ -7,8 +7,6 @@ pub enum Token {
     RParen,         // )
     LBracket,       // [
     RBracket,       // ]
-    LBrace,         // {
-    RBrace,         // }
     Number(i64),
     Float(f64),
     String(String),
@@ -33,8 +31,7 @@ impl fmt::Display for Token {
             Token::RParen => write!(f, ")"),
             Token::LBracket => write!(f, "["),
             Token::RBracket => write!(f, "]"),
-            Token::LBrace => write!(f, "{{"),
-            Token::RBrace => write!(f, "}}"),
+
             Token::Number(n) => write!(f, "{}", n),
             Token::Float(n) => write!(f, "{}", n),
             Token::String(s) => write!(f, "\"{}\"", s),
@@ -93,16 +90,7 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>> {
                 col += 1;
                 tokens.push(SpannedToken { token: Token::RBracket, line: start_line, col: start_col });
             }
-            '{' => {
-                chars.next();
-                col += 1;
-                tokens.push(SpannedToken { token: Token::LBrace, line: start_line, col: start_col });
-            }
-            '}' => {
-                chars.next();
-                col += 1;
-                tokens.push(SpannedToken { token: Token::RBrace, line: start_line, col: start_col });
-            }
+
             ';' => {
                 // Comment till end of line
                 chars.next();

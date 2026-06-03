@@ -436,6 +436,23 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         let ptr = self.i64_to_ptr(arg_vals[0]);
                         self.call_runtime_i64_ptr("bars_map_count_i64", ptr)?
                     }
+                    "set" => {
+                        let ptr = self.call_runtime_ptr("bars_set_new_i64", &[])?;
+                        self.ptr_to_i64(ptr)
+                    }
+                    "set_add" | "set-add" if arg_vals.len() == 2 => {
+                        let ptr = self.i64_to_ptr(arg_vals[0]);
+                        self.call_runtime_void_ptr_i64("bars_set_add_i64", ptr, arg_vals[1])?;
+                        self.i64_type.const_int(0, false)
+                    }
+                    "set_contains?" | "set-contains?" if arg_vals.len() == 2 => {
+                        let ptr = self.i64_to_ptr(arg_vals[0]);
+                        self.call_runtime_i64_ptr_i64("bars_set_contains_i64", ptr, arg_vals[1])?
+                    }
+                    "set_count" | "set-count" if arg_vals.len() == 1 => {
+                        let ptr = self.i64_to_ptr(arg_vals[0]);
+                        self.call_runtime_i64_ptr("bars_set_count_i64", ptr)?
+                    }
                     _ => {
                         if let Some(user_func) = self.functions.get(func_name).copied() {
                             let args_meta: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = arg_vals.iter()

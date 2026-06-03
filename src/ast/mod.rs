@@ -85,7 +85,7 @@ pub enum Expr {
     Keyword(Keyword),
     List(Vec<Expr>, Span),
     Vector(Vec<Expr>, Span),
-    Map(Vec<(Expr, Expr)>, Span),
+
     // Special forms
     Let {
         bindings: Vec<(Symbol, Expr)>,
@@ -166,7 +166,7 @@ impl Expr {
         match self {
             Expr::Number(_) | Expr::Float(_) | Expr::Bool(_) | Expr::String(_) |
             Expr::Symbol(_) | Expr::Keyword(_) => Span::new(0, 0),
-            Expr::List(_, s) | Expr::Vector(_, s) | Expr::Map(_, s) => s.clone(),
+            Expr::List(_, s) | Expr::Vector(_, s) => s.clone(),
             Expr::Let { span, .. } => span.clone(),
             Expr::If { span, .. } => span.clone(),
             Expr::Def { span, .. } => span.clone(),

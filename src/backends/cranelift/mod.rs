@@ -7,6 +7,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 // Real C runtime function declarations
 unsafe extern "C" {
@@ -23,11 +24,15 @@ unsafe extern "C" {
     fn bars_map_set_i64(map: *mut u8, key: i64, val: i64);
     fn bars_map_get_i64(map: *mut u8, key: i64) -> i64;
     fn bars_map_count_i64(map: *mut u8) -> i64;
+    fn bars_set_new_i64() -> *mut u8;
+    fn bars_set_add_i64(set: *mut u8, val: i64);
+    fn bars_set_contains_i64(set: *mut u8, val: i64) -> i64;
+    fn bars_set_count_i64(set: *mut u8) -> i64;
 }
 
 pub struct CraneliftBackend {
     module: JITModule,
-    builder_context: FunctionBuilderContext,
+    _builder_context: FunctionBuilderContext,
     functions: HashMap<String, cranelift_module::FuncId>,
 }
 
@@ -57,12 +62,16 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_map_set_i64", bars_map_set_i64 as *const u8);
         jit_builder.symbol("bars_map_get_i64", bars_map_get_i64 as *const u8);
         jit_builder.symbol("bars_map_count_i64", bars_map_count_i64 as *const u8);
+        jit_builder.symbol("bars_set_new_i64", bars_set_new_i64 as *const u8);
+        jit_builder.symbol("bars_set_add_i64", bars_set_add_i64 as *const u8);
+        jit_builder.symbol("bars_set_contains_i64", bars_set_contains_i64 as *const u8);
+        jit_builder.symbol("bars_set_count_i64", bars_set_count_i64 as *const u8);
 
         let module = JITModule::new(jit_builder);
 
         Ok(Self {
             module,
-            builder_context: FunctionBuilderContext::new(),
+            _builder_context: FunctionBuilderContext::new(),
             functions: HashMap::new(),
         })
     }
@@ -70,12 +79,17 @@ impl CraneliftBackend {
     pub fn compile_hir(&mut self, program: &hir::Program) -> Result<i64> {
         // Declare all functions first
         for func in &program.funcs {
-            self.declare_function(&func.name, func.params.len())?;
+            declare_function_generic(&mut self.module, &func.name, func.params.len(), &mut self.functions)?;
         }
 
         // Define all functions
         for func in &program.funcs {
-            self.define_function(func, &program.struct_registry)?;
+            define_function_generic(
+                &mut self.module,
+                func,
+                &program.struct_registry,
+                &self.functions,
+            )?;
         }
 
         self.module.finalize_definitions().unwrap();
@@ -90,101 +104,108 @@ impl CraneliftBackend {
             Ok(0)
         }
     }
+}
 
-    fn declare_function(&mut self, name: &str, n_params: usize) -> Result<()> {
-        let mut sig = self.module.make_signature();
-        for _ in 0..n_params {
-            sig.params.push(AbiParam::new(types::I64));
+fn declare_function_generic<M: Module>(
+    module: &mut M,
+    name: &str,
+    n_params: usize,
+    functions: &mut HashMap<String, cranelift_module::FuncId>,
+) -> Result<()> {
+    let mut sig = module.make_signature();
+    for _ in 0..n_params {
+        sig.params.push(AbiParam::new(types::I64));
+    }
+    sig.returns.push(AbiParam::new(types::I64));
+
+    let id = module.declare_function(name, Linkage::Export, &sig)?;
+    functions.insert(name.to_string(), id);
+    Ok(())
+}
+
+fn define_function_generic<M: Module>(
+    module: &mut M,
+    func: &hir::Func,
+    struct_registry: &HashMap<String, Vec<String>>,
+    functions: &HashMap<String, cranelift_module::FuncId>,
+) -> Result<()> {
+    let func_id = *functions.get(&func.name).unwrap();
+
+    let mut ctx = module.make_context();
+    ctx.func.signature = module.make_signature();
+    for _ in &func.params {
+        ctx.func.signature.params.push(AbiParam::new(types::I64));
+    }
+    ctx.func.signature.returns.push(AbiParam::new(types::I64));
+
+    let mut builder_context = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_context);
+
+    // Create Cranelift blocks for all HIR blocks, entry first
+    let mut blocks: HashMap<String, Block> = HashMap::new();
+    let entry_block = builder.create_block();
+    blocks.insert(func.entry_block.clone(), entry_block);
+    for block in &func.blocks {
+        if block.label != func.entry_block {
+            blocks.insert(block.label.clone(), builder.create_block());
         }
-        sig.returns.push(AbiParam::new(types::I64));
-
-        let id = self.module.declare_function(name, Linkage::Export, &sig)?;
-        self.functions.insert(name.to_string(), id);
-        Ok(())
     }
 
-    fn define_function(
-        &mut self,
-        func: &hir::Func,
-        struct_registry: &HashMap<String, Vec<String>>,
-    ) -> Result<()> {
-        let func_id = *self.functions.get(&func.name).unwrap();
+    builder.append_block_params_for_function_params(entry_block);
+    builder.switch_to_block(entry_block);
 
-        let mut ctx = self.module.make_context();
-        ctx.func.signature = self.module.make_signature();
-        for _ in &func.params {
-            ctx.func.signature.params.push(AbiParam::new(types::I64));
-        }
-        ctx.func.signature.returns.push(AbiParam::new(types::I64));
-
-        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut self.builder_context);
-
-        // Create Cranelift blocks for all HIR blocks, entry first
-        let mut blocks: HashMap<String, Block> = HashMap::new();
-        let entry_block = builder.create_block();
-        blocks.insert(func.entry_block.clone(), entry_block);
-        for block in &func.blocks {
-            if block.label != func.entry_block {
-                blocks.insert(block.label.clone(), builder.create_block());
-            }
-        }
-
-        builder.append_block_params_for_function_params(entry_block);
-
-        let mut values: HashMap<String, Variable> = HashMap::new();
-        for (i, param) in func.params.iter().enumerate() {
-            let var = builder.declare_var(types::I64);
-            builder.def_var(var, builder.block_params(entry_block)[i]);
-            values.insert(param.clone(), var);
-        }
-
-        let mut string_temps: HashSet<String> = HashSet::new();
-        let functions = &self.functions;
-
-        // Compile each block (don't seal yet — wait until all jumps are emitted)
-        for block in &func.blocks {
-            let clif_block = blocks[&block.label];
-            builder.switch_to_block(clif_block);
-
-            for instr in &block.instrs {
-                compile_instr(
-                    instr,
-                    &mut builder,
-                    &mut values,
-                    &mut string_temps,
-                    struct_registry,
-                    functions,
-                    &mut self.module,
-                )?;
-            }
-
-            compile_terminator(&block.terminator, &mut builder, &values, &blocks)?;
-        }
-
-        // Seal all blocks after all jumps are emitted
-        for block in &func.blocks {
-            builder.seal_block(blocks[&block.label]);
-        }
-
-        builder.finalize();
-        self.module.define_function(func_id, &mut ctx)?;
-
-        Ok(())
+    let mut values: HashMap<String, Variable> = HashMap::new();
+    for (i, param) in func.params.iter().enumerate() {
+        let var = builder.declare_var(types::I64);
+        builder.def_var(var, builder.block_params(entry_block)[i]);
+        values.insert(param.clone(), var);
     }
+
+    let mut string_temps: HashSet<String> = HashSet::new();
+
+    // Compile each block
+    for block in &func.blocks {
+        let clif_block = blocks[&block.label];
+        builder.switch_to_block(clif_block);
+
+        for instr in &block.instrs {
+            compile_instr(
+                instr,
+                &mut builder,
+                &mut values,
+                &mut string_temps,
+                struct_registry,
+                functions,
+                module,
+            )?;
+        }
+
+        compile_terminator(&block.terminator, &mut builder, &values, &blocks)?;
+    }
+
+    // Seal all blocks after all jumps are emitted
+    for block in &func.blocks {
+        builder.seal_block(blocks[&block.label]);
+    }
+
+    builder.finalize();
+    module.define_function(func_id, &mut ctx)?;
+
+    Ok(())
 }
 
 fn get_or_declare_var(name: &str, values: &mut HashMap<String, Variable>, builder: &mut FunctionBuilder) -> Variable {
     *values.entry(name.to_string()).or_insert_with(|| builder.declare_var(types::I64))
 }
 
-fn compile_instr(
+fn compile_instr<M: Module>(
     instr: &hir::Instr,
     builder: &mut FunctionBuilder,
     values: &mut HashMap<String, Variable>,
     string_temps: &mut HashSet<String>,
     struct_registry: &HashMap<String, Vec<String>>,
     functions: &HashMap<String, cranelift_module::FuncId>,
-    module: &mut JITModule,
+    module: &mut M,
 ) -> Result<()> {
     match instr {
         hir::Instr::Assign { dest, value } => {
@@ -376,6 +397,19 @@ fn compile_instr(
                 "map_count" | "map-count" if arg_vals.len() == 1 => {
                     call_runtime(builder, module, "bars_map_count_i64", &arg_vals)?
                 }
+                "set" => {
+                    call_runtime(builder, module, "bars_set_new_i64", &[])?
+                }
+                "set_add" | "set-add" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_set_add_i64", &arg_vals)?;
+                    builder.ins().iconst(types::I64, 0)
+                }
+                "set_contains?" | "set-contains?" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_set_contains_i64", &arg_vals)?
+                }
+                "set_count" | "set-count" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_set_count_i64", &arg_vals)?
+                }
                 _ => {
                     if let Some(&func_id) = functions.get(func_name) {
                         let func_ref = module.declare_func_in_func(func_id, builder.func);
@@ -454,9 +488,9 @@ fn is_string_arg(arg: &hir::Operand, string_temps: &HashSet<String>) -> bool {
     matches!(arg, hir::Operand::Var(v) if string_temps.contains(v))
 }
 
-fn call_runtime(
+fn call_runtime<M: Module>(
     builder: &mut FunctionBuilder,
-    module: &mut JITModule,
+    module: &mut M,
     name: &str,
     args: &[ClifValue],
 ) -> Result<ClifValue> {
@@ -478,3 +512,45 @@ fn call_runtime(
         Ok(builder.ins().iconst(types::I64, 0))
     }
 }
+
+/// AOT compilation: compile HIR program to a native object file using Cranelift.
+pub fn compile_hir_to_object(program: &hir::Program, output: &Path) -> Result<()> {
+    let mut flag_builder = settings::builder();
+    flag_builder.set("use_colocated_libcalls", "false").unwrap();
+    flag_builder.set("is_pic", "false").unwrap();
+    let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
+        panic!("host machine is not supported: {}", msg);
+    });
+    let isa = isa_builder.finish(settings::Flags::new(flag_builder)).unwrap();
+
+    let builder = ObjectBuilder::new(
+        isa,
+        "bars_output",
+        cranelift_module::default_libcall_names(),
+    ).map_err(|e| anyhow::anyhow!("ObjectBuilder error: {}", e))?;
+
+    let mut module = ObjectModule::new(builder);
+    let mut functions: HashMap<String, cranelift_module::FuncId> = HashMap::new();
+
+    // Declare all functions first
+    for func in &program.funcs {
+        declare_function_generic(&mut module, &func.name, func.params.len(), &mut functions)?;
+    }
+
+    // Define all functions
+    for func in &program.funcs {
+        define_function_generic(
+            &mut module,
+            func,
+            &program.struct_registry,
+            &functions,
+        )?;
+    }
+
+    let product = module.finish();
+    let bytes = product.emit().map_err(|e| anyhow::anyhow!("emit object: {}", e))?;
+    std::fs::write(output, bytes)?;
+    Ok(())
+}
+
+use cranelift_object::{ObjectBuilder, ObjectModule};
