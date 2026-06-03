@@ -123,4 +123,17 @@ int64_t bars_set_count_i64(bars_map_t* set);
 uint64_t bars_hash_value(bars_value_t val);
 int bars_value_eq(bars_value_t a, bars_value_t b);
 
+/* Math (libm wrappers, return i64) */
+int64_t bars_sqrt_i64(int64_t n);
+int64_t bars_pow_i64(int64_t base, int64_t exp);
+int64_t bars_abs_i64(int64_t n);
+
+/* String operations */
+int64_t bars_string_length(bars_string_t* s);
+bars_string_t* bars_string_concat(bars_string_t* a, bars_string_t* b);
+
+/* I/O */
+bars_string_t* bars_slurp(const char* path);
+int64_t bars_spit(const char* path, bars_string_t* content);
+
 #endif

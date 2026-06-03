@@ -128,11 +128,11 @@ fn test_string_literal() {
     "#).unwrap();
     let mut ctx = InferCtx::new();
     let (_, types) = ctx.infer_program(&prog).unwrap();
-    // main has type Fun([], String)
+    // main has type Fun([], I64) — strings are i64 pointers at runtime
     match &types[0].1.ty {
         Type::Fun(params, ret) => {
             assert!(params.is_empty());
-            assert_eq!(ret.as_ref(), &Type::String);
+            assert_eq!(ret.as_ref(), &Type::I64);
         }
         other => panic!("Expected function type, got {:?}", other),
     }

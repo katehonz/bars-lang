@@ -148,6 +148,29 @@ impl<'ctx> LlvmCompiler<'ctx> {
         self.module.add_function("bars_print_set_i64", void_str, None);
         self.module.add_function("bars_print_any_i64", void_i64, None);
 
+        // Math: i64 f(i64)
+        let i64_i64 = self.i64_type.fn_type(&[self.i64_type.into()], false);
+        self.module.add_function("bars_sqrt_i64", i64_i64, None);
+        self.module.add_function("bars_abs_i64", i64_i64, None);
+
+        // Math: i64 f(i64, i64)
+        let i64_i64_i64 = self.i64_type.fn_type(&[self.i64_type.into(), self.i64_type.into()], false);
+        self.module.add_function("bars_pow_i64", i64_i64_i64, None);
+
+        // String: i64 f(i8*)
+        self.module.add_function("bars_string_length", i64_ptr, None);
+
+        // String: i8* f(i8*, i8*)
+        let str_str_str = i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
+        self.module.add_function("bars_string_concat", str_str_str, None);
+
+        // I/O: i64 f(i8*, i8*)
+        let i64_ptr_ptr = self.i64_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
+        self.module.add_function("bars_spit", i64_ptr_ptr, None);
+
+        // I/O: i8* f(i8*)
+        self.module.add_function("bars_slurp", str_str, None);
+
         Ok(())
     }
 
@@ -470,6 +493,38 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         let ptr = self.i64_to_ptr(arg_vals[0]);
                         self.call_runtime_i64_ptr("bars_set_count_i64", ptr)?
                     }
+                    // Math: i64 -> i64
+                    "sqrt" if arg_vals.len() == 1 => {
+                        self.call_runtime_i64("bars_sqrt_i64", &[arg_vals[0]])?
+                    }
+                    "abs" if arg_vals.len() == 1 => {
+                        self.call_runtime_i64("bars_abs_i64", &[arg_vals[0]])?
+                    }
+                    "pow" if arg_vals.len() == 2 => {
+                        self.call_runtime_i64("bars_pow_i64", &[arg_vals[0], arg_vals[1]])?
+                    }
+                    // String ops
+                    "str-count" | "str_count" if arg_vals.len() == 1 => {
+                        let ptr = self.i64_to_ptr(arg_vals[0]);
+                        self.call_runtime_i64_ptr("bars_string_length", ptr)?
+                    }
+                    "str-concat" | "str_concat" if arg_vals.len() == 2 => {
+                        let a = self.i64_to_ptr(arg_vals[0]);
+                        let b = self.i64_to_ptr(arg_vals[1]);
+                        let result = self.call_runtime_ptr("bars_string_concat", &[a, b])?;
+                        self.ptr_to_i64(result)
+                    }
+                    // I/O
+                    "slurp" if arg_vals.len() == 1 => {
+                        let path = self.i64_to_ptr(arg_vals[0]);
+                        let result = self.call_runtime_ptr("bars_slurp", &[path])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "spit" if arg_vals.len() == 2 => {
+                        let path = self.i64_to_ptr(arg_vals[0]);
+                        let content = self.i64_to_ptr(arg_vals[1]);
+                        self.call_runtime_i64_ptr_ptr("bars_spit", path, content)?
+                    }
                     _ => {
                         if let Some(user_func) = self.functions.get(func_name).copied() {
                             let args_meta: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = arg_vals.iter()
@@ -619,6 +674,23 @@ impl<'ctx> LlvmCompiler<'ctx> {
     fn call_runtime_i64_ptr_i64(&self, name: &str, ptr: PointerValue<'ctx>, val: IntValue<'ctx>) -> Result<IntValue<'ctx>> {
         let func = self.module.get_function(name).unwrap();
         let call = self.builder.build_call(func, &[ptr.into(), val.into()], name).unwrap();
+        Ok(call.try_as_basic_value().left()
+            .map(|v| v.into_int_value())
+            .unwrap_or_else(|| self.i64_type.const_int(0, false)))
+    }
+
+    fn call_runtime_i64(&self, name: &str, args: &[IntValue<'ctx>]) -> Result<IntValue<'ctx>> {
+        let func = self.module.get_function(name).unwrap();
+        let args_meta: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = args.iter().map(|&v| v.into()).collect();
+        let call = self.builder.build_call(func, &args_meta, name).unwrap();
+        Ok(call.try_as_basic_value().left()
+            .map(|v| v.into_int_value())
+            .unwrap_or_else(|| self.i64_type.const_int(0, false)))
+    }
+
+    fn call_runtime_i64_ptr_ptr(&self, name: &str, path: PointerValue<'ctx>, content: PointerValue<'ctx>) -> Result<IntValue<'ctx>> {
+        let func = self.module.get_function(name).unwrap();
+        let call = self.builder.build_call(func, &[path.into(), content.into()], name).unwrap();
         Ok(call.try_as_basic_value().left()
             .map(|v| v.into_int_value())
             .unwrap_or_else(|| self.i64_type.const_int(0, false)))

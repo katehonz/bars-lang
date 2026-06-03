@@ -373,6 +373,86 @@ impl QbeHIRBackend {
                             ),
                         );
                     }
+                    // Math
+                    "sqrt" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_sqrt_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "pow" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_pow_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "abs" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_abs_i64".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    // String ops
+                    "str-count" | "str_count" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_length".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-concat" | "str_concat" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_concat".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    // I/O
+                    "slurp" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_slurp".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "spit" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_spit".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
                     _ => {
                         func.assign_instr(
                             Value::Temporary(dest.clone()),

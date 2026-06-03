@@ -32,6 +32,13 @@ unsafe extern "C" {
     fn bars_print_map_i64(map: *const u8);
     fn bars_print_set_i64(set: *const u8);
     fn bars_print_any_i64(val: i64);
+    fn bars_string_length(s: *const u8) -> i64;
+    fn bars_string_concat(a: *const u8, b: *const u8) -> *mut u8;
+    fn bars_sqrt_i64(n: i64) -> i64;
+    fn bars_pow_i64(base: i64, exp: i64) -> i64;
+    fn bars_abs_i64(n: i64) -> i64;
+    fn bars_slurp(path: *const u8) -> *mut u8;
+    fn bars_spit(path: *const u8, content: *const u8) -> i64;
 }
 
 pub struct CraneliftBackend {
@@ -74,6 +81,13 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_print_map_i64", bars_print_map_i64 as *const u8);
         jit_builder.symbol("bars_print_set_i64", bars_print_set_i64 as *const u8);
         jit_builder.symbol("bars_print_any_i64", bars_print_any_i64 as *const u8);
+        jit_builder.symbol("bars_string_length", bars_string_length as *const u8);
+        jit_builder.symbol("bars_string_concat", bars_string_concat as *const u8);
+        jit_builder.symbol("bars_sqrt_i64", bars_sqrt_i64 as *const u8);
+        jit_builder.symbol("bars_pow_i64", bars_pow_i64 as *const u8);
+        jit_builder.symbol("bars_abs_i64", bars_abs_i64 as *const u8);
+        jit_builder.symbol("bars_slurp", bars_slurp as *const u8);
+        jit_builder.symbol("bars_spit", bars_spit as *const u8);
 
         let module = JITModule::new(jit_builder);
 
@@ -451,6 +465,30 @@ fn compile_instr<M: Module>(
                 }
                 "set_count" | "set-count" if arg_vals.len() == 1 => {
                     call_runtime(builder, module, "bars_set_count_i64", &arg_vals)?
+                }
+                // Math
+                "sqrt" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_sqrt_i64", &arg_vals)?
+                }
+                "pow" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_pow_i64", &arg_vals)?
+                }
+                "abs" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_abs_i64", &arg_vals)?
+                }
+                // String ops
+                "str-count" | "str_count" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_string_length", &arg_vals)?
+                }
+                "str-concat" | "str_concat" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_concat", &arg_vals)?
+                }
+                // I/O
+                "slurp" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_slurp", &arg_vals)?
+                }
+                "spit" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_spit", &arg_vals)?
                 }
                 _ => {
                     if let Some(&func_id) = functions.get(func_name) {

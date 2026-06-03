@@ -129,7 +129,7 @@ fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
 
     let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let cc_compile = Command::new("cc")
-        .args([&s_file, &runtime_obj, "-lgc", "-o"])
+        .args([&s_file, &runtime_obj, "-lgc", "-lm", "-lm", "-o"])
         .arg(bin_out)
         .output()?;
 
@@ -160,7 +160,7 @@ fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
 
     let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-o"])
+        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o"])
         .arg(bin_out)
         .output()?;
 
@@ -192,7 +192,7 @@ fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
 
     let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-o"])
+        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o"])
         .arg(bin_out)
         .output()?;
 
@@ -234,7 +234,7 @@ fn run_file_qbe(file: &Path) -> Result<()> {
 
     let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let cc_compile = Command::new("cc")
-        .args([&s_file, &runtime_obj, "-lgc", "-o", &bin_file])
+        .args([&s_file, &runtime_obj, "-lgc", "-lm", "-o", &bin_file])
         .output()?;
 
     if !cc_compile.status.success() {
@@ -269,7 +269,7 @@ fn run_file_cranelift(file: &Path) -> Result<()> {
 
     let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-o", &bin_file])
+        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o", &bin_file])
         .output()?;
 
     if !cc_compile.status.success() {

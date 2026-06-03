@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 void bars_gc_init(void) {
     /* Boehm GC initializes automatically, but we can force it */
@@ -311,4 +312,67 @@ int64_t bars_set_contains_i64(bars_map_t* set, int64_t val) {
 
 int64_t bars_set_count_i64(bars_map_t* set) {
     return bars_map_len(set);
+}
+
+/* --- Math (libm wrappers) --- */
+
+int64_t bars_sqrt_i64(int64_t n) {
+    if (n < 0) return 0;
+    return (int64_t)sqrt((double)n);
+}
+
+int64_t bars_pow_i64(int64_t base, int64_t exp) {
+    return (int64_t)pow((double)base, (double)exp);
+}
+
+int64_t bars_abs_i64(int64_t n) {
+    return n < 0 ? -n : n;
+}
+
+/* --- String operations --- */
+
+int64_t bars_string_length(bars_string_t* s) {
+    return s ? (int64_t)s->len : 0;
+}
+
+bars_string_t* bars_string_concat(bars_string_t* a, bars_string_t* b) {
+    if (!a && !b) return bars_string_new("");
+    if (!a) return b;
+    if (!b) return a;
+    size_t new_len = a->len + b->len;
+    bars_string_t* result = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    result->magic = BARS_MAGIC_STRING;
+    result->data = (char*)bars_alloc(new_len + 1);
+    memcpy(result->data, a->data, a->len);
+    memcpy(result->data + a->len, b->data, b->len);
+    result->data[new_len] = '\0';
+    result->len = new_len;
+    return result;
+}
+
+/* --- I/O --- */
+
+bars_string_t* bars_slurp(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return bars_string_new("");
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    bars_string_t* s = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    s->magic = BARS_MAGIC_STRING;
+    s->len = sz > 0 ? (size_t)sz : 0;
+    s->data = (char*)bars_alloc(s->len + 1);
+    if (sz > 0) fread(s->data, 1, (size_t)sz, f);
+    s->data[s->len] = '\0';
+    fclose(f);
+    return s;
+}
+
+int64_t bars_spit(const char* path, bars_string_t* content) {
+    if (!content || !content->data) return 0;
+    FILE* f = fopen(path, "wb");
+    if (!f) return 0;
+    size_t written = fwrite(content->data, 1, content->len, f);
+    fclose(f);
+    return (int64_t)written;
 }

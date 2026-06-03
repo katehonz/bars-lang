@@ -249,7 +249,7 @@ impl InferCtx {
             Expr::Number(_) => Ok(Type::I64),
             Expr::Float(_) => Ok(Type::F64),
             Expr::Bool(_) => Ok(Type::Bool),
-            Expr::String(_) => Ok(Type::String),
+            Expr::String(_) => Ok(Type::I64),
             Expr::Symbol(sym) => {
                 match env.get(&sym.0) {
                     Some(scheme) => {
@@ -519,9 +519,19 @@ impl InferCtx {
         env.insert("map-set".to_string(), map_set);
 
         // String ops
-        env.insert("str".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::String))));
+        env.insert("str".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
         env.insert("str-count".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("str-concat".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
         env.insert("nil".to_string(), TypeScheme::mono(Type::I64));
+
+        // Math ops
+        env.insert("sqrt".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("pow".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("abs".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+
+        // I/O
+        env.insert("slurp".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("spit".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
         
         // Set ops
         let set_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
