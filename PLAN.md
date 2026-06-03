@@ -204,7 +204,7 @@ bars build examples/hello.brs -o hello
 - [x] **11.5** `bars build` (в проект) — резолва dependencies, компилира
 - [x] **11.6** Lock файл (`Bars.lock`)
 - [ ] **11.7** Central registry (бъдеще)
-- [ ] **11.8** Модули и namespaces: `(require "http" :as http)` (бъдеще)
+- [x] **11.8** Модули и namespaces: `(require "http" :as http)`
 
 ---
 

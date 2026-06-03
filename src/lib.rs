@@ -4,6 +4,7 @@ pub mod cli;
 pub mod diagnostics;
 pub mod hir;
 pub mod lsp;
+pub mod modules;
 pub mod r#macro;
 pub mod ownership;
 pub mod reader;
@@ -15,7 +16,7 @@ use std::collections::HashSet;
 #[cfg(feature = "llvm-backend")]
 use std::io::Write;
 
-/// Read and parse a Bars source file, resolving (load ...) dependencies
+/// Read and parse a Bars source file, resolving (load ...) and (require ...) dependencies
 pub fn read_file(path: &std::path::Path) -> Result<ast::Program> {
     let source = std::fs::read_to_string(path)?;
     let mut program = reader::read(&source)?;
@@ -23,6 +24,8 @@ pub fn read_file(path: &std::path::Path) -> Result<ast::Program> {
     let mut loaded = HashSet::new();
     loaded.insert(std::fs::canonicalize(path)?);
     resolve_loads(&mut program, base, &mut loaded)?;
+    let mut visited = HashSet::new();
+    modules::resolve_requires(&mut program, base, &mut visited)?;
     Ok(program)
 }
 
@@ -38,7 +41,7 @@ fn find_file(base: &std::path::Path, path_str: &str) -> Option<std::path::PathBu
     None
 }
 
-fn resolve_loads(program: &mut ast::Program, base: &std::path::Path, loaded: &mut HashSet<std::path::PathBuf>) -> Result<()> {
+pub(crate) fn resolve_loads(program: &mut ast::Program, base: &std::path::Path, loaded: &mut HashSet<std::path::PathBuf>) -> Result<()> {
     let mut new_exprs = Vec::new();
     for expr in std::mem::take(&mut program.exprs) {
         if let ast::Expr::FnCall { func, args, .. } = &expr {

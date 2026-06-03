@@ -1,6 +1,6 @@
-(load "lib/test.brs")
+(require "lib/test" :as test)
 
 (defn main []
-  (assert (= (+ 1 2) 3))
-  (assert (= (* 6 7) 42))
-  (assert false))
+  (test/assert (= (+ 1 2) 3))
+  (test/assert (= (* 6 7) 42))
+  (test/assert false))

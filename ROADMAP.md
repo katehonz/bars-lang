@@ -146,7 +146,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Git-based и path разрешаване на dependencies
 - [x] Lock файл `Bars.lock`
 - [ ] Central registry (бъдеще)
-- [ ] Модули и namespaces: `(require "http" :as http)` (бъдеще)
+- [x] Модули и namespaces: `(require "http" :as http)`
 
 ---
 

@@ -287,3 +287,25 @@ Bars has built-in macros that expand before code generation:
 ```
 
 `load` resolves paths relative to the file's directory and walks up the directory tree until the file is found. This allows `examples/foo.brs` to load `lib/core.brs`.
+
+## Modules and Namespaces
+
+```clojure
+(require "lib/core" :as core)
+(require "lib/math" :as math)
+
+(defn main []
+  (println (core/inc 41))
+  (println (math/square 5)))
+```
+
+`require` loads a module and binds it to an alias. All public definitions (`def`, `defn`, `defstruct`, `deftype`, `extern`, `defmacro`) from the module are accessible via qualified names: `alias/name`.
+
+Modules are isolated — two modules can define the same name without conflict. `require` also supports nested modules: a module may itself `require` other modules.
+
+Search paths for `require`:
+1. Relative to the current file (and its parent directories)
+2. `lib/` in the compiler's manifest directory (standard library)
+3. `target/bars-deps/*/src/` (resolved package dependencies)
+
+If the path does not end in `.brs`, it is automatically appended.

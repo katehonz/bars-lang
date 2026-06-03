@@ -1,31 +1,31 @@
 ;; Generic ADT demo — Option and Result with type variables
-(load "lib/adt.brs")
+(require "lib/adt" :as adt)
 
 (defn safe-div [a b]
   (if (= b 0)
-    (None)
-    (Some (/ a b))))
+    (adt/None)
+    (adt/Some (/ a b))))
 
 (defn parse-number [s]
   (if (= (count s) 0)
-    (Err "empty string")
-    (Ok (count s))))  ; dummy parse: return length as number
+    (adt/Err "empty string")
+    (adt/Ok (count s))))  ; dummy parse: return length as number
 
 (defn main []
   (let [result1 (safe-div 10 2)
         result2 (safe-div 10 0)]
-    (println (unwrap-or result1 0))
-    (println (unwrap-or result2 0)))
+    (println (adt/unwrap-or result1 0))
+    (println (adt/unwrap-or result2 0)))
 
   (let [n1 (parse-number "hello")
         n2 (parse-number "")]
-    (println (unwrap-ok n1))
-    (println (unwrap-ok n2)))
+    (println (adt/unwrap-ok n1))
+    (println (adt/unwrap-ok n2)))
 
   ;; Option works with any type
-  (let [opt-str (Some "bars")
-        opt-vec (Some [1 2 3])]
-    (println (unwrap-or opt-str "default"))
-    (println (count (unwrap-or opt-vec [0]))))
+  (let [opt-str (adt/Some "bars")
+        opt-vec (adt/Some [1 2 3])]
+    (println (adt/unwrap-or opt-str "default"))
+    (println (count (adt/unwrap-or opt-vec [0]))))
 
   0)
