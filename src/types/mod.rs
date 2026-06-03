@@ -532,6 +532,27 @@ impl InferCtx {
         // I/O
         env.insert("slurp".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
         env.insert("spit".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+
+        // Higher-order: map, filter, reduce
+        env.insert("map".to_string(), TypeScheme::mono(
+            Type::Fun(vec![
+                Type::Fun(vec![Type::I64], Box::new(Type::I64)),
+                Type::I64,
+            ], Box::new(Type::I64)),
+        ));
+        env.insert("filter".to_string(), TypeScheme::mono(
+            Type::Fun(vec![
+                Type::Fun(vec![Type::I64], Box::new(Type::I64)),
+                Type::I64,
+            ], Box::new(Type::I64)),
+        ));
+        env.insert("reduce".to_string(), TypeScheme::mono(
+            Type::Fun(vec![
+                Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)),
+                Type::I64,
+                Type::I64,
+            ], Box::new(Type::I64)),
+        ));
         
         // Set ops
         let set_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));

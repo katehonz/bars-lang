@@ -166,18 +166,18 @@ bars build examples/hello.brs -o hello
 
 ---
 
-## Фаза 10: Минимална Stdlib (1 седмица) 🚧
+## Фаза 10: Минимална Stdlib (1 седмица) ✅
 
 ### Философия
 **Само базови неща.** Всичко специфично (async, web, crypto, GUI) е за пакети.
 
 ### Задачи
-- [x] **10.1** Higher-order функции: `map`, `filter`, `reduce`, `for-each` (отложено — изискват first-class functions)
+- [x] **10.1** Higher-order функции: `map`, `filter`, `reduce` — inline loop desugaring в HIR
 - [x] **10.2** String ops: `str-count`, `str-concat` ↔ C runtime
 - [x] **10.3** Math: `sqrt`, `pow`, `abs` ↔ C runtime (libm wrappers)
-- [x] **10.4** Error handling: `assert` macro, `deftype` за `Option`/`Result` ✅ (Sprint 8)
+- [x] **10.4** Error handling: `assert` macro, `deftype` за `Option`/`Result`
 - [x] **10.5** Basic I/O: `slurp`, `spit` ↔ C runtime
-- [x] **10.6** Testing helpers: `assert` macro ✅
+- [x] **10.6** Testing helpers: `assert` macro
 
 ### Изрично НЕ в stdlib
 - ❌ Async/await — няма вградена async рунтайм

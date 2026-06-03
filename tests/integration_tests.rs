@@ -214,3 +214,26 @@ fn test_ffi_putchar() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("A"), "Expected 'A' in output, got: {}", stdout);
 }
+
+#[test]
+fn test_hof_map() {
+    let output = bars()
+        .args(["run", "examples/hof_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("5"), "Expected map count=5, got: {}", stdout);
+    assert!(stdout.contains("2"), "Expected filter count=2, got: {}", stdout);
+    assert!(stdout.contains("15"), "Expected reduce sum=15, got: {}", stdout);
+}
+
+#[test]
+fn test_hof_lambda() {
+    let output = bars()
+        .args(["run", "examples/hof_lambda.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("2"), "Expected doubled[0]=2, got: {}", stdout);
+    assert!(stdout.contains("4"), "Expected doubled[1]=4, got: {}", stdout);
+}
