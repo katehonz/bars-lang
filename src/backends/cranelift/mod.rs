@@ -645,14 +645,32 @@ fn call_runtime<M: Module>(
 }
 
 /// AOT compilation: compile HIR program to a native object file using Cranelift.
-pub fn compile_hir_to_object(program: &hir::Program, output: &Path) -> Result<()> {
+pub fn compile_hir_to_object(
+    program: &hir::Program,
+    output: &Path,
+    optimize: bool,
+    target: Option<&crate::target::TargetTriple>,
+) -> Result<()> {
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
-    let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
-        panic!("host machine is not supported: {}", msg);
-    });
-    let isa = isa_builder.finish(settings::Flags::new(flag_builder)).unwrap();
+    if optimize {
+        flag_builder.set("opt_level", "speed_and_size").unwrap();
+    }
+
+    let isa: std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> = if let Some(t) = target {
+        let triple: target_lexicon::Triple = t.cranelift_triple().parse()
+            .map_err(|e| anyhow::anyhow!("invalid target triple for Cranelift: {}", e))?;
+        let isa_builder = cranelift_codegen::isa::lookup(triple)
+            .map_err(|e| anyhow::anyhow!("Cranelift does not support target: {:?}", e))?;
+        isa_builder.finish(settings::Flags::new(flag_builder))
+            .map_err(|e| anyhow::anyhow!("Cranelift ISA finish failed: {}", e))?
+    } else {
+        cranelift_native::builder().unwrap_or_else(|msg| {
+            panic!("host machine is not supported: {}", msg);
+        }).finish(settings::Flags::new(flag_builder))
+            .map_err(|e| anyhow::anyhow!("Cranelift ISA finish failed: {}", e))?
+    };
 
     let builder = ObjectBuilder::new(
         isa,

@@ -80,6 +80,23 @@ bars check --types examples/ownership.brs
 #   main : i64
 ```
 
+### `lsp`
+
+Start the Bars Language Server Protocol (LSP) server over stdio.
+
+```bash
+bars lsp
+```
+
+Supported LSP features:
+- **Text document sync** — full document synchronization
+- **Diagnostics** — parse errors and type errors published automatically
+- **Hover** — show inferred type of symbols
+- **Completion** — top-level definitions + built-in keywords
+- **Go to Definition** — jump to definition of top-level names
+
+Configure your editor to launch `bars lsp` as the language server for `.brs` files.
+
 ## Options
 
 Global options (if any) are parsed by `clap`. Use `--help` for full usage.

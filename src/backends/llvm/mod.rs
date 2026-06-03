@@ -16,10 +16,8 @@ pub fn compile_hir_to_object(
     program: &hir::Program,
     output: &Path,
     optimize: bool,
+    target: Option<&crate::target::TargetTriple>,
 ) -> Result<()> {
-    Target::initialize_native(&InitializationConfig::default())
-        .map_err(|e| anyhow::anyhow!("LLVM target init failed: {}", e))?;
-
     let context = Context::create();
     let module = context.create_module("bars");
     let builder = context.create_builder();
@@ -47,7 +45,7 @@ pub fn compile_hir_to_object(
     } else {
         OptimizationLevel::Default
     };
-    let target_machine = create_target_machine(opt_level)?;
+    let target_machine = create_target_machine(opt_level, target)?;
     target_machine
         .write_to_file(&backend.module, FileType::Object, output)
         .map_err(|e| anyhow::anyhow!("LLVM object write failed: {}", e))?;
@@ -732,18 +730,40 @@ impl<'ctx> LlvmCompiler<'ctx> {
     }
 }
 
-fn create_target_machine(opt_level: OptimizationLevel) -> Result<TargetMachine> {
-    let target_triple = TargetMachine::get_default_triple();
-    let target = Target::from_triple(&target_triple)
-        .map_err(|e| anyhow::anyhow!("LLVM target not found for {}: {:?}", target_triple, e))?;
-    let cpu = TargetMachine::get_host_cpu_name();
-    let features = TargetMachine::get_host_cpu_features();
+fn create_target_machine(
+    opt_level: OptimizationLevel,
+    target: Option<&crate::target::TargetTriple>,
+) -> Result<TargetMachine> {
+    let target_triple = if let Some(t) = target {
+        use inkwell::targets::TargetTriple;
+        TargetTriple::create(&t.llvm_triple())
+    } else {
+        Target::initialize_native(&InitializationConfig::default())
+            .map_err(|e| anyhow::anyhow!("LLVM target init failed: {}", e))?;
+        TargetMachine::get_default_triple()
+    };
 
-    target
+    let llvm_target = Target::from_triple(&target_triple)
+        .map_err(|e| anyhow::anyhow!("LLVM target not found for {}: {:?}", target_triple, e))?;
+
+    let is_cross = target.is_some();
+    let cpu = if is_cross {
+        // За cross-compilation използваме generic CPU
+        "generic"
+    } else {
+        TargetMachine::get_host_cpu_name().to_str().unwrap_or("generic")
+    };
+    let features = if is_cross {
+        ""
+    } else {
+        TargetMachine::get_host_cpu_features().to_str().unwrap_or("")
+    };
+
+    llvm_target
         .create_target_machine(
             &target_triple,
-            cpu.to_str().unwrap_or("generic"),
-            features.to_str().unwrap_or(""),
+            cpu,
+            features,
             opt_level,
             RelocMode::PIC,
             CodeModel::Default,

@@ -3,9 +3,11 @@ pub mod backends;
 pub mod cli;
 pub mod diagnostics;
 pub mod hir;
+pub mod lsp;
 pub mod r#macro;
 pub mod ownership;
 pub mod reader;
+pub mod target;
 pub mod types;
 
 use anyhow::Result;

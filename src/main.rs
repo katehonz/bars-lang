@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bars::{ast, cli::{Backend, Cli, Commands}, diagnostics, read_file};
+use bars::{ast, cli::{Backend, Cli, Commands}, diagnostics, read_file, target::{find_linker, find_runtime_obj, TargetTriple}};
 use clap::Parser;
 use std::io::Write;
 use std::path::Path;
@@ -21,37 +21,75 @@ fn main() -> Result<()> {
                 println!("{:#?}", expr);
             }
         }
-        Commands::Build { file, output, backend, release: _release } => {
-            let bin_out = output.unwrap_or_else(|| {
-                let stem = file.file_stem().unwrap_or_default().to_string_lossy();
-                std::path::PathBuf::from(stem.to_string())
-            });
-            match backend {
-                Backend::Qbe => {
-                    build_qbe(&file, &bin_out)?;
+        Commands::Build { file, output, backend, release: _release, target } => {
+            let target_triple = target
+                .as_deref()
+                .map(TargetTriple::parse)
+                .transpose()?;
+            if let Some(file) = file {
+                // Single file mode
+                let bin_out = output.unwrap_or_else(|| {
+                    let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+                    std::path::PathBuf::from(stem.to_string())
+                });
+                match backend {
+                    Backend::Qbe => {
+                        build_qbe(&file, &bin_out, _release, target_triple.as_ref())?;
+                    }
+                    Backend::Cranelift => {
+                        build_cranelift(&file, &bin_out, _release, target_triple.as_ref())?;
+                    }
+                    #[cfg(feature = "llvm-backend")]
+                    Backend::Llvm => {
+                        build_llvm(&file, &bin_out, _release, target_triple.as_ref())?;
+                    }
                 }
-                Backend::Cranelift => {
-                    build_cranelift(&file, &bin_out)?;
-                }
-                #[cfg(feature = "llvm-backend")]
-                Backend::Llvm => {
-                    build_llvm(&file, &bin_out, _release)?;
-                }
+                println!("Binary written to {}", bin_out.display());
+            } else {
+                // Project mode
+                let (project_dir, _) = bars_pkg::find_manifest()?
+                    .ok_or_else(|| anyhow::anyhow!("няма Bars.toml в текущата директория или нейните родители"))?;
+                let backend_str = match backend {
+                    Backend::Qbe => "qbe",
+                    Backend::Cranelift => "cranelift",
+                    #[cfg(feature = "llvm-backend")]
+                    Backend::Llvm => "llvm",
+                };
+                let bars_bin = std::env::current_exe()?;
+                bars_pkg::build_project(&project_dir, _release, backend_str, &bars_bin)?;
             }
-            println!("Binary written to {}", bin_out.display());
         }
-        Commands::Run { file, backend, release: _release } => {
-            match backend {
-                Backend::Qbe => {
-                    run_file_qbe(&file)?;
+        Commands::Run { file, backend, release: _release, target } => {
+            let target_triple = target
+                .as_deref()
+                .map(TargetTriple::parse)
+                .transpose()?;
+            if let Some(file) = file {
+                // Single file mode
+                match backend {
+                    Backend::Qbe => {
+                        run_file_qbe(&file, _release, target_triple.as_ref())?;
+                    }
+                    Backend::Cranelift => {
+                        run_file_cranelift(&file, _release, target_triple.as_ref())?;
+                    }
+                    #[cfg(feature = "llvm-backend")]
+                    Backend::Llvm => {
+                        bars::compile_file_llvm(&file, _release)?;
+                    }
                 }
-                Backend::Cranelift => {
-                    run_file_cranelift(&file)?;
-                }
-                #[cfg(feature = "llvm-backend")]
-                Backend::Llvm => {
-                    bars::compile_file_llvm(&file, _release)?;
-                }
+            } else {
+                // Project mode
+                let (project_dir, _) = bars_pkg::find_manifest()?
+                    .ok_or_else(|| anyhow::anyhow!("няма Bars.toml в текущата директория или нейните родители"))?;
+                let backend_str = match backend {
+                    Backend::Qbe => "qbe",
+                    Backend::Cranelift => "cranelift",
+                    #[cfg(feature = "llvm-backend")]
+                    Backend::Llvm => "llvm",
+                };
+                let bars_bin = std::env::current_exe()?;
+                bars_pkg::run_project(&project_dir, _release, backend_str, &bars_bin)?;
             }
         }
         Commands::Repl => {
@@ -90,6 +128,34 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Commands::Lsp => {
+            tokio::runtime::Runtime::new()
+                .expect("Failed to create Tokio runtime")
+                .block_on(bars::lsp::run_stdio());
+        }
+        Commands::New { name, path } => {
+            bars_pkg::new_project(&name, path.as_deref())?;
+        }
+        Commands::Add { package, git, path, version } => {
+            let dep = if let Some(git_url) = git {
+                bars_pkg::Dependency::Detailed(bars_pkg::DependencyDetail {
+                    version,
+                    git: Some(git_url),
+                    path: None,
+                })
+            } else if let Some(path_str) = path {
+                bars_pkg::Dependency::Detailed(bars_pkg::DependencyDetail {
+                    version,
+                    git: None,
+                    path: Some(path_str),
+                })
+            } else if let Some(ver) = version {
+                bars_pkg::Dependency::Simple(ver)
+            } else {
+                bars_pkg::Dependency::Simple("*".to_string())
+            };
+            bars_pkg::add_dependency(&package, dep)?;
+        }
     }
 
     Ok(())
@@ -117,7 +183,7 @@ fn check_ownership(program: &ast::Program, file: &Path) -> Result<()> {
     }
 }
 
-fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
+fn build_qbe(file: &Path, bin_out: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
@@ -129,9 +195,12 @@ fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
 
     std::fs::write(&qbe_file, qbe_ir)?;
 
-    let qbe_output = Command::new("qbe")
-        .arg(&qbe_file)
-        .output()?;
+    let mut qbe_cmd = Command::new("qbe");
+    qbe_cmd.arg(&qbe_file);
+    if let Some(t) = target {
+        qbe_cmd.arg("-t").arg(t.qbe_target()?);
+    }
+    let qbe_output = qbe_cmd.output()?;
 
     if !qbe_output.status.success() {
         let stderr = String::from_utf8_lossy(&qbe_output.stderr);
@@ -140,10 +209,25 @@ fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
 
     std::fs::write(&s_file, &qbe_output.stdout)?;
 
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
-    let cc_compile = Command::new("cc")
-        .args([&s_file, &runtime_obj, "-lgc", "-lm", "-lm", "-o"])
-        .arg(bin_out)
+    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
+    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
+    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
+    let mut cc_args: Vec<&str> = Vec::new();
+    for extra in &linker_extra {
+        cc_args.push(extra.as_str());
+    }
+    cc_args.push(s_file.as_str());
+    cc_args.push(runtime_obj_str.as_str());
+    cc_args.push("-lgc");
+    cc_args.push("-lm");
+    cc_args.push("-no-pie");
+    if release {
+        cc_args.push("-O2");
+    }
+    cc_args.push("-o");
+    cc_args.push(bin_out.to_str().unwrap_or("a.out"));
+    let cc_compile = Command::new(&linker)
+        .args(&cc_args)
         .output()?;
 
     if !cc_compile.status.success() {
@@ -157,7 +241,7 @@ fn build_qbe(file: &Path, bin_out: &Path) -> Result<()> {
     Ok(())
 }
 
-fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
+fn build_cranelift(file: &Path, bin_out: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
@@ -169,12 +253,29 @@ fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
     bars::backends::cranelift::compile_hir_to_object(
         &hir_program,
         std::path::Path::new(&obj_file),
+        release,
+        target,
     )?;
 
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
-    let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o"])
-        .arg(bin_out)
+    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
+    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
+    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
+    let mut link_args: Vec<&str> = Vec::new();
+    for extra in &linker_extra {
+        link_args.push(extra.as_str());
+    }
+    link_args.push(obj_file.as_str());
+    link_args.push(runtime_obj_str.as_str());
+    link_args.push("-lgc");
+    link_args.push("-lm");
+    link_args.push("-no-pie");
+    if release {
+        link_args.push("-O2");
+    }
+    link_args.push("-o");
+    link_args.push(bin_out.to_str().unwrap_or("a.out"));
+    let cc_compile = Command::new(&linker)
+        .args(&link_args)
         .output()?;
 
     if !cc_compile.status.success() {
@@ -188,7 +289,7 @@ fn build_cranelift(file: &Path, bin_out: &Path) -> Result<()> {
 }
 
 #[cfg(feature = "llvm-backend")]
-fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
+fn build_llvm(file: &Path, bin_out: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
@@ -201,11 +302,18 @@ fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
         &hir_program,
         std::path::Path::new(&obj_file),
         release,
+        target,
     )?;
 
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
-    let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o"])
+    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
+    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
+    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
+    let mut link_args = vec![obj_file.as_str(), runtime_obj_str.as_str(), "-lgc", "-lm", "-no-pie", "-o"];
+    for extra in &linker_extra {
+        link_args.push(extra.as_str());
+    }
+    let cc_compile = Command::new(&linker)
+        .args(&link_args)
         .arg(bin_out)
         .output()?;
 
@@ -219,7 +327,7 @@ fn build_llvm(file: &Path, bin_out: &Path, release: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_file_qbe(file: &Path) -> Result<()> {
+fn run_file_qbe(file: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
@@ -233,9 +341,12 @@ fn run_file_qbe(file: &Path) -> Result<()> {
     std::fs::write(&qbe_file, qbe_ir)?;
 
     // Compile: qbe file.ssa | cc -x assembler - -o binary
-    let qbe_output = Command::new("qbe")
-        .arg(&qbe_file)
-        .output()?;
+    let mut qbe_cmd = Command::new("qbe");
+    qbe_cmd.arg(&qbe_file);
+    if let Some(t) = target {
+        qbe_cmd.arg("-t").arg(t.qbe_target()?);
+    }
+    let qbe_output = qbe_cmd.output()?;
 
     if !qbe_output.status.success() {
         let stderr = String::from_utf8_lossy(&qbe_output.stderr);
@@ -245,9 +356,25 @@ fn run_file_qbe(file: &Path) -> Result<()> {
     let s_file = format!("/tmp/{}_{}.s", stem, std::process::id());
     std::fs::write(&s_file, &qbe_output.stdout)?;
 
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
-    let cc_compile = Command::new("cc")
-        .args([&s_file, &runtime_obj, "-lgc", "-lm", "-o", &bin_file])
+    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
+    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
+    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
+    let mut cc_args: Vec<&str> = Vec::new();
+    for extra in &linker_extra {
+        cc_args.push(extra.as_str());
+    }
+    cc_args.push(s_file.as_str());
+    cc_args.push(runtime_obj_str.as_str());
+    cc_args.push("-lgc");
+    cc_args.push("-lm");
+    cc_args.push("-no-pie");
+    if release {
+        cc_args.push("-O2");
+    }
+    cc_args.push("-o");
+    cc_args.push(bin_file.as_str());
+    let cc_compile = Command::new(&linker)
+        .args(&cc_args)
         .output()?;
 
     if !cc_compile.status.success() {
@@ -268,7 +395,7 @@ fn run_file_qbe(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_file_cranelift(file: &Path) -> Result<()> {
+fn run_file_cranelift(file: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
@@ -278,11 +405,27 @@ fn run_file_cranelift(file: &Path) -> Result<()> {
     let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
     let bin_file = format!("/tmp/{}_{}", stem, std::process::id());
 
-    bars::backends::cranelift::compile_hir_to_object(&hir_program, Path::new(&obj_file))?;
+    bars::backends::cranelift::compile_hir_to_object(&hir_program, Path::new(&obj_file), release, target)?;
 
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
-    let cc_compile = Command::new("cc")
-        .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o", &bin_file])
+    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
+    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
+    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
+    let mut link_args: Vec<&str> = Vec::new();
+    for extra in &linker_extra {
+        link_args.push(extra.as_str());
+    }
+    link_args.push(obj_file.as_str());
+    link_args.push(runtime_obj_str.as_str());
+    link_args.push("-lgc");
+    link_args.push("-lm");
+    link_args.push("-no-pie");
+    if release {
+        link_args.push("-O2");
+    }
+    link_args.push("-o");
+    link_args.push(bin_file.as_str());
+    let cc_compile = Command::new(&linker)
+        .args(&link_args)
         .output()?;
 
     if !cc_compile.status.success() {

@@ -136,16 +136,17 @@ Bars е работещ компилатор за системен Lisp с owners
 
 ---
 
-## Фаза 11: Пакетна Система 📋 САМОСТОЯТЕЛЕН ПРОЕКТ
+## Фаза 11: Пакетна Система ✅ WORKSPACE CRATE
 
-> **Отделен инструмент като Cargo.** Ще бъде `bars-pkg` — standalone Rust проект, не част от компилатора.
+> **Отделен crate `bars-pkg` в същия workspace.** CLI командите са интегрирани в `bars`.
 
-- [ ] `Bars.toml` манифест формат
-- [ ] `bars new my-project` — scaffold проект
-- [ ] `bars add <package>` — добавя dependency
-- [ ] Git-based разрешаване на dependencies
-- [ ] Semantic versioning и `Bars.lock`
-- [ ] Модули и namespaces: `(require "http" :as http)`
+- [x] `Bars.toml` манифест формат
+- [x] `bars new my-project` — scaffold проект
+- [x] `bars add <package>` — добавя dependency
+- [x] Git-based и path разрешаване на dependencies
+- [x] Lock файл `Bars.lock`
+- [ ] Central registry (бъдеще)
+- [ ] Модули и namespaces: `(require "http" :as http)` (бъдеще)
 
 ---
 
@@ -153,9 +154,9 @@ Bars е работещ компилатор за системен Lisp с owners
 
 - [x] Generic ADTs: `(deftype Option [Some T] [None])` — работят в type inference, stdlib обновен
 - [x] Още string операции: `split`, `join`, `trim`, `substring`
-- [ ] `--release` флаг с LLVM оптимизации
+- [x] `--release` флаг за всички backend-ове (QBE: `cc -O2`, Cranelift: `speed_and_size`, LLVM: `Aggressive`)
 - [x] Подобрени error messages — цветни, с source context, точни spans
-- [ ] LSP сървър
+- [x] LSP сървър — hover (type info), completion, go-to-definition, diagnostics
 - [ ] Debugger интеграция
 - [ ] Cross-compilation
 
