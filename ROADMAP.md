@@ -136,7 +136,9 @@ Bars е работещ компилатор за системен Lisp с owners
 
 ---
 
-## Фаза 11: Пакетна Система 📋 ПЛАНИРАНА
+## Фаза 11: Пакетна Система 📋 САМОСТОЯТЕЛЕН ПРОЕКТ
+
+> **Отделен инструмент като Cargo.** Ще бъде `bars-pkg` — standalone Rust проект, не част от компилатора.
 
 - [ ] `Bars.toml` манифест формат
 - [ ] `bars new my-project` — scaffold проект
@@ -147,15 +149,15 @@ Bars е работещ компилатор за системен Lisp с owners
 
 ---
 
-## Фаза 12: Екосистема и Tooling 📋 ПЛАНИРАНА
+## Бъдещи подобрения (компилатор) 📋
 
-- [ ] Language Server Protocol (LSP)
-- [ ] Formatter (`bars fmt`)
-- [ ] Linter (`bars lint`)
-- [ ] Documentation generator (`bars doc`)
-- [ ] Debugger integration
-- [ ] Cross-compilation (`--target`)
-- [ ] `--release` флаг с оптимизации
+- [ ] Generic ADTs: `(deftype Option [Some T] [None])`
+- [ ] Още string операции: `split`, `join`, `trim`, `substring`
+- [ ] `--release` флаг с LLVM оптимизации
+- [ ] Подобрени error messages
+- [ ] LSP сървър
+- [ ] Debugger интеграция
+- [ ] Cross-compilation
 
 ---
 

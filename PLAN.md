@@ -191,30 +191,30 @@ bars build examples/hello.brs -o hello
 
 ---
 
-## Фаза 11: Пакетна Система (2-3 седмици)
+## Фаза 11: Пакетна Система (отделен проект)
 
 ### Философия
-**Като Cargo за Rust, отделна от компилатора.** `bars-pkg` или просто `bars` subcommand.
+**Като Cargo за Rust — отделен инструмент, написан на Rust.** `bars-pkg` не е част от компилатора.
+Ще бъде разработен като отделно repo с име `bars-pkg`.
 
 ### Задачи
 - [ ] **11.1** Формат на манифест: `Bars.toml` (като Cargo.toml)
-  ```toml
-  [package]
-  name = "my-lib"
-  version = "0.1.0"
-  
-  [dependencies]
-  http = "1.2.0"
-  json = { git = "https://github.com/user/bars-json" }
-  ```
 - [ ] **11.2** Central registry или Git-based разрешаване (като Cargo)
-- [ ] **11.3** `bars new my-project` — scaffold проект с `src/main.brs`, `Bars.toml`
+- [ ] **11.3** `bars new my-project` — scaffold проект
 - [ ] **11.4** `bars add <package>` — добавя dependency
 - [ ] **11.5** `bars build` (в проект) — резолва dependencies, компилира
 - [ ] **11.6** Semantic versioning и lock файл (`Bars.lock`)
 - [ ] **11.7** Модули и namespaces: `(require "http" :as http)`
 
-**Критерий за приемане:** Можеш да създадеш проект, да добавиш зависимост от GitHub, да я използваш.
+---
+
+## Бъдещи подобрения (компилатор)
+
+- [ ] Generic ADTs: `(deftype Option [Some T] [None])`
+- [ ] Още string операции: `split`, `join`, `trim`, `substring`
+- [ ] `--release` флаг с LLVM оптимизации
+- [ ] Подобрени error messages
+- [ ] LSP сървър
 
 ---
 
