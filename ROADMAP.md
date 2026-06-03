@@ -154,7 +154,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [ ] Generic ADTs: `(deftype Option [Some T] [None])`
 - [x] Още string операции: `split`, `join`, `trim`, `substring`
 - [ ] `--release` флаг с LLVM оптимизации
-- [ ] Подобрени error messages
+- [x] Подобрени error messages — цветни, с source context, точни spans
 - [ ] LSP сървър
 - [ ] Debugger интеграция
 - [ ] Cross-compilation
