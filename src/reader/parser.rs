@@ -263,8 +263,20 @@ impl<'a> Parser<'a> {
         }
         self.expect(Token::RBracket)?;
 
-        // Optional return type: [: i64] or body directly
-        let ret_type = None; // TODO: parse return type annotations
+        // Optional return type: -> Type
+        let ret_type = if matches!(self.peek(), Some(Token::Symbol(s)) if s == "->") {
+            self.advance(); // consume '->'
+            match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    parse_type(&s)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         let body_exprs = self.parse_body_exprs()?;
         self.expect(Token::RParen)?;

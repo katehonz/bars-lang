@@ -58,13 +58,19 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
         // Expand function calls
         Expr::FnCall { func, args, span } => {
             let expanded_func = expand_expr(func, macro_env)?;
+            // Unwrap quoted symbols from syntax-quote
+            let expanded_func = match expanded_func {
+                Expr::Quote(inner, _) => *inner,
+                other => other,
+            };
             let expanded_args: Result<Vec<_>, _> = args.iter().map(|a| expand_expr(a, macro_env)).collect();
             let expanded_args = expanded_args?;
 
             // Check if func is a macro name
             if let Expr::Symbol(sym) = &expanded_func {
                 if let Some(expanded) = try_expand_macro(&sym.0, &expanded_args, span, macro_env)? {
-                    return Ok(expanded);
+                    // Recursively expand the macro result (to unwrap quoted funcs, etc.)
+                    return expand_expr(&expanded, macro_env);
                 }
             }
 
@@ -73,6 +79,32 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
                 args: expanded_args,
                 span: span.clone(),
             })
+        }
+
+        // Lists produced by macro expansion should be treated as function calls
+        Expr::List(list, span) => {
+            if list.is_empty() {
+                Ok(Expr::List(list.clone(), span.clone()))
+            } else {
+                let func = expand_expr(&list[0], macro_env)?;
+                let args: Result<Vec<_>, _> = list[1..].iter().map(|a| expand_expr(a, macro_env)).collect();
+                let args = args?;
+                // Unwrap quoted symbols (from syntax-quote)
+                let func = match &func {
+                    Expr::Quote(inner, _) => *inner.clone(),
+                    _ => func,
+                };
+                if let Expr::Symbol(sym) = &func {
+                    if let Some(expanded) = try_expand_macro(&sym.0, &args, span, macro_env)? {
+                        return Ok(expanded);
+                    }
+                }
+                Ok(Expr::FnCall {
+                    func: Box::new(func),
+                    args,
+                    span: span.clone(),
+                })
+            }
         }
 
         // Recursively expand other expressions

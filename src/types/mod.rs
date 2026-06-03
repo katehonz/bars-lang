@@ -56,6 +56,17 @@ impl TypeScheme {
     }
 }
 
+impl fmt::Display for TypeScheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.vars.is_empty() {
+            write!(f, "{}", self.ty)
+        } else {
+            // Show as generic type, e.g. 't0 → 't0
+            write!(f, "{}", self.ty)
+        }
+    }
+}
+
 /// Type environment: maps variable names to their type schemes
 pub type TypeEnv = HashMap<String, TypeScheme>;
 
@@ -110,9 +121,9 @@ impl InferCtx {
 impl InferCtx {
 /// Infer types for all top-level expressions in a program.
     /// Returns substitution AND a map of definition name → inferred type.
-    pub fn infer_program(&mut self, program: &Program) -> Result<(Substitution, Vec<(String, Type)>), TypeError> {
+    pub fn infer_program(&mut self, program: &Program) -> Result<(Substitution, Vec<(String, TypeScheme)>), TypeError> {
         let mut env: TypeEnv = self.builtin_env();
-        let mut defn_types: Vec<(String, Type)> = Vec::new();
+        let mut defn_types: Vec<(String, TypeScheme)> = Vec::new();
 
         // Register struct names as constructors
         for expr in &program.exprs {
@@ -124,10 +135,22 @@ impl InferCtx {
             }
         }
 
+        // First pass: register all function names with placeholders for forward references
+        for expr in &program.exprs {
+            if let Expr::Defn { name, .. } = expr {
+                let placeholder = TypeScheme::mono(self.fresh_var());
+                env.insert(name.0.clone(), placeholder);
+            }
+        }
+
         // Infer types for all top-level expressions
         for expr in &program.exprs {
             match expr {
                 Expr::Defn { name, params, body, ret_type, .. } => {
+                    // Add placeholder for recursive calls
+                    let placeholder = TypeScheme::mono(self.fresh_var());
+                    env.insert(name.0.clone(), placeholder.clone());
+
                     let mut func_env = env.clone();
                     let mut param_types = Vec::new();
                     for (pname, ptype) in params {
@@ -139,20 +162,24 @@ impl InferCtx {
                         param_types.push(ity);
                     }
                     let body_ty = self.infer_expr(&mut func_env, body)?;
-                    let fresh_ret = self.fresh_var();
                     let ret_constraint = match ret_type {
-                        Some(at) => Self::from_ast_type(at),
-                        None => fresh_ret,
+                        Some(at) => {
+                            let constraint = Self::from_ast_type(at);
+                            self.constrain(body_ty.clone(), constraint.clone());
+                            constraint
+                        }
+                        None => body_ty.clone(),
                     };
-                    self.constrain(body_ty.clone(), ret_constraint);
                     let fn_ty = Type::Fun(param_types, Box::new(body_ty.clone()));
-                    env.insert(name.0.clone(), TypeScheme::mono(fn_ty));
-                    defn_types.push((name.0.clone(), body_ty));
+                    let fn_scheme = self.generalize(&env, &fn_ty);
+                    env.insert(name.0.clone(), fn_scheme.clone());
+                    defn_types.push((name.0.clone(), fn_scheme));
                 }
                 Expr::Def { name, value, .. } => {
                     let val_ty = self.infer_expr(&mut env.clone(), value)?;
-                    env.insert(name.0.clone(), TypeScheme::mono(val_ty.clone()));
-                    defn_types.push((name.0.clone(), val_ty));
+                    let scheme = self.generalize(&env, &val_ty);
+                    env.insert(name.0.clone(), scheme.clone());
+                    defn_types.push((name.0.clone(), scheme));
                 }
                 Expr::FnCall { .. } => {
                     let _ = self.infer_expr(&mut env.clone(), expr)?;
@@ -162,11 +189,39 @@ impl InferCtx {
         }
 
         let subst = self.solve()?;
-        // Apply substitution to defn_types
+        // Apply substitution to schemes (concretize where possible)
         let defn_types = defn_types.into_iter()
-            .map(|(name, ty)| (name, apply_subst(&subst, &ty)))
+            .map(|(name, scheme)| {
+                let ty = apply_subst(&subst, &scheme.ty);
+                let remaining_vars: Vec<TypeVarId> = scheme.vars.iter()
+                    .filter(|v| !subst.contains_key(v))
+                    .copied()
+                    .collect();
+                (name, TypeScheme { vars: remaining_vars, ty })
+            })
             .collect();
         Ok((subst, defn_types))
+    }
+
+    /// Collect variable bindings from a pattern and add them to the environment.
+    fn collect_pattern_bindings(pattern: &ast::Pattern, env: &mut TypeEnv, ctx: &mut InferCtx) {
+        use crate::ast::Pattern;
+        match pattern {
+            Pattern::Binding(name) => {
+                env.insert(name.0.clone(), TypeScheme::mono(ctx.fresh_var()));
+            }
+            Pattern::Struct { fields, .. } => {
+                for field in fields {
+                    Self::collect_pattern_bindings(field, env, ctx);
+                }
+            }
+            Pattern::Vector(elements, _) | Pattern::List(elements, _) => {
+                for elem in elements {
+                    Self::collect_pattern_bindings(elem, env, ctx);
+                }
+            }
+            Pattern::Literal(_) | Pattern::Wildcard => {}
+        }
     }
 
     fn infer_expr(&mut self, env: &mut TypeEnv, expr: &Expr) -> Result<Type, TypeError> {
@@ -270,8 +325,10 @@ impl InferCtx {
             Expr::Match { expr: matched, arms, span: _match_span } => {
                 let _mat_ty = self.infer_expr(env, matched)?;
                 let result_ty = self.fresh_var();
-                for (_, body) in arms {
-                    let arm_ty = self.infer_expr(env, body)?;
+                for (pattern, body) in arms {
+                    let mut arm_env = env.clone();
+                    Self::collect_pattern_bindings(pattern, &mut arm_env, self);
+                    let arm_ty = self.infer_expr(&mut arm_env, body)?;
                     self.constrain(result_ty.clone(), arm_ty);
                 }
                 Ok(result_ty)
@@ -317,7 +374,7 @@ impl InferCtx {
 
             Expr::DefMacro { .. } => Ok(Type::Void),
             Expr::Vector(_, _) | Expr::List(_, _) => {
-                Ok(Type::Named("collection".to_string()))
+                Ok(Type::I64)
             }
         }
     }
@@ -329,6 +386,44 @@ impl InferCtx {
             subst.insert(*var, self.fresh_var());
         }
         apply_subst(&subst, &scheme.ty)
+    }
+
+    /// Collect free type variables in a type (not bound by any scheme).
+    fn collect_free_vars(ty: &Type, set: &mut std::collections::HashSet<TypeVarId>) {
+        match ty {
+            Type::Var(id) => { set.insert(*id); }
+            Type::Fun(params, ret) => {
+                for p in params { Self::collect_free_vars(p, set); }
+                Self::collect_free_vars(ret, set);
+            }
+            _ => {}
+        }
+    }
+
+    fn free_vars(ty: &Type) -> std::collections::HashSet<TypeVarId> {
+        let mut set = std::collections::HashSet::new();
+        Self::collect_free_vars(ty, &mut set);
+        set
+    }
+
+    fn free_vars_scheme(scheme: &TypeScheme) -> std::collections::HashSet<TypeVarId> {
+        let mut set = Self::free_vars(&scheme.ty);
+        for var in &scheme.vars {
+            set.remove(var);
+        }
+        set
+    }
+
+    /// Generalize a type into a scheme by abstracting over variables
+    /// that are not free in the environment.
+    fn generalize(&self, env: &TypeEnv, ty: &Type) -> TypeScheme {
+        let ty_vars = Self::free_vars(ty);
+        let mut env_vars = std::collections::HashSet::new();
+        for scheme in env.values() {
+            env_vars.extend(Self::free_vars_scheme(scheme));
+        }
+        let gen_vars: Vec<TypeVarId> = ty_vars.difference(&env_vars).copied().collect();
+        TypeScheme { vars: gen_vars, ty: ty.clone() }
     }
 
     /// Pre-populated environment with built-in functions
@@ -355,32 +450,35 @@ impl InferCtx {
         }
         env.insert("not".to_string(), TypeScheme::mono(Type::Fun(vec![Type::Bool], Box::new(Type::Bool))));
 
-        // I/O: (i64) → i64 (returns 0)
-        let print_i64 = TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64)));
-        let print_str = TypeScheme::mono(Type::Fun(vec![Type::String], Box::new(Type::I64)));
+        // I/O: polymorphic print (any type → i64)
+        let a = self.fresh_var();
+        let print_poly = TypeScheme {
+            vars: vec![0],
+            ty: Type::Fun(vec![a.clone()], Box::new(Type::I64)),
+        };
         let print_none = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
-        env.insert("println".to_string(), print_i64.clone());
-        env.insert("print".to_string(), print_i64);
-        env.insert("print-str".to_string(), print_str);
+        env.insert("println".to_string(), print_poly.clone());
+        env.insert("print".to_string(), print_poly.clone());
+        env.insert("print-str".to_string(), print_poly);
         env.insert("newline".to_string(), print_none);
 
-        // Collection ops — vector can take any number of args
-        let vec_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::Named("vector".to_string()))));
-        let push = TypeScheme::mono(Type::Fun(vec![Type::Named("vector".to_string()), Type::I64], Box::new(Type::I64)));
-        let get = TypeScheme::mono(Type::Fun(vec![Type::Named("vector".to_string()), Type::I64], Box::new(Type::I64)));
-        let count = TypeScheme::mono(Type::Fun(vec![Type::Named("vector".to_string())], Box::new(Type::I64)));
+        // Collection ops — all collections are i64 pointers at runtime
+        let vec_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
+        let push = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
+        let get = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
+        let count = TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64)));
         env.insert("vector".to_string(), vec_new);
         env.insert("push".to_string(), push);
         env.insert("get".to_string(), get);
         env.insert("count".to_string(), count);
         env.insert("first".to_string(), unary.clone());
         env.insert("last".to_string(), unary);
-        env.insert("nth".to_string(), TypeScheme::mono(Type::Fun(vec![Type::Named("vector".to_string()), Type::I64], Box::new(Type::I64))));
+        env.insert("nth".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
 
-        let map_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::Named("map".to_string()))));
-        let map_op = TypeScheme::mono(Type::Fun(vec![Type::Named("map".to_string()), Type::I64], Box::new(Type::I64)));
+        let map_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
+        let map_op = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
         let map_set = TypeScheme::mono(Type::Fun(vec![
-            Type::Named("map".to_string()), Type::I64, Type::I64,
+            Type::I64, Type::I64, Type::I64,
         ], Box::new(Type::I64)));
         env.insert("map".to_string(), map_new);
         env.insert("map-get".to_string(), map_op.clone());
@@ -391,7 +489,17 @@ impl InferCtx {
 
         // String ops
         env.insert("str".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::String))));
-        env.insert("str-count".to_string(), TypeScheme::mono(Type::Fun(vec![Type::String], Box::new(Type::I64))));
+        env.insert("str-count".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("nil".to_string(), TypeScheme::mono(Type::I64));
+        
+        // Set ops
+        let set_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
+        let set_op = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64)));
+        let set_bool_op = TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::Bool)));
+        env.insert("set".to_string(), set_new);
+        env.insert("set-add".to_string(), set_op.clone());
+        env.insert("set-contains?".to_string(), set_bool_op);
+        env.insert("set-count".to_string(), set_op);
 
         env
     }

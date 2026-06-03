@@ -66,12 +66,19 @@ fn test_run_map() {
 #[test]
 fn test_build_output() {
     let output = bars()
-        .args(["build", "examples/hello.brs"])
+        .args(["build", "examples/hello.brs", "-o", "/tmp/bars_test_hello"])
         .output()
         .expect("Failed to build");
+    assert!(output.status.success(), "Build failed: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("export function l $main()"));
-    assert!(stdout.contains("$printf"));
+    assert!(stdout.contains("Binary written to"));
+    // Verify binary exists and runs
+    let run = std::process::Command::new("/tmp/bars_test_hello")
+        .output()
+        .expect("Failed to run built binary");
+    let run_stdout = String::from_utf8_lossy(&run.stdout);
+    assert!(run_stdout.contains("42"), "Expected '42' in binary output, got: {}", run_stdout);
+    let _ = std::fs::remove_file("/tmp/bars_test_hello");
 }
 
 #[test]

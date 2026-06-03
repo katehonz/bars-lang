@@ -28,6 +28,10 @@ unsafe extern "C" {
     fn bars_set_add_i64(set: *mut u8, val: i64);
     fn bars_set_contains_i64(set: *mut u8, val: i64) -> i64;
     fn bars_set_count_i64(set: *mut u8) -> i64;
+    fn bars_print_vector_i64(vec: *const u8);
+    fn bars_print_map_i64(map: *const u8);
+    fn bars_print_set_i64(set: *const u8);
+    fn bars_print_any_i64(val: i64);
 }
 
 pub struct CraneliftBackend {
@@ -66,6 +70,10 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_set_add_i64", bars_set_add_i64 as *const u8);
         jit_builder.symbol("bars_set_contains_i64", bars_set_contains_i64 as *const u8);
         jit_builder.symbol("bars_set_count_i64", bars_set_count_i64 as *const u8);
+        jit_builder.symbol("bars_print_vector_i64", bars_print_vector_i64 as *const u8);
+        jit_builder.symbol("bars_print_map_i64", bars_print_map_i64 as *const u8);
+        jit_builder.symbol("bars_print_set_i64", bars_print_set_i64 as *const u8);
+        jit_builder.symbol("bars_print_any_i64", bars_print_any_i64 as *const u8);
 
         let module = JITModule::new(jit_builder);
 
@@ -77,6 +85,10 @@ impl CraneliftBackend {
     }
 
     pub fn compile_hir(&mut self, program: &hir::Program) -> Result<i64> {
+        self.compile_hir_entry(program, "main")
+    }
+
+    pub fn compile_hir_entry(&mut self, program: &hir::Program, entry_name: &str) -> Result<i64> {
         // Declare all functions first
         for func in &program.funcs {
             declare_function_generic(&mut self.module, &func.name, func.params.len(), &mut self.functions)?;
@@ -94,11 +106,11 @@ impl CraneliftBackend {
 
         self.module.finalize_definitions().unwrap();
 
-        // Find and call main
-        if let Some(&main_id) = self.functions.get("main") {
-            let main_ptr = self.module.get_finalized_function(main_id);
-            let main_fn: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
-            let result = unsafe { main_fn() };
+        // Find and call entry
+        if let Some(&entry_id) = self.functions.get(entry_name) {
+            let entry_ptr = self.module.get_finalized_function(entry_id);
+            let entry_fn: unsafe extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry_ptr) };
+            let result = unsafe { entry_fn() };
             Ok(result)
         } else {
             Ok(0)
@@ -180,7 +192,7 @@ fn define_function_generic<M: Module>(
             )?;
         }
 
-        compile_terminator(&block.terminator, &mut builder, &values, &blocks)?;
+        compile_terminator(&block.terminator, &mut builder, &values, &blocks, func, &functions, module)?;
     }
 
     // Seal all blocks after all jumps are emitted
@@ -359,10 +371,13 @@ fn compile_instr<M: Module>(
                     if !arg_vals.is_empty() && is_string_arg(&args[0], string_temps) {
                         call_runtime(builder, module, "bars_print_string", &[arg_vals[0]])?;
                         call_runtime(builder, module, "bars_print_newline", &[])?;
+                    } else if !arg_vals.is_empty() && matches!(args[0], hir::Operand::Const(_)) {
+                        call_runtime(builder, module, "bars_print_i64", &[arg_vals[0]])?;
+                        call_runtime(builder, module, "bars_print_newline", &[])?;
+                    } else if !arg_vals.is_empty() {
+                        call_runtime(builder, module, "bars_print_any_i64", &[arg_vals[0]])?;
+                        call_runtime(builder, module, "bars_print_newline", &[])?;
                     } else {
-                        if !arg_vals.is_empty() {
-                            call_runtime(builder, module, "bars_print_i64", &[arg_vals[0]])?;
-                        }
                         call_runtime(builder, module, "bars_print_newline", &[])?;
                     }
                     builder.ins().iconst(types::I64, 0)
@@ -438,11 +453,14 @@ fn compile_instr<M: Module>(
     Ok(())
 }
 
-fn compile_terminator(
+fn compile_terminator<M: Module>(
     term: &hir::Terminator,
     builder: &mut FunctionBuilder,
     values: &HashMap<String, Variable>,
     blocks: &HashMap<String, Block>,
+    _func: &hir::Func,
+    functions: &HashMap<String, cranelift_module::FuncId>,
+    module: &mut M,
 ) -> Result<()> {
     match term {
         hir::Terminator::Jump(label) => {
@@ -463,6 +481,22 @@ fn compile_terminator(
         }
         hir::Terminator::Unreachable => {
             builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        hir::Terminator::TailCall { func: func_name, args } => {
+            // For now, compile tail calls as regular calls + return
+            // (Cranelift TCO would require jump to entry block with block params,
+            // which is complex to implement correctly.)
+            let arg_vals: Vec<ClifValue> = args.iter()
+                .map(|a| operand_to_value(a, values, builder))
+                .collect();
+            if let Some(&func_id) = functions.get(func_name) {
+                let func_ref = module.declare_func_in_func(func_id, builder.func);
+                let call = builder.ins().call(func_ref, &arg_vals);
+                let ret_val = builder.inst_results(call)[0];
+                builder.ins().return_(&[ret_val]);
+            } else {
+                panic!("Unknown function in Cranelift backend: {}", func_name)
+            }
         }
     }
     Ok(())
@@ -488,6 +522,8 @@ fn is_string_arg(arg: &hir::Operand, string_temps: &HashSet<String>) -> bool {
     matches!(arg, hir::Operand::Var(v) if string_temps.contains(v))
 }
 
+
+
 fn call_runtime<M: Module>(
     builder: &mut FunctionBuilder,
     module: &mut M,
@@ -498,7 +534,17 @@ fn call_runtime<M: Module>(
     for _ in args {
         sig.params.push(AbiParam::new(types::I64));
     }
-    if name != "bars_print_newline" && name != "bars_vector_push_i64" && name != "bars_map_set_i64" {
+    let is_void = matches!(name,
+        "bars_print_newline" |
+        "bars_print_string" |
+        "bars_print_any_i64" |
+        "bars_print_vector_i64" |
+        "bars_print_map_i64" |
+        "bars_print_set_i64" |
+        "bars_vector_push_i64" |
+        "bars_map_set_i64"
+    );
+    if !is_void {
         sig.returns.push(AbiParam::new(types::I64));
     }
 
@@ -506,7 +552,7 @@ fn call_runtime<M: Module>(
     let func_ref = module.declare_func_in_func(func_id, builder.func);
     let call = builder.ins().call(func_ref, args);
 
-    if name != "bars_print_newline" && name != "bars_vector_push_i64" && name != "bars_map_set_i64" {
+    if !is_void {
         Ok(builder.inst_results(call)[0])
     } else {
         Ok(builder.ins().iconst(types::I64, 0))

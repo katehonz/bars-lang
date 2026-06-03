@@ -72,8 +72,12 @@ pub fn expand_macros(program: &ast::Program) -> Result<ast::Program, r#macro::Ma
 
 /// Lower AST to HIR and run optimization passes.
 pub fn lower_and_optimize(program: &ast::Program) -> Result<hir::Program> {
+    // Type-check first — generics require correct type inference
+    type_check(program).map_err(|e| anyhow::anyhow!("Type error: {}", e))?;
+    
     let mut hir_program = hir::lowering::lower(program)?;
     hir::optimize::constant_fold(&mut hir_program);
+    hir::optimize::tail_call_optimize(&mut hir_program);
     hir::optimize::remove_dead_blocks(&mut hir_program);
     Ok(hir_program)
 }
@@ -135,13 +139,16 @@ pub fn compile_file_llvm(path: &std::path::Path, optimize: bool) -> Result<()> {
 }
 
 /// Infer and check types for a program.
-/// Returns the inferred type for each top-level definition.
-pub fn infer_types(program: &ast::Program) -> Result<Vec<(String, types::Type)>, types::TypeError> {
+/// Returns the inferred type scheme for each top-level definition.
+pub fn infer_types(program: &ast::Program) -> Result<Vec<(String, types::TypeScheme)>, types::TypeError> {
     let mut ctx = types::InferCtx::new();
-    let (subst, defn_types) = ctx.infer_program(program)?;
-    // Apply substitution to get concrete types
-    let results: Vec<_> = defn_types.into_iter()
-        .map(|(name, ty)| (name, types::apply_subst(&subst, &ty)))
-        .collect();
-    Ok(results)
+    let (_subst, defn_types) = ctx.infer_program(program)?;
+    Ok(defn_types)
+}
+
+/// Type-check a program, returning an error if types don't match.
+pub fn type_check(program: &ast::Program) -> Result<(), types::TypeError> {
+    let mut ctx = types::InferCtx::new();
+    let _ = ctx.infer_program(program)?;
+    Ok(())
 }

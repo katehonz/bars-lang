@@ -1,6 +1,6 @@
 # 🐆 Bars
 
-> **Bars** (барс) — Снежният леопард. Бърз, независим, опасен.
+> **Bars** (барс) — Снежният леопард. Бърз, независим, опасен.The snow leopard (Panthera uncia) 
 
 ![Bars — the Snow Leopard](bars-kotka.png)
 

@@ -50,6 +50,42 @@ fn test_loop_factorial() {
 }
 
 #[test]
+fn test_tail_recursion_sum() {
+    let source = r#"
+(defn sum [n acc]
+  (if (= n 0)
+    acc
+    (sum (- n 1) (+ acc n))))
+
+(defn main []
+  (println (sum 100 0))
+  0)
+"#;
+    let tmp = std::env::temp_dir().join("bars_test_tail_sum.brs");
+    std::fs::write(&tmp, source).unwrap();
+    let out = run_bars(tmp.to_str().unwrap());
+    assert_eq!(out.trim(), "5050");
+}
+
+#[test]
+fn test_tail_recursion_factorial() {
+    let source = r#"
+(defn factorial [n acc]
+  (if (<= n 1)
+    acc
+    (factorial (- n 1) (* acc n))))
+
+(defn main []
+  (println (factorial 10 1))
+  0)
+"#;
+    let tmp = std::env::temp_dir().join("bars_test_tail_fact.brs");
+    std::fs::write(&tmp, source).unwrap();
+    let out = run_bars(tmp.to_str().unwrap());
+    assert_eq!(out.trim(), "3628800");
+}
+
+#[test]
 fn test_loop_repl() {
     let mut child = Command::new("cargo")
         .args(["run", "--quiet", "--", "repl"])

@@ -186,29 +186,23 @@ impl QbeHIRBackend {
                     }
                     "println" => {
                         if args.is_empty() {
-                            func.assign_instr(
-                                Value::Temporary(self.fresh_temp()),
-                                Type::Long,
+                            func.add_instr(
                                 Instr::Call("bars_print_newline".to_string(), vec![], None),
                             );
                         } else if self.is_string_arg(&args[0]) {
                             // Print a Bars string
-                            func.assign_instr(
-                                Value::Temporary(self.fresh_temp()),
-                                Type::Long,
+                            func.add_instr(
                                 Instr::Call(
                                     "bars_print_string".to_string(),
                                     vec![compiled_args[0].clone()],
                                     None,
                                 ),
                             );
-                            func.assign_instr(
-                                Value::Temporary(self.fresh_temp()),
-                                Type::Long,
+                            func.add_instr(
                                 Instr::Call("bars_print_newline".to_string(), vec![], None),
                             );
-                        } else {
-                            // Print integer
+                        } else if matches!(args[0], hir::Operand::Const(_)) {
+                            // Print integer constant
                             let fmt = self.add_string_literal("%ld\n");
                             func.assign_instr(
                                 Value::Temporary(self.fresh_temp()),
@@ -218,6 +212,18 @@ impl QbeHIRBackend {
                                     vec![(Type::Long, fmt), compiled_args[0].clone()],
                                     None,
                                 ),
+                            );
+                        } else {
+                            // Dynamic type detection via magic number
+                            func.add_instr(
+                                Instr::Call(
+                                    "bars_print_any_i64".to_string(),
+                                    vec![compiled_args[0].clone()],
+                                    None,
+                                ),
+                            );
+                            func.add_instr(
+                                Instr::Call("bars_print_newline".to_string(), vec![], None),
                             );
                         }
                         func.assign_instr(
@@ -404,7 +410,21 @@ impl QbeHIRBackend {
                 let ret_val = self.operand_to_value(val);
                 func.add_instr(Instr::Ret(Some(ret_val)));
             }
-            hir::Terminator::Unreachable => {}
+            hir::Terminator::Unreachable => {
+                func.add_instr(Instr::Ret(Some(Value::Const(0))));
+            }
+            hir::Terminator::TailCall { func: func_name, args } => {
+                let compiled_args: Vec<_> = args.iter()
+                    .map(|a| (Type::Long, self.operand_to_value(a)))
+                    .collect();
+                let dest = self.fresh_temp();
+                func.assign_instr(
+                    Value::Temporary(dest.clone()),
+                    Type::Long,
+                    Instr::Call(sanitize_name(func_name), compiled_args, None),
+                );
+                func.add_instr(Instr::Ret(Some(Value::Temporary(dest))));
+            }
         }
         Ok(())
     }

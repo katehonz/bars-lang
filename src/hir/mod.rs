@@ -93,6 +93,9 @@ pub enum Terminator {
     Return(Operand),
     /// Unreachable (placeholder)
     Unreachable,
+    /// Tail call: call function with args and return result
+    /// (replaces Call + Return for self-recursive tail calls)
+    TailCall { func: String, args: Vec<Operand> },
 }
 
 impl Operand {

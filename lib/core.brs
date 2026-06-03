@@ -15,11 +15,11 @@
 (defn pos?  [^i64 n] (> n 0))
 (defn neg?  [^i64 n] (< n 0))
 
-(defn or [^i64 a ^i64 b]
-  (if a 1 b))
+(defn or [^bool a ^bool b]
+  (if a true b))
 
-(defn and [^i64 a ^i64 b]
-  (if a b 0))
+(defn and [^bool a ^bool b]
+  (if a b false))
 
 (defn even? [^i64 n] (= (% n 2) 0))
 (defn odd?  [^i64 n] (= (% n 2) 1))

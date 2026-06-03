@@ -161,6 +161,7 @@ fn err_span(expr: &Expr, parent: Span) -> Span {
 fn expr_is_copy(expr: &Expr, _registry: &FunctionRegistry) -> bool {
     match expr {
         Expr::Number(_) | Expr::Bool(_) | Expr::Float(_) => true,
+        Expr::String(_) | Expr::Vector(_, _) => true,
         Expr::FnCall { func, .. } => {
             if let Expr::Symbol(sym) = func.as_ref() {
                 matches!(sym.0.as_str(),
@@ -172,7 +173,8 @@ fn expr_is_copy(expr: &Expr, _registry: &FunctionRegistry) -> bool {
                     "even?" | "odd?" | "zero?" | "pos?" | "neg?" |
                     "empty?" | "contains?" | "index-of" | "str-count" |
                     "square" | "cube" | "gcd" | "lcm" | "factorial" | "fib" |
-                    "sum" | "product" | "first" | "last" | "nth"
+                    "sum" | "product" | "first" | "last" | "nth" |
+                    "vector" | "map" | "set" | "range" | "range-step"
                 )
             } else {
                 false
@@ -230,6 +232,7 @@ fn check_expr(
                 Some(OwnershipState::MutBorrowed) => Ok(OwnershipState::Owned),
                 Some(OwnershipState::Borrowed { .. }) => Ok(OwnershipState::Owned),
                 Some(OwnershipState::Owned) => Ok(OwnershipState::Owned),
+
                 None => Ok(OwnershipState::Owned),
             }
         }

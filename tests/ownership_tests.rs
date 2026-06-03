@@ -4,7 +4,8 @@ use bars::reader;
 #[test]
 fn test_use_after_move() {
     let prog = reader::read(r#"
-        (def x (vector 1 2))
+        (defstruct Point [x y])
+        (def x (Point 1 2))
         (def y x)
         (println x)
     "#).unwrap();
@@ -39,8 +40,9 @@ fn test_let_binding_ok() {
 #[test]
 fn test_if_branch_merge() {
     let prog = reader::read(r#"
+        (defstruct Point [x y])
         (defn main []
-          (let [x (vector 1 2)]
+          (let [x (Point 1 2)]
             (if true
               (def y x)
               0)
@@ -111,10 +113,11 @@ fn test_nll_move_after_borrow_in_do() {
 fn test_nll_move_while_borrowed_same_expr() {
     // Move while borrowed in the SAME expression should still fail
     let prog = reader::read(r#"
+        (defstruct Point [x y])
         (defn use [^buf data]
           data)
         (defn main []
-          (let [x (vector 1 2)]
+          (let [x (Point 1 2)]
             (use ^x)         ; borrow x
             (def y x)        ; move x — NLL allows this
             (use ^x)))       ; use after move — this should fail
@@ -142,8 +145,9 @@ fn test_resource_leak_owned_not_consumed() {
 fn test_resource_leak_detected() {
     // Owned value created with def, never returned — resource leak
     let prog = reader::read(r#"
+        (defstruct Point [x y])
         (defn leaky []
-          (def buf (vector 1 2))
+          (def buf (Point 1 2))
           (println 42))
     "#).unwrap();
     let err = check_program(&prog).unwrap_err();

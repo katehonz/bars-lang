@@ -79,11 +79,62 @@ pub fn remove_dead_blocks(program: &mut Program) {
                             queue.push(else_block.clone());
                         }
                     }
-                    Terminator::Return(_) | Terminator::Unreachable => {}
+                    Terminator::Return(_) | Terminator::Unreachable | Terminator::TailCall { .. } => {}
                 }
             }
         }
 
         func.blocks.retain(|b| reachable.contains(&b.label));
+    }
+}
+
+/// Optimize self-recursive tail calls into TailCall terminators.
+///
+/// Recognizes two patterns:
+/// 1. Call { dest, func, args } followed by Return(Var(dest))
+/// 2. Call { dest, func, args }, Assign { _ret, Var(dest) }, Return(Var(_ret))
+pub fn tail_call_optimize(program: &mut Program) {
+    for func in &mut program.funcs {
+        let func_name = func.name.clone();
+        for block in &mut func.blocks {
+            let n = block.instrs.len();
+            if n == 0 {
+                continue;
+            }
+
+            // Pattern 1: Call ... Return(Var(dest))
+            if let Some(Instr::Call { dest, func: call_func, args }) = block.instrs.last() {
+                if call_func == &func_name {
+                    if let Terminator::Return(ret_op) = &block.terminator {
+                        if ret_op == &Operand::Var(dest.clone()) {
+                            let args = args.clone();
+                            block.instrs.pop();
+                            block.terminator = Terminator::TailCall { func: func_name.clone(), args };
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Pattern 2: Call ..., Assign { _ret, Var(dest) }, Return(Var(_ret))
+            if n >= 2 {
+                if let Some(Instr::Call { dest, func: call_func, args }) = block.instrs.get(n - 2) {
+                    if call_func == &func_name {
+                        if let Some(Instr::Assign { dest: assign_dest, value: Operand::Var(assign_val) }) = block.instrs.last() {
+                            if assign_dest == "_ret" && assign_val == dest {
+                                if let Terminator::Return(Operand::Var(ret_var)) = &block.terminator {
+                                    if ret_var == "_ret" {
+                                        let args = args.clone();
+                                        block.instrs.pop();
+                                        block.instrs.pop();
+                                        block.terminator = Terminator::TailCall { func: func_name.clone(), args };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

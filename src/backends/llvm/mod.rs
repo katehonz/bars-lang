@@ -134,6 +134,12 @@ impl<'ctx> LlvmCompiler<'ctx> {
         self.module.add_function("bars_vector_count_i64", i64_ptr, None);
         self.module.add_function("bars_map_count_i64", i64_ptr, None);
 
+        // void f(i8*) — print helpers
+        self.module.add_function("bars_print_vector_i64", void_str, None);
+        self.module.add_function("bars_print_map_i64", void_str, None);
+        self.module.add_function("bars_print_set_i64", void_str, None);
+        self.module.add_function("bars_print_any_i64", void_i64, None);
+
         Ok(())
     }
 
@@ -391,10 +397,13 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         if !arg_vals.is_empty() && self.is_string_value(&args[0]) {
                             self.call_runtime_void_str("bars_print_string", arg_vals[0])?;
                             self.call_runtime_void("bars_print_newline", &[])?;
+                        } else if !arg_vals.is_empty() && matches!(args[0], hir::Operand::Const(_)) {
+                            self.call_runtime_void("bars_print_i64", &[arg_vals[0]])?;
+                            self.call_runtime_void("bars_print_newline", &[])?;
+                        } else if !arg_vals.is_empty() {
+                            self.call_runtime_void("bars_print_any_i64", &[arg_vals[0]])?;
+                            self.call_runtime_void("bars_print_newline", &[])?;
                         } else {
-                            if !arg_vals.is_empty() {
-                                self.call_runtime_void("bars_print_i64", &[arg_vals[0]])?;
-                            }
                             self.call_runtime_void("bars_print_newline", &[])?;
                         }
                         self.i64_type.const_int(0, false)
@@ -507,6 +516,19 @@ impl<'ctx> LlvmCompiler<'ctx> {
             }
             hir::Terminator::Unreachable => {
                 let _ = self.builder.build_unreachable();
+            }
+            hir::Terminator::TailCall { func: func_name, args } => {
+                let arg_vals: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = args.iter()
+                    .map(|a| self.operand_to_int(a).into())
+                    .collect();
+                if let Some(func_val) = self.module.get_function(func_name) {
+                    let call = self.builder.build_call(func_val, &arg_vals, "tailcall").unwrap();
+                    call.set_tail_call(true);
+                    let ret_val = call.try_as_basic_value().left().unwrap().into_int_value();
+                    let _ = self.builder.build_return(Some(&ret_val));
+                } else {
+                    panic!("Unknown function in LLVM backend: {}", func_name);
+                }
             }
         }
         Ok(())

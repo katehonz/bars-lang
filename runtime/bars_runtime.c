@@ -39,9 +39,94 @@ void bars_print_value(const bars_value_t* v) {
         case BARS_F64: printf("%f", v->data.f64); break;
         case BARS_BOOL: printf("%s", v->data.i64 ? "true" : "false"); break;
         case BARS_STRING: bars_print_string(v->data.string); break;
-        case BARS_VECTOR: printf("[vector]"); break;
-        case BARS_MAP: printf("{map}"); break;
+        case BARS_VECTOR: bars_print_vector_i64(v->data.vector); break;
+        case BARS_MAP: bars_print_map_i64(v->data.map); break;
         case BARS_KEYWORD: printf(":%s", v->data.string->data); break;
+    }
+}
+
+void bars_print_vector_i64(const bars_vector_t* vec) {
+    printf("[");
+    if (vec) {
+        for (size_t i = 0; i < vec->len; i++) {
+            bars_value_t v = vec->data[i];
+            if (v.tag == BARS_I64) {
+                printf("%ld", (long)v.data.i64);
+            } else if (v.tag == BARS_STRING) {
+                bars_print_string(v.data.string);
+            } else {
+                bars_print_value(&v);
+            }
+            if (i + 1 < vec->len) printf(" ");
+        }
+    }
+    printf("]");
+}
+
+void bars_print_map_i64(const bars_map_t* map) {
+    printf("{");
+    if (map) {
+        int first = 1;
+        for (size_t i = 0; i < map->cap; i++) {
+            bars_map_entry_t* entry = map->buckets[i];
+            while (entry) {
+                if (!first) printf(", ");
+                first = 0;
+                bars_print_value(&entry->key);
+                printf(" ");
+                bars_print_value(&entry->val);
+                entry = entry->next;
+            }
+        }
+    }
+    printf("}");
+}
+
+void bars_print_set_i64(const bars_map_t* set) {
+    printf("#{");
+    if (set) {
+        int first = 1;
+        for (size_t i = 0; i < set->cap; i++) {
+            bars_map_entry_t* entry = set->buckets[i];
+            while (entry) {
+                if (!first) printf(" ");
+                first = 0;
+                bars_print_value(&entry->key);
+                entry = entry->next;
+            }
+        }
+    }
+    printf("}");
+}
+
+void bars_print_any_i64(int64_t val) {
+    if (val == 0) {
+        bars_print_i64(val);
+        return;
+    }
+    /* Small values are definitely not heap pointers.
+       Boehm GC on 64-bit systems allocates in high addresses.
+       Most reasonable integers fit below 256MB. */
+    if (val < 0x10000000L || val < 0) {
+        bars_print_i64(val);
+        return;
+    }
+    /* Check if val looks like a valid heap pointer (reasonably aligned) */
+    if ((val & 0x7) != 0) {
+        bars_print_i64(val);
+        return;
+    }
+    /* Try to read magic number */
+    uint32_t* magic_ptr = (uint32_t*)(uintptr_t)val;
+    uint32_t magic = *magic_ptr;
+    if (magic == BARS_MAGIC_VECTOR) {
+        bars_print_vector_i64((const bars_vector_t*)magic_ptr);
+    } else if (magic == BARS_MAGIC_MAP) {
+        bars_print_map_i64((const bars_map_t*)magic_ptr);
+    } else if (magic == BARS_MAGIC_STRING) {
+        bars_print_string((const bars_string_t*)magic_ptr);
+    } else {
+        bars_print_i64(val);
     }
 }
 
@@ -50,6 +135,7 @@ void bars_print_value(const bars_value_t* v) {
 bars_string_t* bars_string_new(const char* cstr) {
     size_t len = strlen(cstr);
     bars_string_t* s = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    s->magic = BARS_MAGIC_STRING;
     s->data = (char*)bars_alloc(len + 1);
     memcpy(s->data, cstr, len);
     s->data[len] = '\0';
@@ -67,6 +153,7 @@ bars_string_t* bars_string_from_i64(int64_t n) {
 
 bars_vector_t* bars_vector_new(void) {
     bars_vector_t* vec = (bars_vector_t*)bars_alloc(sizeof(bars_vector_t));
+    vec->magic = BARS_MAGIC_VECTOR;
     vec->cap = 8;
     vec->len = 0;
     vec->data = (bars_value_t*)bars_alloc(sizeof(bars_value_t) * vec->cap);
@@ -136,6 +223,7 @@ int bars_value_eq(bars_value_t a, bars_value_t b) {
 
 bars_map_t* bars_map_new(void) {
     bars_map_t* map = (bars_map_t*)bars_alloc(sizeof(bars_map_t));
+    map->magic = BARS_MAGIC_MAP;
     map->size = 0;
     map->cap = 16;
     map->buckets = (bars_map_entry_t**)bars_alloc(sizeof(bars_map_entry_t*) * map->cap);

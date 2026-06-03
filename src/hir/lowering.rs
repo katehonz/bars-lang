@@ -114,7 +114,7 @@ impl LoweringCtx {
         let entry_label = self.fresh_label("entry");
         self.start_block(entry_label.clone());
 
-        let result = self.lower_expr(body)?;
+        let result = self.lower_expr(body, true)?;
         if self.current_block_active {
             self.emit(Instr::Assign { dest: "_ret".to_string(), value: result });
             self.seal_block(Terminator::Return(Operand::Var("_ret".to_string())));
@@ -135,7 +135,7 @@ impl LoweringCtx {
 
         let mut last = Operand::Const(0);
         for expr in exprs {
-            last = self.lower_expr(expr)?;
+            last = self.lower_expr(expr, false)?;
             if !self.current_block_active {
                 break;
             }
@@ -155,7 +155,9 @@ impl LoweringCtx {
 
     /// Lower an expression into an operand.
     /// Side effect: appends instructions to the current block.
-    fn lower_expr(&mut self, expr: &Expr) -> Result<Operand> {
+    /// `is_tail` indicates whether this expression is in tail position
+    /// (its result will be returned directly).
+    fn lower_expr(&mut self, expr: &Expr, is_tail: bool) -> Result<Operand> {
         if !self.current_block_active {
             // Block is already sealed (e.g., by recur/return in a sibling branch).
             // Return a dummy operand; this value won't be used.
@@ -181,63 +183,91 @@ impl LoweringCtx {
 
             Expr::Let { bindings, body, .. } => {
                 for (name, val_expr) in bindings {
-                    let val = self.lower_expr(val_expr)?;
+                    let val = self.lower_expr(val_expr, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
                     self.emit(Instr::Assign { dest: name.0.clone(), value: val });
                 }
-                self.lower_expr(body)
+                self.lower_expr(body, is_tail)
             }
 
             Expr::If { cond, then_branch, else_branch, .. } => {
-                let cond_val = self.lower_expr(cond)?;
+                let cond_val = self.lower_expr(cond, false)?;
                 if !self.current_block_active {
                     return Ok(Operand::Const(0));
                 }
-                let result_slot = self.fresh_temp();
-                let result = self.fresh_temp();
-
                 let then_label = self.fresh_label("then");
                 let else_label = self.fresh_label("else");
-                let merge_label = self.fresh_label("merge");
 
-                // Allocate slot for result
-                self.emit(Instr::Alloc { dest: result_slot.clone(), size: 8 });
+                if is_tail {
+                    // Tail position: no merge block, branches return directly
+                    self.seal_block(Terminator::Branch {
+                        cond: cond_val,
+                        then_block: then_label.clone(),
+                        else_block: else_label.clone(),
+                    });
 
-                // Terminate current block with branch
-                self.seal_block(Terminator::Branch {
-                    cond: cond_val,
-                    then_block: then_label.clone(),
-                    else_block: else_label.clone(),
-                });
+                    // Then block
+                    self.start_block(then_label);
+                    let then_val = self.lower_expr(then_branch, true)?;
+                    if self.current_block_active {
+                        self.seal_block(Terminator::Return(then_val));
+                    }
 
-                // Then block
-                self.start_block(then_label);
-                let then_val = self.lower_expr(then_branch)?;
-                if self.current_block_active {
-                    self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: then_val });
-                    self.seal_block(Terminator::Jump(merge_label.clone()));
+                    // Else block
+                    self.start_block(else_label);
+                    let else_val = self.lower_expr(else_branch, true)?;
+                    if self.current_block_active {
+                        self.seal_block(Terminator::Return(else_val));
+                    }
+
+                    self.current_block_active = false;
+                    Ok(Operand::Const(0))
+                } else {
+                    let result_slot = self.fresh_temp();
+                    let result = self.fresh_temp();
+                    let merge_label = self.fresh_label("merge");
+
+                    // Allocate slot for result
+                    self.emit(Instr::Alloc { dest: result_slot.clone(), size: 8 });
+
+                    // Terminate current block with branch
+                    self.seal_block(Terminator::Branch {
+                        cond: cond_val,
+                        then_block: then_label.clone(),
+                        else_block: else_label.clone(),
+                    });
+
+                    // Then block
+                    self.start_block(then_label);
+                    let then_val = self.lower_expr(then_branch, false)?;
+                    if self.current_block_active {
+                        self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: then_val });
+                        self.seal_block(Terminator::Jump(merge_label.clone()));
+                    }
+
+                    // Else block
+                    self.start_block(else_label);
+                    let else_val = self.lower_expr(else_branch, false)?;
+                    if self.current_block_active {
+                        self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: else_val });
+                        self.seal_block(Terminator::Jump(merge_label.clone()));
+                    }
+
+                    // Merge block (becomes current)
+                    self.start_block(merge_label);
+                    self.emit(Instr::Load { dest: result.clone(), addr: Operand::Var(result_slot) });
+                    Ok(Operand::Var(result))
                 }
-
-                // Else block
-                self.start_block(else_label);
-                let else_val = self.lower_expr(else_branch)?;
-                if self.current_block_active {
-                    self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: else_val });
-                    self.seal_block(Terminator::Jump(merge_label.clone()));
-                }
-
-                // Merge block (becomes current)
-                self.start_block(merge_label);
-                self.emit(Instr::Load { dest: result.clone(), addr: Operand::Var(result_slot) });
-                Ok(Operand::Var(result))
             }
 
             Expr::Do { exprs, .. } => {
                 let mut last = Operand::Const(0);
-                for e in exprs {
-                    last = self.lower_expr(e)?;
+                let n = exprs.len();
+                for (i, e) in exprs.iter().enumerate() {
+                    let tail = is_tail && i == n - 1;
+                    last = self.lower_expr(e, tail)?;
                     if !self.current_block_active {
                         break;
                     }
@@ -248,11 +278,11 @@ impl LoweringCtx {
             Expr::FnCall { func, args, .. } => {
                 let func_name = match func.as_ref() {
                     Expr::Symbol(sym) => sym.0.clone(),
-                    _ => bail!("Only direct function calls in HIR lowering"),
+                    other => bail!("Only direct function calls in HIR lowering: {:?}", other),
                 };
                 let mut lowered_args = Vec::new();
                 for arg in args {
-                    let val = self.lower_expr(arg)?;
+                    let val = self.lower_expr(arg, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
@@ -272,7 +302,7 @@ impl LoweringCtx {
 
                 // Initialize loop variables
                 for (name, init) in bindings {
-                    let init_val = self.lower_expr(init)?;
+                    let init_val = self.lower_expr(init, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
@@ -292,7 +322,7 @@ impl LoweringCtx {
                 self.loop_stack.push((loop_label.clone(), loop_vars));
 
                 // Lower body
-                let body_val = self.lower_expr(body)?;
+                let body_val = self.lower_expr(body, false)?;
 
                 // Pop loop context
                 self.loop_stack.pop();
@@ -318,7 +348,7 @@ impl LoweringCtx {
                     // left-to-right evaluation from affecting subsequent args.
                     let mut arg_vals = Vec::new();
                     for arg in args {
-                        let val = self.lower_expr(arg)?;
+                        let val = self.lower_expr(arg, false)?;
                         if !self.current_block_active {
                             return Ok(Operand::Const(0));
                         }
@@ -339,7 +369,7 @@ impl LoweringCtx {
             }
 
             Expr::FieldAccess { expr, field, .. } => {
-                let base = self.lower_expr(expr)?;
+                let base = self.lower_expr(expr, false)?;
                 if !self.current_block_active {
                     return Ok(Operand::Const(0));
                 }
@@ -351,53 +381,92 @@ impl LoweringCtx {
             }
 
             Expr::Match { expr, arms, .. } => {
-                let val = self.lower_expr(expr)?;
+                let val = self.lower_expr(expr, false)?;
                 if !self.current_block_active {
                     return Ok(Operand::Const(0));
                 }
-                let result_slot = self.fresh_temp();
-                let result = self.fresh_temp();
-                let merge_label = self.fresh_label("match_merge");
 
-                // Allocate slot for result
-                self.emit(Instr::Alloc { dest: result_slot.clone(), size: 8 });
+                if is_tail {
+                    // Tail position: no merge block, arms return directly
+                    for (pattern, body) in arms {
+                        let arm_label = self.fresh_label("match_arm");
+                        let next_label = self.fresh_label("match_next");
 
-                for (pattern, body) in arms {
-                    let arm_label = self.fresh_label("match_arm");
-                    let next_label = self.fresh_label("match_next");
+                        // Pattern check
+                        let cond = self.lower_pattern_check(&val, pattern)?;
+                        self.seal_block(Terminator::Branch {
+                            cond,
+                            then_block: arm_label.clone(),
+                            else_block: next_label.clone(),
+                        });
 
-                    // Pattern check
-                    let cond = self.lower_pattern_check(&val, pattern)?;
-                    self.seal_block(Terminator::Branch {
-                        cond,
-                        then_block: arm_label.clone(),
-                        else_block: next_label.clone(),
-                    });
+                        // Arm body
+                        self.start_block(arm_label);
 
-                    // Arm body
-                    self.start_block(arm_label);
+                        // Bind pattern variables
+                        self.lower_pattern_bindings(&val, pattern)?;
 
-                    // Bind pattern variables
-                    self.lower_pattern_bindings(&val, pattern)?;
+                        let body_val = self.lower_expr(body, true)?;
+                        if self.current_block_active {
+                            self.seal_block(Terminator::Return(body_val));
+                        }
 
-                    let body_val = self.lower_expr(body)?;
-                    if self.current_block_active {
-                        self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: body_val });
-                        self.seal_block(Terminator::Jump(merge_label.clone()));
+                        // Next arm becomes current
+                        self.start_block(next_label);
                     }
 
-                    // Next arm becomes current
-                    self.start_block(next_label);
-                }
+                    // After last arm
+                    if self.current_block_active {
+                        self.seal_block(Terminator::Unreachable);
+                    }
 
-                // After last arm: if no pattern matched, store 0 (shouldn't happen in well-formed code)
-                if self.current_block_active {
-                    self.seal_block(Terminator::Unreachable);
-                }
+                    self.current_block_active = false;
+                    Ok(Operand::Const(0))
+                } else {
+                    let result_slot = self.fresh_temp();
+                    let result = self.fresh_temp();
+                    let merge_label = self.fresh_label("match_merge");
 
-                self.start_block(merge_label.clone());
-                self.emit(Instr::Load { dest: result.clone(), addr: Operand::Var(result_slot) });
-                Ok(Operand::Var(result))
+                    // Allocate slot for result
+                    self.emit(Instr::Alloc { dest: result_slot.clone(), size: 8 });
+
+                    for (pattern, body) in arms {
+                        let arm_label = self.fresh_label("match_arm");
+                        let next_label = self.fresh_label("match_next");
+
+                        // Pattern check
+                        let cond = self.lower_pattern_check(&val, pattern)?;
+                        self.seal_block(Terminator::Branch {
+                            cond,
+                            then_block: arm_label.clone(),
+                            else_block: next_label.clone(),
+                        });
+
+                        // Arm body
+                        self.start_block(arm_label);
+
+                        // Bind pattern variables
+                        self.lower_pattern_bindings(&val, pattern)?;
+
+                        let body_val = self.lower_expr(body, false)?;
+                        if self.current_block_active {
+                            self.emit(Instr::Store { addr: Operand::Var(result_slot.clone()), value: body_val });
+                            self.seal_block(Terminator::Jump(merge_label.clone()));
+                        }
+
+                        // Next arm becomes current
+                        self.start_block(next_label);
+                    }
+
+                    // After last arm: if no pattern matched, store 0 (shouldn't happen in well-formed code)
+                    if self.current_block_active {
+                        self.seal_block(Terminator::Unreachable);
+                    }
+
+                    self.start_block(merge_label.clone());
+                    self.emit(Instr::Load { dest: result.clone(), addr: Operand::Var(result_slot) });
+                    Ok(Operand::Var(result))
+                }
             }
 
             Expr::Vector(elements, _) => {
@@ -405,7 +474,7 @@ impl LoweringCtx {
                 // Create empty vector
                 self.emit(Instr::Call { dest: dest.clone(), func: "vector".to_string(), args: vec![] });
                 for elem in elements {
-                    let val = self.lower_expr(elem)?;
+                    let val = self.lower_expr(elem, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
@@ -424,7 +493,7 @@ impl LoweringCtx {
                 let dest = self.fresh_temp();
                 self.emit(Instr::Call { dest: dest.clone(), func: "vector".to_string(), args: vec![] });
                 for elem in elements {
-                    let val = self.lower_expr(elem)?;
+                    let val = self.lower_expr(elem, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
@@ -447,11 +516,11 @@ impl LoweringCtx {
 
             Expr::Borrow(inner, _, _) => {
                 // Borrow is currently a no-op at HIR level
-                self.lower_expr(inner)
+                self.lower_expr(inner, is_tail)
             }
 
             Expr::Def { name, value, .. } => {
-                let val = self.lower_expr(value)?;
+                let val = self.lower_expr(value, false)?;
                 if !self.current_block_active {
                     return Ok(Operand::Const(0));
                 }

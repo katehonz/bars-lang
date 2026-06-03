@@ -1,7 +1,7 @@
-(defmacro my-or [a b]
-  `(if ~a ~a ~b))
+(defmacro twice [x]
+  `(+ ~x ~x))
 
 (defn main []
-  (println (my-or false 42))
-  (println (my-or 10 20))
+  (println (twice 21))
+  (println (twice 5))
   0)
