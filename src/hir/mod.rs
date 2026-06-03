@@ -40,6 +40,8 @@ pub struct Func {
     pub params: Vec<String>,
     pub blocks: Vec<Block>,
     pub entry_block: String,
+    pub is_extern: bool,
+    pub c_name: Option<String>,
 }
 
 /// A basic block: label + sequential instructions + terminator

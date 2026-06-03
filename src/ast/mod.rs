@@ -161,6 +161,13 @@ pub enum Expr {
         variants: Vec<Variant>,
         span: Span,
     },
+    Extern {
+        c_name: String,
+        bars_name: Symbol,
+        params: Vec<(Symbol, Option<Type>)>,
+        ret_type: Option<Type>,
+        span: Span,
+    },
     FieldAccess {
         expr: Box<Expr>,
         field: Symbol,
@@ -192,6 +199,7 @@ impl Expr {
             Expr::Match { span, .. } => span.clone(),
             Expr::DefStruct { span, .. } => span.clone(),
             Expr::DefType { span, .. } => span.clone(),
+            Expr::Extern { span, .. } => span.clone(),
             Expr::FieldAccess { span, .. } => span.clone(),
             Expr::Quote(_, s) => s.clone(),
             Expr::SyntaxQuote(_, s) => s.clone(),

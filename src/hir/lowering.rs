@@ -111,6 +111,17 @@ impl LoweringCtx {
                 Expr::DefType { .. } => {
                     // Skip - compile-time only (constructors handled in FnCall lowering)
                 }
+                Expr::Extern { c_name, bars_name, params, .. } => {
+                    let func = Func {
+                        name: bars_name.0.clone(),
+                        params: params.iter().map(|(s, _)| s.0.clone()).collect(),
+                        blocks: vec![],
+                        entry_block: String::new(),
+                        is_extern: true,
+                        c_name: Some(c_name.clone()),
+                    };
+                    funcs.push(func);
+                }
                 other => {
                     main_exprs.push(other.clone());
                 }
@@ -147,6 +158,8 @@ impl LoweringCtx {
             params: params.iter().map(|(s, _)| s.0.clone()).collect(),
             blocks,
             entry_block: entry_label,
+            is_extern: false,
+            c_name: None,
         })
     }
 
@@ -171,6 +184,8 @@ impl LoweringCtx {
             params: vec![],
             blocks,
             entry_block: entry_label,
+            is_extern: false,
+            c_name: None,
         })
     }
 

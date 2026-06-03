@@ -204,3 +204,13 @@ fn test_adt_exhaustiveness_error() {
     assert!(stderr.contains("not exhaustive") || stderr.contains("missing variant"),
         "Expected exhaustiveness error, got: {}", stderr);
 }
+
+#[test]
+fn test_ffi_putchar() {
+    let output = bars()
+        .args(["run", "examples/ffi_demo.brs"])
+        .output()
+        .expect("Failed to run bars");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("A"), "Expected 'A' in output, got: {}", stdout);
+}

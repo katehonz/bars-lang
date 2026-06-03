@@ -142,6 +142,20 @@ impl InferCtx {
                     env.insert(variant.name.0.clone(), TypeScheme::mono(ctor_ty));
                 }
             }
+            if let Expr::Extern { bars_name, params, ret_type, .. } = expr {
+                let param_tys: Vec<Type> = params.iter().map(|(_, pt)| {
+                    match pt {
+                        Some(at) => InferCtx::from_ast_type(at),
+                        None => Type::I64,
+                    }
+                }).collect();
+                let ret_ty = match ret_type {
+                    Some(at) => InferCtx::from_ast_type(at),
+                    None => Type::I64,
+                };
+                let fn_ty = Type::Fun(param_tys, Box::new(ret_ty));
+                env.insert(bars_name.0.clone(), TypeScheme::mono(fn_ty));
+            }
         }
 
         // First pass: register all function names with placeholders for forward references
@@ -389,6 +403,7 @@ impl InferCtx {
             }
 
             Expr::DefMacro { .. } => Ok(Type::Void),
+            Expr::Extern { .. } => Ok(Type::Void),
             Expr::Vector(_, _) | Expr::List(_, _) => {
                 Ok(Type::I64)
             }

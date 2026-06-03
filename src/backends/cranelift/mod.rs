@@ -91,11 +91,19 @@ impl CraneliftBackend {
     pub fn compile_hir_entry(&mut self, program: &hir::Program, entry_name: &str) -> Result<i64> {
         // Declare all functions first
         for func in &program.funcs {
-            declare_function_generic(&mut self.module, &func.name, func.params.len(), &mut self.functions)?;
+            if func.is_extern {
+                let c_name = func.c_name.as_deref().unwrap_or(&func.name);
+                declare_extern_function(&mut self.module, &func.name, c_name, func.params.len(), &mut self.functions)?;
+            } else {
+                declare_function_generic(&mut self.module, &func.name, func.params.len(), &mut self.functions)?;
+            }
         }
 
         // Define all functions
         for func in &program.funcs {
+            if func.is_extern {
+                continue;
+            }
             define_function_generic(
                 &mut self.module,
                 func,
@@ -131,6 +139,25 @@ fn declare_function_generic<M: Module>(
     sig.returns.push(AbiParam::new(types::I64));
 
     let id = module.declare_function(name, Linkage::Export, &sig)?;
+    functions.insert(name.to_string(), id);
+    Ok(())
+}
+
+fn declare_extern_function<M: Module>(
+    module: &mut M,
+    name: &str,
+    c_name: &str,
+    n_params: usize,
+    functions: &mut HashMap<String, cranelift_module::FuncId>,
+) -> Result<()> {
+    let mut sig = module.make_signature();
+    for _ in 0..n_params {
+        sig.params.push(AbiParam::new(types::I64));
+    }
+    sig.returns.push(AbiParam::new(types::I64));
+
+    // Use the C name for the actual symbol
+    let id = module.declare_function(c_name, Linkage::Import, &sig)?;
     functions.insert(name.to_string(), id);
     Ok(())
 }
@@ -580,11 +607,19 @@ pub fn compile_hir_to_object(program: &hir::Program, output: &Path) -> Result<()
 
     // Declare all functions first
     for func in &program.funcs {
-        declare_function_generic(&mut module, &func.name, func.params.len(), &mut functions)?;
+        if func.is_extern {
+            let c_name = func.c_name.as_deref().unwrap_or(&func.name);
+            declare_extern_function(&mut module, &func.name, c_name, func.params.len(), &mut functions)?;
+        } else {
+            declare_function_generic(&mut module, &func.name, func.params.len(), &mut functions)?;
+        }
     }
 
     // Define all functions
     for func in &program.funcs {
+        if func.is_extern {
+            continue;
+        }
         define_function_generic(
             &mut module,
             func,

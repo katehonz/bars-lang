@@ -147,6 +147,7 @@ impl<'a> Parser<'a> {
                 "match" => return self.parse_match(start_span),
                 "defstruct" => return self.parse_defstruct(start_span),
                 "deftype" => return self.parse_deftype(start_span),
+                "extern" => return self.parse_extern(start_span),
                 "fn" => return self.parse_lambda(start_span),
                 _ => {}
             }
@@ -657,6 +658,71 @@ impl<'a> Parser<'a> {
         }
         self.expect(Token::RParen)?;
         Ok(Expr::DefType { name, variants, span: start_span })
+    }
+
+    fn parse_extern(&mut self, start_span: Span) -> Result<Expr> {
+        self.advance(); // consume 'extern'
+
+        // Parse C function name (string literal)
+        let c_name = match self.peek() {
+            Some(Token::String(s)) => {
+                let s = s.clone();
+                self.advance();
+                s
+            }
+            _ => bail!("Expected string literal for C function name in extern at line {}, col {}", start_span.line, start_span.col),
+        };
+
+        // Parse parameter list: [param_name type, ...]
+        self.expect(Token::LBracket)?;
+        let mut params = Vec::new();
+        loop {
+            self.skip_comments();
+            if matches!(self.peek(), Some(Token::RBracket) | Some(Token::Eof) | None) {
+                break;
+            }
+            let param_name = match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    Symbol(s)
+                }
+                _ => bail!("Expected parameter name in extern at line {}, col {}", start_span.line, start_span.col),
+            };
+            // Optional type annotation
+            let param_type = match self.peek() {
+                Some(Token::Symbol(s)) if is_type_name(s) || s.chars().next().map_or(false, |c| c.is_uppercase()) => {
+                    let ty = parse_type(s);
+                    self.advance();
+                    ty
+                }
+                _ => None,
+            };
+            params.push((param_name, param_type));
+        }
+        self.expect(Token::RBracket)?;
+
+        // Optional return type: -> Type
+        let ret_type = if matches!(self.peek(), Some(Token::Symbol(s)) if s == "->") {
+            self.advance(); // consume '->'
+            match self.peek() {
+                Some(Token::Symbol(s)) => {
+                    let s = s.clone();
+                    self.advance();
+                    parse_type(&s)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        self.expect(Token::RParen)?;
+
+        // bars_name defaults to c_name if not explicitly given
+        let bars_name = Symbol(c_name.clone());
+
+        Ok(Expr::Extern { c_name, bars_name, params, ret_type, span: start_span })
     }
 
     fn parse_field_access(&mut self, start_span: Span) -> Result<Expr> {

@@ -198,6 +198,7 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
         }),
         Expr::DefStruct { .. } => Ok(expr.clone()),
         Expr::DefType { .. } => Ok(expr.clone()),
+        Expr::Extern { .. } => Ok(expr.clone()),
 
         // Atoms — nothing to expand
         other => Ok(other.clone()),

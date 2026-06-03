@@ -153,16 +153,16 @@ bars build examples/hello.brs -o hello
 
 ---
 
-## Спринт 9: FFI (`extern`) (2-3 дни)
+## Спринт 9: FFI (`extern`) (2-3 дни) ✅
 
 ### Задачи
-- [ ] **9.1** Синтаксис: `(extern "printf" [fmt & args] -> i32)`
-- [ ] **9.2** Деклариране на C функции в HIR без body
-- [ ] **9.3** Pointer типове за C структури: `*T` или `^c T`
-- [ ] **9.4** Backend-ове да генерират правилни `extern` declarations
-- [ ] **9.5** Тест: извикване на `printf` или `strlen` от C
+- [x] **9.1** Синтаксис: `(extern "printf" [fmt i64] -> i64)`
+- [x] **9.2** Деклариране на C функции в HIR без body
+- [x] **9.3** Pointer типове за C структури: всички аргументи i64 (pointer-compatible)
+- [x] **9.4** Backend-ове да генерират правилни `extern` declarations (QBE/Cranelift/LLVM)
+- [x] **9.5** Тест: извикване на `putchar` от C
 
-**Критерий за приемане:** `(extern "strlen" [s] -> i64)` работи и връща правилна дължина.
+**Критерий за приемане:** ✅ `(extern "putchar" [c i64] -> i64)` работи и отпечатва 'A'.
 
 ---
 

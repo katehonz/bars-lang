@@ -25,6 +25,9 @@ impl QbeHIRBackend {
 
     pub fn compile(mut self, program: &hir::Program) -> Result<String> {
         for func in &program.funcs {
+            if func.is_extern {
+                continue; // Extern functions are resolved at link time
+            }
             self.compile_func(func)?;
         }
         Ok(self.module.to_string())

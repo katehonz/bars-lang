@@ -74,11 +74,19 @@ impl<'ctx> LlvmCompiler<'ctx> {
         let struct_registry = program.struct_registry.clone();
 
         for func in &program.funcs {
-            self.declare_func(&func.name, func.params.len())?;
+            if func.is_extern {
+                let name = func.c_name.as_deref().unwrap_or(&func.name);
+                self.declare_func(name, func.params.len())?;
+            } else {
+                self.declare_func(&func.name, func.params.len())?;
+            }
         }
         self.declare_runtime()?;
 
         for func in &program.funcs {
+            if func.is_extern {
+                continue;
+            }
             self.define_func(func, &struct_registry)?;
         }
         Ok(())
