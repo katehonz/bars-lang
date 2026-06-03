@@ -522,6 +522,13 @@ impl InferCtx {
         env.insert("str".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
         env.insert("str-count".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
         env.insert("str-concat".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-trim".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("str-substring".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("substring".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-split".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("split".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("str-join".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("join".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
         env.insert("nil".to_string(), TypeScheme::mono(Type::I64));
 
         // Math ops

@@ -125,14 +125,14 @@ Bars е работещ компилатор за системен Lisp с owners
 
 ---
 
-## Фаза 10: Минимална Stdlib 🚧
+## Фаза 10: Минимална Stdlib ✅
 
 - [x] Math: `sqrt`, `pow`, `abs` — libm wrappers в C runtime
-- [x] String ops: `str-count`, `str-concat` — C runtime
+- [x] String ops: `str-count`, `str-concat`, `str-trim`, `str-substring`, `str-split`, `str-join` — C runtime
 - [x] I/O: `slurp`, `spit` — C runtime файлов I/O
 - [x] Тестови helper: `assert` macro (`lib/test.brs`)
 - [x] Error handling: `Option`/`Result` ADTs (`lib/adt.brs`)
-- [ ] Higher-order functions: `map`, `filter`, `reduce` (изискват first-class functions)
+- [x] Higher-order functions: `map`, `filter`, `reduce` — inlined в HIR lowering, работят с lambdas във всички backend-и
 
 ---
 
@@ -152,7 +152,7 @@ Bars е работещ компилатор за системен Lisp с owners
 ## Бъдещи подобрения (компилатор) 📋
 
 - [ ] Generic ADTs: `(deftype Option [Some T] [None])`
-- [ ] Още string операции: `split`, `join`, `trim`, `substring`
+- [x] Още string операции: `split`, `join`, `trim`, `substring`
 - [ ] `--release` флаг с LLVM оптимизации
 - [ ] Подобрени error messages
 - [ ] LSP сървър

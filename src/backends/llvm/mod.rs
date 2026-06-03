@@ -164,6 +164,17 @@ impl<'ctx> LlvmCompiler<'ctx> {
         let str_str_str = i8_ptr.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
         self.module.add_function("bars_string_concat", str_str_str, None);
 
+        // String: i8* f(i8*)
+        self.module.add_function("bars_string_trim", str_str, None);
+
+        // String: i8* f(i8*, i64, i64)
+        let str_str_i64_i64 = i8_ptr.fn_type(&[i8_ptr.into(), self.i64_type.into(), self.i64_type.into()], false);
+        self.module.add_function("bars_string_substring", str_str_i64_i64, None);
+
+        // String: i8* f(i8*, i8*)
+        self.module.add_function("bars_string_split", str_str_str, None);
+        self.module.add_function("bars_string_join", str_str_str, None);
+
         // I/O: i64 f(i8*, i8*)
         let i64_ptr_ptr = self.i64_type.fn_type(&[i8_ptr.into(), i8_ptr.into()], false);
         self.module.add_function("bars_spit", i64_ptr_ptr, None);
@@ -524,6 +535,30 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         let path = self.i64_to_ptr(arg_vals[0]);
                         let content = self.i64_to_ptr(arg_vals[1]);
                         self.call_runtime_i64_ptr_ptr("bars_spit", path, content)?
+                    }
+                    "str-trim" | "str_trim" if arg_vals.len() == 1 => {
+                        let ptr = self.i64_to_ptr(arg_vals[0]);
+                        let result = self.call_runtime_ptr("bars_string_trim", &[ptr])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "str-substring" | "str_substring" | "substring" if arg_vals.len() == 3 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let start = arg_vals[1];
+                        let len = arg_vals[2];
+                        let result = self.call_runtime_ptr("bars_string_substring", &[s, start, len])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "str-split" | "str_split" | "split" if arg_vals.len() == 2 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        let delim = self.i64_to_ptr(arg_vals[1]);
+                        let result = self.call_runtime_ptr("bars_string_split", &[s, delim])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "str-join" | "str_join" | "join" if arg_vals.len() == 2 => {
+                        let vec = self.i64_to_ptr(arg_vals[0]);
+                        let delim = self.i64_to_ptr(arg_vals[1]);
+                        let result = self.call_runtime_ptr("bars_string_join", &[vec, delim])?;
+                        self.ptr_to_i64(result)
                     }
                     _ => {
                         if let Some(user_func) = self.functions.get(func_name).copied() {

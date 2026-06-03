@@ -376,3 +376,105 @@ int64_t bars_spit(const char* path, bars_string_t* content) {
     fclose(f);
     return (int64_t)written;
 }
+
+bars_string_t* bars_string_trim(bars_string_t* s) {
+    if (!s || !s->data || s->len == 0) return bars_string_new("");
+    size_t start = 0;
+    while (start < s->len && (s->data[start] == ' ' || s->data[start] == '\t' || s->data[start] == '\n' || s->data[start] == '\r'))
+        start++;
+    size_t end = s->len;
+    while (end > start && (s->data[end - 1] == ' ' || s->data[end - 1] == '\t' || s->data[end - 1] == '\n' || s->data[end - 1] == '\r'))
+        end--;
+    size_t new_len = end - start;
+    bars_string_t* result = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    result->magic = BARS_MAGIC_STRING;
+    result->data = (char*)bars_alloc(new_len + 1);
+    memcpy(result->data, s->data + start, new_len);
+    result->data[new_len] = '\0';
+    result->len = new_len;
+    return result;
+}
+
+bars_string_t* bars_string_substring(bars_string_t* s, int64_t start, int64_t len) {
+    if (!s || !s->data || s->len == 0 || len <= 0) return bars_string_new("");
+    if (start < 0) start = 0;
+    if ((size_t)start >= s->len) return bars_string_new("");
+    size_t max_len = s->len - (size_t)start;
+    size_t actual_len = (size_t)len > max_len ? max_len : (size_t)len;
+    bars_string_t* result = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    result->magic = BARS_MAGIC_STRING;
+    result->data = (char*)bars_alloc(actual_len + 1);
+    memcpy(result->data, s->data + start, actual_len);
+    result->data[actual_len] = '\0';
+    result->len = actual_len;
+    return result;
+}
+
+bars_vector_t* bars_string_split(bars_string_t* s, bars_string_t* delim) {
+    bars_vector_t* vec = bars_vector_new();
+    if (!s || !s->data || s->len == 0) return vec;
+    if (!delim || !delim->data || delim->len == 0) {
+        bars_value_t v = { .tag = BARS_STRING, .data = { .string = bars_string_new(s->data) } };
+        bars_vector_push(vec, v);
+        return vec;
+    }
+    char* p = s->data;
+    char* end = s->data + s->len;
+    while (p < end) {
+        char* found = p;
+        /* naive search for delimiter */
+        int found_delim = 0;
+        for (; found <= end - (long)delim->len; found++) {
+            if (memcmp(found, delim->data, delim->len) == 0) {
+                found_delim = 1;
+                break;
+            }
+        }
+        if (!found_delim) found = end;
+        size_t part_len = found - p;
+        bars_string_t* part = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+        part->magic = BARS_MAGIC_STRING;
+        part->data = (char*)bars_alloc(part_len + 1);
+        memcpy(part->data, p, part_len);
+        part->data[part_len] = '\0';
+        part->len = part_len;
+        bars_value_t v = { .tag = BARS_STRING, .data = { .string = part } };
+        bars_vector_push(vec, v);
+        if (!found_delim) break;
+        p = found + delim->len;
+        if (p > end) break;
+    }
+    return vec;
+}
+
+bars_string_t* bars_string_join(bars_vector_t* vec, bars_string_t* delim) {
+    if (!vec || vec->len == 0) return bars_string_new("");
+    if (!delim) delim = bars_string_new("");
+    size_t total = 0;
+    size_t delim_len = delim->len;
+    for (size_t i = 0; i < vec->len; i++) {
+        if (vec->data[i].tag == BARS_STRING && vec->data[i].data.string) {
+            total += vec->data[i].data.string->len;
+        }
+    }
+    if (vec->len > 1) total += delim_len * (vec->len - 1);
+    bars_string_t* result = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    result->magic = BARS_MAGIC_STRING;
+    result->data = (char*)bars_alloc(total + 1);
+    result->data[0] = '\0';
+    result->len = total;
+    size_t pos = 0;
+    for (size_t i = 0; i < vec->len; i++) {
+        if (vec->data[i].tag == BARS_STRING && vec->data[i].data.string) {
+            bars_string_t* part = vec->data[i].data.string;
+            memcpy(result->data + pos, part->data, part->len);
+            pos += part->len;
+        }
+        if (i + 1 < vec->len && delim_len > 0) {
+            memcpy(result->data + pos, delim->data, delim_len);
+            pos += delim_len;
+        }
+    }
+    result->data[pos] = '\0';
+    return result;
+}

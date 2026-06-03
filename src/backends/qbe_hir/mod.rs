@@ -453,6 +453,50 @@ impl QbeHIRBackend {
                             ),
                         );
                     }
+                    "str-trim" | "str_trim" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_trim".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-substring" | "str_substring" | "substring" if compiled_args.len() == 3 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_substring".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-split" | "str_split" | "split" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_split".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "str-join" | "str_join" | "join" if compiled_args.len() == 2 => {
+                        func.assign_instr(
+                            Value::Temporary(dest.clone()),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_string_join".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
                     _ => {
                         func.assign_instr(
                             Value::Temporary(dest.clone()),

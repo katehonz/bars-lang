@@ -34,6 +34,10 @@ unsafe extern "C" {
     fn bars_print_any_i64(val: i64);
     fn bars_string_length(s: *const u8) -> i64;
     fn bars_string_concat(a: *const u8, b: *const u8) -> *mut u8;
+    fn bars_string_trim(s: *const u8) -> *mut u8;
+    fn bars_string_substring(s: *const u8, start: i64, len: i64) -> *mut u8;
+    fn bars_string_split(s: *const u8, delim: *const u8) -> *mut u8;
+    fn bars_string_join(vec: *const u8, delim: *const u8) -> *mut u8;
     fn bars_sqrt_i64(n: i64) -> i64;
     fn bars_pow_i64(base: i64, exp: i64) -> i64;
     fn bars_abs_i64(n: i64) -> i64;
@@ -83,6 +87,10 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_print_any_i64", bars_print_any_i64 as *const u8);
         jit_builder.symbol("bars_string_length", bars_string_length as *const u8);
         jit_builder.symbol("bars_string_concat", bars_string_concat as *const u8);
+        jit_builder.symbol("bars_string_trim", bars_string_trim as *const u8);
+        jit_builder.symbol("bars_string_substring", bars_string_substring as *const u8);
+        jit_builder.symbol("bars_string_split", bars_string_split as *const u8);
+        jit_builder.symbol("bars_string_join", bars_string_join as *const u8);
         jit_builder.symbol("bars_sqrt_i64", bars_sqrt_i64 as *const u8);
         jit_builder.symbol("bars_pow_i64", bars_pow_i64 as *const u8);
         jit_builder.symbol("bars_abs_i64", bars_abs_i64 as *const u8);
@@ -489,6 +497,18 @@ fn compile_instr<M: Module>(
                 }
                 "spit" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_spit", &arg_vals)?
+                }
+                "str-trim" | "str_trim" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_string_trim", &arg_vals)?
+                }
+                "str-substring" | "str_substring" | "substring" if arg_vals.len() == 3 => {
+                    call_runtime(builder, module, "bars_string_substring", &arg_vals)?
+                }
+                "str-split" | "str_split" | "split" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_split", &arg_vals)?
+                }
+                "str-join" | "str_join" | "join" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, "bars_string_join", &arg_vals)?
                 }
                 _ => {
                     if let Some(&func_id) = functions.get(func_name) {

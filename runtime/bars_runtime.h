@@ -131,6 +131,10 @@ int64_t bars_abs_i64(int64_t n);
 /* String operations */
 int64_t bars_string_length(bars_string_t* s);
 bars_string_t* bars_string_concat(bars_string_t* a, bars_string_t* b);
+bars_string_t* bars_string_trim(bars_string_t* s);
+bars_string_t* bars_string_substring(bars_string_t* s, int64_t start, int64_t len);
+bars_vector_t* bars_string_split(bars_string_t* s, bars_string_t* delim);
+bars_string_t* bars_string_join(bars_vector_t* vec, bars_string_t* delim);
 
 /* I/O */
 bars_string_t* bars_slurp(const char* path);

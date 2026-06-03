@@ -1,1 +1,8 @@
 /target
+BLOG/
+.bars_history
+hello
+string_lit
+struct_demo
+*.ssa
+*.qbe

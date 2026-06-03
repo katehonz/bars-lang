@@ -66,35 +66,13 @@
   (range-helper start end step (vector)))
 
 ;; ---------------------------------------------------------------------------
-;; Higher-order functions over vectors (REPL/Cranelift only)
+;; Higher-order functions
 ;; ---------------------------------------------------------------------------
-
-;; (defn map-vec-helper [^i64 f ^i64 vec ^i64 i ^i64 n ^i64 result]
-;;   (if (= i n)
-;;     result
-;;     (do
-;;       (push result (f (get vec i)))
-;;       (map-vec-helper f vec (+ i 1) n result))))
+;; The built-in `map`, `filter`, and `reduce` are inlined by the compiler
+;; into loops and work in all backends (QBE, Cranelift, LLVM) with both
+;; named functions and inline lambdas:
 ;;
-;; (defn map-vec [^i64 f ^i64 vec]
-;;   (map-vec-helper f vec 0 (count vec) (vector)))
-;;
-;; (defn filter-vec-helper [^i64 f ^i64 vec ^i64 i ^i64 n ^i64 result]
-;;   (if (= i n)
-;;     result
-;;     (do
-;;       (let [item (get vec i)]
-;;         (when (f item)
-;;           (push result item)))
-;;       (filter-vec-helper f vec (+ i 1) n result))))
-;;
-;; (defn filter-vec [^i64 f ^i64 vec]
-;;   (filter-vec-helper f vec 0 (count vec) (vector)))
-;;
-;; (defn reduce-vec-helper [^i64 f ^i64 vec ^i64 i ^i64 n ^i64 acc]
-;;   (if (= i n)
-;;     acc
-;;     (reduce-vec-helper f vec (+ i 1) n (f acc (get vec i)))))
-;;
-;; (defn reduce-vec [^i64 f ^i64 vec ^i64 init]
-;;   (reduce-vec-helper f vec 0 (count vec) init))
+;;   (map inc [1 2 3])
+;;   (filter even? [1 2 3 4 5])
+;;   (reduce add 0 [1 2 3])
+;;   (map (fn [x] (* x 2)) [1 2 3])
