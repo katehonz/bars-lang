@@ -2,6 +2,26 @@
 ;; Converts line-oriented HIR to QBE SSA IR
 
 
+(defn sanitize-name [name]
+  (let [n (str-count name)]
+    (loop [i 0 acc ""]
+      (if (>= i n) acc
+        (let [c (str-get name i)]
+          (recur (+ i 1)
+                 (str-concat acc
+                   (if (= c 45) "_"
+                     (if (= c 63) "_"
+                       (if (= c 33) "_"
+                         (if (= c 60) "_lt"
+                           (if (= c 62) "_gt"
+                             (str-slice name i (+ i 1))))))))))))))
+
+(defn int-str [n]
+  (let [d "0123456789"]
+    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
+      (if (< n 10) (str-slice d n (+ n 1))
+        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+
 (defn str-eq? [a b]
   (if (!= (str-count a) (str-count b))
     false
@@ -54,12 +74,18 @@
 (defn is-builtin? [op]
   (not (str-eq? (qbe-op op) "")))
 
+(defn emit-arg-val [val]
+  (if (str-eq? val "true") "1"
+    (if (str-eq? val "false") "0"
+      (if (str-eq? val "nil") "0"
+        val))))
+
 (defn emit-arg [arg]
   (let [parts (split-line arg)]
     (if (= (count parts) 2)
       (if (str-eq? (get parts 0) "const")
-        (get parts 1)
-        (str-concat "%" (get parts 1)))
+        (emit-arg-val (get parts 1))
+        (str-concat "%" (sanitize-name (get parts 1))))
       "")))
 
 (defn emit-arg-call [arg]
@@ -83,10 +109,10 @@
         bracket-idx (str-index-of line "[")
         close-idx (str-index-of line "]")]
     (if (= bracket-idx -1)
-      (str-concat "export function l $" (str-concat name "() {"))
+      (str-concat "export function l $" (str-concat (sanitize-name name) "() {"))
       (let [params-str (str-slice line (+ bracket-idx 1) close-idx)
             params (split-line params-str)]
-        (str-concat "export function l $" (str-concat name (str-concat "(" (str-concat (emit-func-params params 0) ") {"))))))))
+        (str-concat "export function l $" (str-concat (sanitize-name name) (str-concat "(" (str-concat (emit-func-params params 0) ") {"))))))))
 
 (defn emit-func-params [params i]
   (let [n (count params)]
@@ -121,7 +147,7 @@
         (do (push args (str-concat (get parts i) (str-concat " " (get parts (+ i 1)))))
             (recur (+ i 2)))))
     (let [prefix (str-concat "  %" (str-concat dest " =l call $"))
-        mid (str-concat fname "(")
+        mid (str-concat (sanitize-name fname) "(")
         suffix (str-concat (emit-call-args args 0) ")")]
     (str-concat prefix (str-concat mid suffix)))))
 
@@ -133,8 +159,8 @@
 
 (defn emit-return [val-type val]
   (if (str-eq? val-type "const")
-    (str-concat "  ret " val)
-    (str-concat "  ret %" val)))
+    (str-concat "  ret " (emit-arg-val val))
+    (str-concat "  ret %" (sanitize-name val))))
 
 (defn emit-println [dest parts]
   (if (> (count parts) 3)
@@ -166,29 +192,65 @@
               (emit-return (get parts 1) (get parts 2))
               "")))))))
 
+(defn append-vec [dst src]
+  (let [n (count src)]
+    (loop [i 0]
+      (if (>= i n) dst
+        (do (push dst (get src i))
+            (recur (+ i 1)))))))
+
+(defn str-starts-with-2? [s prefix]
+  (let [plen (str-count prefix)]
+    (if (< (str-count s) plen) false
+      (str-eq? (str-slice s 0 plen) prefix))))
+
 (defn hir-to-qbe [hir-lines]
   (let [result (vector)
         n (count hir-lines)
-        in-func false]
-    (loop [i 0 in-func false]
+        in-func false
+        str-counter 0]
+    (loop [i 0 in-func false str-counter str-counter str-data (vector) block-ended false]
       (if (>= i n)
         (do (if in-func (push result "}") 0)
+            (append-vec result str-data)
             result)
         (let [line (str-trim (get hir-lines i))]
           (if (= (str-get line 0) 102)
             (let [_ (if in-func (push result "}") 0)
+                  _ (append-vec result str-data)
                   header (emit-func-header line)
                   _ (push result header)]
-              (recur (+ i 1) true))
-            (if (= (str-get line (- (count line) 1)) 58)
-              (let [lbl (str-slice line 0 (- (count line) 1))]
-                (do (push result (str-concat "@" lbl))
-                    (recur (+ i 1) in-func)))
-              (let [instr (emit-instr line)]
-                (if (str-eq? instr "")
-                  (recur (+ i 1) in-func)
-                  (do (push result instr)
-                      (recur (+ i 1) in-func)))))))))))
+              (recur (+ i 1) true str-counter (vector) false))
+            (if block-ended
+              (let [last-ch (str-get line (- (count line) 1))]
+                (if (= last-ch 58)
+                  (let [lbl (str-slice line 0 (- (count line) 1))]
+                    (do (push result (str-concat "@" lbl))
+                        (recur (+ i 1) in-func str-counter str-data false)))
+                  (recur (+ i 1) in-func str-counter str-data block-ended)))
+              (let [parts (split-line line)
+                    cmd (get parts 0)]
+                (if (str-eq? cmd "stringlit")
+                  (let [label (str-concat "str_" (int-str str-counter))
+                        dest (sanitize-name (get parts 1))
+                        content (get parts 2)]
+                    (do (push str-data (str-concat "data $" (str-concat label (str-concat " = { b \"" (str-concat content "\", b 0 }")))))
+                        (push result (str-concat "  %" (str-concat dest (str-concat " =l call $bars_string_new(l $" (str-concat label ")"))))))
+                        (recur (+ i 1) in-func (+ str-counter 1) str-data false)))
+                  (if (= (str-get line (- (count line) 1)) 58)
+                    (let [lbl (str-slice line 0 (- (count line) 1))]
+                      (do (push result (str-concat "@" lbl))
+                          (recur (+ i 1) in-func str-counter str-data false)))
+                    (let [instr (emit-instr line)]
+                      (if (str-eq? instr "")
+                        (recur (+ i 1) in-func str-counter str-data block-ended)
+                        (let [fname (if (> (count parts) 2) (get parts 2) "")
+                              is-println (if (str-eq? cmd "call") (str-eq? fname "println") false)]
+                          (do (push result instr)
+                              (if is-println
+                                (do (push result "  call $bars_print_newline()")
+                                    (recur (+ i 1) in-func str-counter str-data (str-starts-with-2? instr "  ret ")))
+                                (recur (+ i 1) in-func str-counter str-data (str-starts-with-2? instr "  ret "))))))))))))))))
 
 (defn print-lines [lines]
   (let [n (count lines)]

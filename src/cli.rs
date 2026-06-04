@@ -49,8 +49,8 @@ pub enum Commands {
     Run {
         #[arg(value_name = "FILE")]
         file: Option<PathBuf>,
-        /// Компилатор: qbe (default) или llvm
-        #[arg(long, default_value = "qbe")]
+        /// Компилатор: cranelift (default) или qbe
+        #[arg(long, default_value = "cranelift")]
         backend: Backend,
         /// Release build с оптимизации
         #[arg(long)]

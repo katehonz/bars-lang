@@ -2,7 +2,7 @@ use crate::backends::sanitize_name;
 use crate::hir;
 use anyhow::Result;
 use qbe::{Cmp, Function, Instr, Linkage, Module, Type, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct QbeHIRBackend {
     module: Module,
@@ -10,6 +10,10 @@ pub struct QbeHIRBackend {
     string_counter: usize,
     struct_registry: HashMap<String, Vec<String>>,
     string_temps: HashMap<String, ()>,
+    /// Maps HIR variable names to QBE temporary names (for param shadowing fix)
+    var_renames: HashMap<String, String>,
+    /// Current function's parameter names
+    func_params: HashSet<String>,
 }
 
 impl QbeHIRBackend {
@@ -20,6 +24,8 @@ impl QbeHIRBackend {
             string_counter: 0,
             struct_registry: HashMap::new(),
             string_temps: HashMap::new(),
+            var_renames: HashMap::new(),
+            func_params: HashSet::new(),
         }
     }
 
@@ -45,6 +51,9 @@ impl QbeHIRBackend {
             func.params.iter().map(|p| (Type::Long, Value::Temporary(sanitize_name(p)))).collect(),
             Some(Type::Long),
         );
+
+        self.func_params = func.params.iter().map(|p| p.clone()).collect();
+        self.var_renames.clear();
 
         let mut block_labels: HashMap<String, String> = HashMap::new();
         for block in &func.blocks {
@@ -92,7 +101,8 @@ impl QbeHIRBackend {
         match instr {
             hir::Instr::Assign { dest, value } => {
                 let val = self.operand_to_value(value);
-                func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Copy(val));
+                let dest_name = self.get_qbe_name(dest);
+                func.assign_instr(Value::Temporary(dest_name), Type::Long, Instr::Copy(val));
             }
             hir::Instr::Const { dest, value } => {
                 func.assign_instr(Value::Temporary(sanitize_name(&dest)), Type::Long, Instr::Copy(Value::Const(*value as u64)));
@@ -690,7 +700,7 @@ impl QbeHIRBackend {
 
     fn operand_to_value(&self, op: &hir::Operand) -> Value {
         match op {
-            hir::Operand::Var(v) => Value::Temporary(sanitize_name(v)),
+            hir::Operand::Var(v) => Value::Temporary(self.lookup_name(v)),
             hir::Operand::Const(c) => Value::Const(*c as u64),
         }
     }
@@ -700,6 +710,28 @@ impl QbeHIRBackend {
             hir::Operand::Var(v) => self.string_temps.contains_key(v),
             _ => false,
         }
+    }
+
+    fn get_qbe_name(&mut self, hir_name: &str) -> String {
+        if let Some(renamed) = self.var_renames.get(hir_name) {
+            return renamed.clone();
+        }
+        let san = sanitize_name(hir_name);
+        // If this name is a function parameter (and not already renamed),
+        // assign a fresh name to avoid reassigning the parameter.
+        if self.func_params.contains(hir_name) {
+            let new_name = format!("_qb_{}", san);
+            self.var_renames.insert(hir_name.to_string(), new_name.clone());
+            return new_name;
+        }
+        san
+    }
+
+    fn lookup_name(&self, hir_name: &str) -> String {
+        if let Some(renamed) = self.var_renames.get(hir_name) {
+            return renamed.clone();
+        }
+        sanitize_name(hir_name)
     }
 
     fn fresh_temp(&mut self) -> String {

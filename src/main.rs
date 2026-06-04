@@ -449,11 +449,7 @@ fn run_file_cranelift(file: &Path, _release: bool, _target: Option<&TargetTriple
     }
 
     let mut backend = bars::backends::cranelift::CraneliftBackend::new()?;
-    let result = backend.compile_hir(&hir_program)?;
-    unsafe {
-        bars_print_any_i64(result);
-        bars_print_newline();
-    }
+    backend.compile_hir(&hir_program)?;
     Ok(())
 }
 

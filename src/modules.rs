@@ -45,31 +45,36 @@ fn find_module_file(base: &Path, path_str: &str) -> Option<PathBuf> {
     None
 }
 
+/// Check if a name is internal (runtime built-in or already module-mangled).
+fn is_internal_name(name: &str) -> bool {
+    name.starts_with("_bars_") || name.starts_with("_m_")
+}
+
 /// Collect all top-level public names defined in a program.
 fn collect_public_names(program: &Program) -> HashSet<String> {
     let mut names = HashSet::new();
     for expr in &program.exprs {
         match expr {
             Expr::Def { name, .. } => {
-                if !name.0.starts_with("_bars_") { names.insert(name.0.clone()); }
+                if !is_internal_name(&name.0) { names.insert(name.0.clone()); }
             }
             Expr::Defn { name, .. } => {
-                if !name.0.starts_with("_bars_") { names.insert(name.0.clone()); }
+                if !is_internal_name(&name.0) { names.insert(name.0.clone()); }
             }
             Expr::DefStruct { name, .. } => {
-                if !name.0.starts_with("_bars_") { names.insert(name.0.clone()); }
+                if !is_internal_name(&name.0) { names.insert(name.0.clone()); }
             }
             Expr::DefType { name, variants, .. } => {
-                if !name.0.starts_with("_bars_") { names.insert(name.0.clone()); }
+                if !is_internal_name(&name.0) { names.insert(name.0.clone()); }
                 for v in variants {
-                    if !v.name.0.starts_with("_bars_") { names.insert(v.name.0.clone()); }
+                    if !is_internal_name(&v.name.0) { names.insert(v.name.0.clone()); }
                 }
             }
             Expr::Extern { bars_name, .. } => {
-                if !bars_name.0.starts_with("_bars_") { names.insert(bars_name.0.clone()); }
+                if !is_internal_name(&bars_name.0) { names.insert(bars_name.0.clone()); }
             }
             Expr::DefMacro { name, .. } => {
-                if !name.0.starts_with("_bars_") { names.insert(name.0.clone()); }
+                if !is_internal_name(&name.0) { names.insert(name.0.clone()); }
             }
             _ => {}
         }
@@ -87,7 +92,7 @@ fn rename_in_expr(
 ) {
     match expr {
         Expr::Symbol(sym, _) => {
-            if public_names.contains(&sym.0) && !local_scope.contains(&sym.0) && !sym.0.starts_with("_bars_") {
+            if public_names.contains(&sym.0) && !local_scope.contains(&sym.0) && !is_internal_name(&sym.0) {
                 sym.0 = format!("{}{}", prefix, sym.0);
             }
         }
@@ -222,7 +227,7 @@ fn rename_in_pattern(
 ) {
     match pat {
         Pattern::Struct { name, fields, .. } => {
-            if public_names.contains(&name.0) && !name.0.starts_with("_bars_") {
+            if public_names.contains(&name.0) && !is_internal_name(&name.0) {
                 name.0 = format!("{}{}", prefix, name.0);
             }
             for f in fields {
@@ -275,37 +280,37 @@ fn rename_module(program: &mut Program, prefix: &str) {
     for expr in &mut program.exprs {
         match expr {
             Expr::Def { name, .. } => {
-                if !name.0.starts_with("_bars_") {
+                if !is_internal_name(&name.0) {
                     name.0 = format!("{}{}", prefix, name.0);
                 }
             }
             Expr::Defn { name, .. } => {
-                if !name.0.starts_with("_bars_") {
+                if !is_internal_name(&name.0) {
                     name.0 = format!("{}{}", prefix, name.0);
                 }
             }
             Expr::DefStruct { name, .. } => {
-                if !name.0.starts_with("_bars_") {
+                if !is_internal_name(&name.0) {
                     name.0 = format!("{}{}", prefix, name.0);
                 }
             }
             Expr::DefType { name, variants, .. } => {
-                if !name.0.starts_with("_bars_") {
+                if !is_internal_name(&name.0) {
                     name.0 = format!("{}{}", prefix, name.0);
                 }
                 for v in variants {
-                    if !v.name.0.starts_with("_bars_") {
+                    if !is_internal_name(&v.name.0) {
                         v.name.0 = format!("{}{}", prefix, v.name.0);
                     }
                 }
             }
             Expr::Extern { bars_name, .. } => {
-                if !bars_name.0.starts_with("_bars_") {
+                if !is_internal_name(&bars_name.0) {
                     bars_name.0 = format!("{}{}", prefix, bars_name.0);
                 }
             }
             Expr::DefMacro { name, .. } => {
-                if !name.0.starts_with("_bars_") {
+                if !is_internal_name(&name.0) {
                     name.0 = format!("{}{}", prefix, name.0);
                 }
             }
@@ -524,7 +529,7 @@ pub fn resolve_requires(
         // Recursively resolve the module's own requires
         resolve_requires(&mut module_program, module_base, visited)?;
 
-        let prefix = format!("_bars_{}_", alias);
+        let prefix = format!("_m_{}_", alias);
 
         // Rename the module's definitions with the alias prefix
         rename_module(&mut module_program, &prefix);

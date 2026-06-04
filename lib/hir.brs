@@ -1,6 +1,11 @@
 ;; Bars HIR Lowering — Stage 2
 ;; Simplified: use let+_ instead of do for flat structure
 
+(defn str-eq? [a b]
+  (if (!= (str-count a) (str-count b))
+    false
+    (= (str-starts-with? a b) 1)))
+
 (defn int-str [n]
   (let [d "0123456789"]
     (if (< n 0) (str-concat "-" (int-str (- 0 n)))
@@ -17,7 +22,13 @@
       (str-concat "const " s)
       (if (= c 45)
         (str-concat "const " s)
-        (str-concat "var " s)))))
+        (if (str-eq? s "true")
+          (str-concat "const " s)
+          (if (str-eq? s "false")
+            (str-concat "const " s)
+            (if (str-eq? s "nil")
+              (str-concat "const " s)
+              (str-concat "var " s))))))))
 
 (defn ret-op [r] (get r 0)) (defn ret-st [r] (get r 1))
 (defn st-t [r] (get (ret-st r) 0)) (defn st-l [r] (get (ret-st r) 1))
@@ -36,7 +47,10 @@
     (let [tag (tag-of ast)]
       (if (= tag 0) (mk-ret (int-str (val-of ast)) t l)
       (if (= tag 1) (mk-ret (val-of ast) t l)
-      (if (= tag 2) (mk-ret (val-of ast) t l)
+      (if (= tag 2)
+        (let [dest (fresh-temp t)]
+          (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " (val-of ast)))))
+          (mk-ret dest (+ t 1) l))
       (if (= tag 3) (mk-ret (val-of ast) t l)
       (if (= tag 4) (mk-ret "0" t l)
       (if (= tag 5) (mk-ret (int-str (val-of ast)) t l)
@@ -63,19 +77,27 @@
           (str-concat " " (str-concat name (join-syms params (+ i 1)))))))))
 
 
+(defn lower-body-exprs [ast i n t l lines last-op]
+  (if (>= i n) (mk-ret last-op t l)
+    (let [res (lower-expr (get ast i) t l lines)
+          op  (ret-op res) t (st-t res) l (st-l res)]
+      (lower-body-exprs ast (+ i 1) n t l lines op))))
+
 (defn lower-defn [ast t l lines]
   (let [name   (val-of (get ast 1))
         params (get ast 2)
-        body   (get ast 3)
+        n      (count ast)
         entry  (fresh-label l "entry_")
         l      (+ l 1)
         _      (put lines (str-concat "func " (str-concat name (str-concat " " (str-concat (fmt-params params) ":")))))
         _      (put lines (str-concat "  " (str-concat entry ":")))
-        res    (lower-expr body t l lines)
+        res    (if (> n 4)
+                 (lower-body-exprs ast 3 n t l lines "")
+                 (lower-expr (get ast 3) t l lines))
         op     (ret-op res)
         t      (st-t res)
         l      (st-l res)
-        _      (if (= op "<dead>") 0
+        _      (if (str-eq? op "<dead>") 0
                  (put lines (str-concat "    return " (op-fmt op))))]
     (mk-ret "<done>" t l)))
 
@@ -135,43 +157,16 @@
           (recur (+ i 1) op t l))))))
 
 ;; lower-program: process all top-level expressions
-;; Collects defn/extern, builds implicit main from other exprs
 (defn lower-program [ast-list]
   (let [lines (vector)
         n (count ast-list)
-        main-exprs (vector)
         t 0 l 0]
     (loop [i 0 t t l l]
       (if (>= i n)
-        (if (> (count main-exprs) 0)
-          (let [entry (fresh-label l "entry_")
-                _ (put lines (str-concat "func main []:"))
-                _ (put lines (str-concat "  " (str-concat entry ":")))
-                do-ast (vector)]
-            (do (push do-ast [13 "do"])
-                (loop [j 0]
-                  (if (>= j (count main-exprs)) 0
-                    (do (push do-ast (get main-exprs j))
-                        (recur (+ j 1)))))
-            (let [res (lower-expr do-ast t l lines)
-                  op (ret-op res)]
-              (if (= op "<dead>") 0
-                (put lines (str-concat "    return " (op-fmt op))))
-              lines))
-          lines)
+        lines
         (let [expr (get ast-list i)
-              head (list-head expr)
-              tag (tag-of head)]
-          (if (= tag 10)
-            (let [res (lower-defn expr t l lines)]
-              (recur (+ i 1) (st-t res) (st-l res)))
-            (if (= tag 20)
-              (let [name (val-of (get expr 1))
-                    params (get expr 2)
-                    _ (put lines (str-concat "extern " (str-concat name (str-concat " " (fmt-params params)))))]
-                (recur (+ i 1) t l))
-              (do (push main-exprs expr)
-                  (recur (+ i 1) t l))))))))))
+              res (lower-expr expr t l lines)]
+          (recur (+ i 1) (st-t res) (st-l res)))))))
 
 (defn print-hir [lines]
   (let [n (count lines)]
@@ -181,13 +176,7 @@
             (recur (+ i 1)))))))
 
 (defn main []
-  (println "=== HIR Lowering ===")
+  (println "=== HIR ===")
   (println "--- (defn main [] 42) ---")
   (print-hir (lower-program [[[10 "defn"] [1 "main"] [] [0 42]]]))
-  (println "--- (defn add [x y] (+ x y)) ---")
-  (print-hir (lower-program [[[10 "defn"] [1 "add"] [[1 "x"] [1 "y"]] [[1 "+"] [1 "x"] [1 "y"]]]]))
-  (println "--- (defn choose [a b] (if (> a b) a b)) ---")
-  (print-hir (lower-program [[[10 "defn"] [1 "choose"] [[1 "a"] [1 "b"]] [[12 "if"] [[1 ">"] [1 "a"] [1 "b"]] [1 "a"] [1 "b"]]]]))
-  (println "--- (defn calc [x] (let [y (+ x 1)] (* y 2))) ---")
-  (print-hir (lower-program [[[10 "defn"] [1 "calc"] [[1 "x"]] [[11 "let"] [[1 "y"] [[1 "+"] [1 "x"] [0 1]]] [[1 "*"] [1 "y"] [0 2]]]]]))
   0)

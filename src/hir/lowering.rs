@@ -16,6 +16,8 @@ pub struct LoweringCtx {
     /// Lambda functions extracted during lowering
     lambda_funcs: Vec<Func>,
     lambda_counter: usize,
+    /// Current function parameter names (to detect shadowing in loops)
+    current_params: HashSet<String>,
 }
 
 impl LoweringCtx {
@@ -32,6 +34,7 @@ impl LoweringCtx {
             adt_registry: std::collections::HashMap::new(),
             lambda_funcs: Vec::new(),
             lambda_counter: 0,
+            current_params: HashSet::new(),
         }
     }
 
@@ -142,9 +145,113 @@ impl LoweringCtx {
         Ok(Program { funcs, struct_registry, adt_registry })
     }
 
+    /// Rename variable references in an expression tree (for loop shadowing fix).
+    fn rename_vars(&self, expr: &mut Expr, map: &HashMap<String, String>) {
+        match expr {
+            Expr::Symbol(Symbol(name), _) => {
+                if let Some(new_name) = map.get(name) {
+                    *name = new_name.clone();
+                }
+            }
+            Expr::FnCall { func, args, .. } => {
+                self.rename_vars(func, map);
+                for arg in args {
+                    self.rename_vars(arg, map);
+                }
+            }
+            Expr::If { cond, then_branch, else_branch, .. } => {
+                self.rename_vars(cond, map);
+                self.rename_vars(then_branch, map);
+                self.rename_vars(else_branch, map);
+            }
+            Expr::Do { exprs, .. } => {
+                for e in exprs {
+                    self.rename_vars(e, map);
+                }
+            }
+            Expr::Let { bindings, body, .. } => {
+                for (name, init) in bindings.iter_mut() {
+                    self.rename_vars(init, map);
+                }
+                self.rename_vars(body, map);
+            }
+            Expr::Loop { bindings, body, .. } => {
+                // Don't rename bindings themselves (they're being rebound)
+                let mut scoped_map = map.clone();
+                for (name, _) in bindings {
+                    scoped_map.remove(&name.0);
+                }
+                self.rename_vars(body, &scoped_map);
+            }
+            Expr::Recur { args, .. } => {
+                for arg in args {
+                    self.rename_vars(arg, map);
+                }
+            }
+            Expr::Quote(..) | Expr::SyntaxQuote(..) => {} // Don't rename inside quote
+            Expr::Unquote(inner, _) => {
+                self.rename_vars(inner, map);
+            }
+            Expr::Vector(elements, _) | Expr::List(elements, _) => {
+                for e in elements {
+                    self.rename_vars(e, map);
+                }
+            }
+            Expr::Match { expr: matched, arms, .. } => {
+                self.rename_vars(matched, map);
+                for (pattern, arm_expr) in arms.iter_mut() {
+                    let mut arm_map = map.clone();
+                    // Remove bound pattern variables from the rename map
+                    let mut pattern_names = Vec::new();
+                    Self::collect_pattern_names(pattern, &mut pattern_names);
+                    for n in &pattern_names {
+                        arm_map.remove(n);
+                    }
+                    self.rename_vars(arm_expr, &arm_map);
+                }
+            }
+            Expr::Lambda { params, body, .. } => {
+                let mut scoped_map = map.clone();
+                for (name, _) in params {
+                    scoped_map.remove(&name.0);
+                }
+                self.rename_vars(body, &scoped_map);
+            }
+            Expr::FieldAccess { expr: inner, .. } => {
+                self.rename_vars(inner, map);
+            }
+            Expr::Borrow(inner, _, _) => {
+                self.rename_vars(inner, map);
+            }
+            Expr::Splicing(inner, _) => {
+                self.rename_vars(inner, map);
+            }
+            // Top-level forms don't need renaming (defn, defstruct, etc.)
+            _ => {}
+        }
+    }
+
+    fn collect_pattern_names(pat: &Pattern, names: &mut Vec<String>) {
+        match pat {
+            Pattern::Binding(name) => names.push(name.0.clone()),
+            Pattern::Struct { fields, .. } => {
+                for f in fields {
+                    Self::collect_pattern_names(f, names);
+                }
+            }
+            Pattern::Vector(elements, _) | Pattern::List(elements, _) => {
+                for e in elements {
+                    Self::collect_pattern_names(e, names);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn lower_func(&mut self, name: &str, params: &[(Symbol, Option<crate::ast::Type>)], body: &Expr) -> Result<Func> {
         let entry_label = self.fresh_label("entry");
         self.start_block(entry_label.clone());
+        self.current_params = params.iter().map(|(s, _)| s.0.clone()).collect();
 
         let result = self.lower_expr(body, true)?;
         if self.current_block_active {
@@ -166,6 +273,7 @@ impl LoweringCtx {
     fn lower_implicit_main(&mut self, exprs: &[Expr]) -> Result<Func> {
         let entry_label = self.fresh_label("main_entry");
         self.start_block(entry_label.clone());
+        self.current_params = HashSet::new();
 
         let mut last = Operand::Const(0);
         for expr in exprs {
@@ -351,15 +459,37 @@ impl LoweringCtx {
                 let exit_label = self.fresh_label("loop_exit");
                 let result_slot = self.fresh_temp();
 
-                let loop_vars: Vec<String> = bindings.iter().map(|(name, _)| name.0.clone()).collect();
+                // Check for loop variables that shadow function parameters.
+                // QBE cannot reassign parameters, so we must rename them.
+                let mut rename_map: HashMap<String, String> = HashMap::new();
+                let loop_vars: Vec<String> = bindings.iter().map(|(name, _)| {
+                    if self.current_params.contains(&name.0) {
+                        let new_name = format!("_lv_{}", name.0);
+                        rename_map.insert(name.0.clone(), new_name.clone());
+                        new_name
+                    } else {
+                        name.0.clone()
+                    }
+                }).collect();
 
-                // Initialize loop variables
-                for (name, init) in bindings {
+                // If any vars were renamed, clone and rewrite the body
+                let mut owned_body: Option<Expr> = None;
+                let body_ref: &Expr = if !rename_map.is_empty() {
+                    let mut cloned = body.as_ref().clone();
+                    self.rename_vars(&mut cloned, &rename_map);
+                    owned_body = Some(cloned);
+                    owned_body.as_ref().unwrap()
+                } else {
+                    body.as_ref()
+                };
+
+                // Initialize loop variables using original names or renamed ones
+                for ((name, init), lv_name) in bindings.iter().zip(loop_vars.iter()) {
                     let init_val = self.lower_expr(init, false)?;
                     if !self.current_block_active {
                         return Ok(Operand::Const(0));
                     }
-                    self.emit(Instr::Assign { dest: name.0.clone(), value: init_val });
+                    self.emit(Instr::Assign { dest: lv_name.clone(), value: init_val });
                 }
 
                 // Allocate result slot
@@ -375,7 +505,7 @@ impl LoweringCtx {
                 self.loop_stack.push((loop_label.clone(), loop_vars));
 
                 // Lower body
-                let body_val = self.lower_expr(body, false)?;
+                let body_val = self.lower_expr(body_ref, false)?;
 
                 // Pop loop context
                 self.loop_stack.pop();
