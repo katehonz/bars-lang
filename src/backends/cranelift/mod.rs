@@ -44,6 +44,16 @@ unsafe extern "C" {
     fn bars_abs_i64(n: i64) -> i64;
     fn bars_slurp(path: *const u8) -> *mut u8;
     fn bars_spit(path: *const u8, content: *const u8) -> i64;
+    fn bars_string_get(s: *const u8, idx: i64) -> i64;
+    fn bars_string_starts_with(s: *const u8, prefix: *const u8) -> i64;
+    fn bars_string_ends_with(s: *const u8, suffix: *const u8) -> i64;
+    fn bars_string_index_of(s: *const u8, needle: *const u8) -> i64;
+    fn bars_string_slice(s: *const u8, start: i64, end: i64) -> *mut u8;
+    fn bars_args_count() -> i64;
+    fn bars_args_get(idx: i64) -> *mut u8;
+    fn bars_exit(status: i64);
+    fn bars_code_char(code: i64) -> *mut u8;
+    fn bars_char_code(s: *const u8) -> i64;
 }
 
 pub struct CraneliftBackend {
@@ -98,6 +108,16 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_abs_i64", bars_abs_i64 as *const u8);
         jit_builder.symbol("bars_slurp", bars_slurp as *const u8);
         jit_builder.symbol("bars_spit", bars_spit as *const u8);
+        jit_builder.symbol("bars_string_get", bars_string_get as *const u8);
+        jit_builder.symbol("bars_string_starts_with", bars_string_starts_with as *const u8);
+        jit_builder.symbol("bars_string_ends_with", bars_string_ends_with as *const u8);
+        jit_builder.symbol("bars_string_index_of", bars_string_index_of as *const u8);
+        jit_builder.symbol("bars_string_slice", bars_string_slice as *const u8);
+        jit_builder.symbol("bars_args_count", bars_args_count as *const u8);
+        jit_builder.symbol("bars_args_get", bars_args_get as *const u8);
+        jit_builder.symbol("bars_exit", bars_exit as *const u8);
+        jit_builder.symbol("bars_code_char", bars_code_char as *const u8);
+        jit_builder.symbol("bars_char_code", bars_char_code as *const u8);
 
         let module = JITModule::new(jit_builder);
 
@@ -527,6 +547,12 @@ fn compile_instr<M: Module>(
                 }
                 "str-slice" | "str_slice" | "slice" if arg_vals.len() == 3 => {
                     call_runtime(builder, module, "bars_string_slice", &arg_vals)?
+                }
+                "code-char" | "code_char" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_code_char", &arg_vals)?
+                }
+                "char-code" | "char_code" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_char_code", &arg_vals)?
                 }
                 "args-count" | "args_count" if arg_vals.is_empty() => {
                     call_runtime(builder, module, "bars_args_count", &arg_vals)?

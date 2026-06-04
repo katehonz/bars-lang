@@ -152,6 +152,10 @@ void bars_set_args(int argc, char** argv);
 int64_t bars_args_count(void);
 bars_string_t* bars_args_get(int64_t idx);
 
+/* Char / string conversions */
+bars_string_t* bars_code_char(int64_t code);
+int64_t bars_char_code(bars_string_t* s);
+
 /* Process */
 void bars_exit(int64_t status);
 

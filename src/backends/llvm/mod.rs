@@ -585,6 +585,14 @@ impl<'ctx> LlvmCompiler<'ctx> {
                         let result = self.call_runtime_ptr("bars_string_slice", &[s, start, end])?;
                         self.ptr_to_i64(result)
                     }
+                    "code-char" | "code_char" if arg_vals.len() == 1 => {
+                        let result = self.call_runtime_ptr("bars_code_char", &[arg_vals[0]])?;
+                        self.ptr_to_i64(result)
+                    }
+                    "char-code" | "char_code" if arg_vals.len() == 1 => {
+                        let s = self.i64_to_ptr(arg_vals[0]);
+                        self.call_runtime_i64("bars_char_code", &[s])?
+                    }
                     "args-count" | "args_count" if arg_vals.is_empty() => {
                         self.call_runtime_i64("bars_args_count", &[])?
                     }

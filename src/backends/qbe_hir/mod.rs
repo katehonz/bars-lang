@@ -52,11 +52,33 @@ impl QbeHIRBackend {
             block_labels.insert(block.label.clone(), qbe_label);
         }
 
-        for (_i, block) in func.blocks.iter().enumerate() {
-            qbe_func.add_block(&block_labels[&block.label]);
+        // Collect all Alloc instructions from all blocks and hoist them to the entry block.
+        // QBE requires alloc instructions to be in the entry block only.
+        let mut allocs: Vec<hir::Instr> = Vec::new();
+        for block in &func.blocks {
+            for instr in &block.instrs {
+                if matches!(instr, hir::Instr::Alloc { .. }) {
+                    allocs.push(instr.clone());
+                }
+            }
+        }
+
+        for (i, block) in func.blocks.iter().enumerate() {
+            let qbe_label = sanitize_name(&block.label);
+            qbe_func.add_block(&qbe_label);
+
+            // Emit hoisted allocs at the start of the entry block
+            if i == 0 {
+                for alloc in &allocs {
+                    self.compile_instr(alloc, &mut qbe_func)?;
+                }
+            }
 
             for instr in &block.instrs {
-                self.compile_instr(instr, &mut qbe_func)?;
+                // Skip allocs — they were already emitted in the entry block
+                if !matches!(instr, hir::Instr::Alloc { .. }) {
+                    self.compile_instr(instr, &mut qbe_func)?;
+                }
             }
 
             self.compile_terminator(&block.terminator, &mut qbe_func, &block_labels)?;
@@ -552,6 +574,28 @@ impl QbeHIRBackend {
                             ),
                         );
                     }
+                    "code-char" | "code_char" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_code_char".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
+                    "char-code" | "char_code" if compiled_args.len() == 1 => {
+                        func.assign_instr(
+                            Value::Temporary(sanitize_name(&dest)),
+                            Type::Long,
+                            Instr::Call(
+                                "bars_char_code".to_string(),
+                                compiled_args.clone(),
+                                None,
+                            ),
+                        );
+                    }
                     "args-count" | "args_count" if compiled_args.is_empty() => {
                         func.assign_instr(
                             Value::Temporary(sanitize_name(&dest)),
@@ -667,12 +711,19 @@ impl QbeHIRBackend {
     fn add_string_literal(&mut self, s: &str) -> Value {
         let label = format!("str_{}", self.string_counter);
         self.string_counter += 1;
+        // Escape characters that QBE data strings cannot handle raw
+        let escaped = s
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
         let data = qbe::DataDef::new(
             Linkage::private(),
             label.clone(),
             None,
             vec![
-                (Type::Byte, qbe::DataItem::Str(s.replace('\n', "\\n"))),
+                (Type::Byte, qbe::DataItem::Str(escaped)),
                 (Type::Byte, qbe::DataItem::Const(0)),
             ],
         );

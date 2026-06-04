@@ -395,53 +395,18 @@ fn run_file_qbe(file: &Path, release: bool, target: Option<&TargetTriple>) -> Re
     Ok(())
 }
 
-fn run_file_cranelift(file: &Path, release: bool, target: Option<&TargetTriple>) -> Result<()> {
+fn run_file_cranelift(file: &Path, _release: bool, _target: Option<&TargetTriple>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
     let hir_program = bars::lower_and_optimize(&expanded)?;
 
-    let stem = file.file_stem().unwrap_or_default().to_string_lossy();
-    let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
-    let bin_file = format!("/tmp/{}_{}", stem, std::process::id());
-
-    bars::backends::cranelift::compile_hir_to_object(&hir_program, Path::new(&obj_file), release, target)?;
-
-    let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
-    let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
-    let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
-    let mut link_args: Vec<&str> = Vec::new();
-    for extra in &linker_extra {
-        link_args.push(extra.as_str());
+    let mut backend = bars::backends::cranelift::CraneliftBackend::new()?;
+    let result = backend.compile_hir(&hir_program)?;
+    unsafe {
+        bars_print_any_i64(result);
+        bars_print_newline();
     }
-    link_args.push(obj_file.as_str());
-    link_args.push(runtime_obj_str.as_str());
-    link_args.push("-lgc");
-    link_args.push("-lm");
-    link_args.push("-no-pie");
-    if release {
-        link_args.push("-O2");
-    }
-    link_args.push("-o");
-    link_args.push(bin_file.as_str());
-    let cc_compile = Command::new(&linker)
-        .args(&link_args)
-        .output()?;
-
-    if !cc_compile.status.success() {
-        let stderr = String::from_utf8_lossy(&cc_compile.stderr);
-        bail!("Link step failed:\n{}", stderr);
-    }
-
-    // Run binary
-    let run = Command::new(&bin_file).output()?;
-    std::io::stdout().write_all(&run.stdout)?;
-    std::io::stderr().write_all(&run.stderr)?;
-
-    // Cleanup
-    let _ = std::fs::remove_file(&obj_file);
-    let _ = std::fs::remove_file(&bin_file);
-
     Ok(())
 }
 

@@ -229,10 +229,10 @@ bars build examples/hello.brs -o hello
 
 Преди да започнем писането на компилатора на Bars, трябва:
 
-- [ ] **12.1** String tooling за lexer: `str-get`, `str-slice`, `str-starts-with?`, `str-ends-with?`, `str-index-of`, `str-char-at`
-- [ ] **12.2** CLI args: `*args*` или `(command-line-args)` — вектор от низове
-- [ ] **12.3** `char` тип или `char-code` / `code-char` функции за ASCII работа
-- [ ] **12.4** `exit` функция за връщане на status code
+- [x] **12.1** String tooling за lexer: `str-get`, `str-slice`, `str-starts-with?`, `str-ends-with?`, `str-index-of`, `str-char-at`
+- [x] **12.2** CLI args: `*args*` или `(command-line-args)` — вектор от низове
+- [x] **12.3** `char` тип или `char-code` / `code-char` функции за ASCII работа
+- [x] **12.4** `exit` функция за връщане на status code
 
 **Критерий:** Можем да напишем lexer на Bars, който чете файл и разбива го на tokens.
 

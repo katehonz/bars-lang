@@ -52,7 +52,9 @@ void bars_print_vector_i64(const bars_vector_t* vec) {
         for (size_t i = 0; i < vec->len; i++) {
             bars_value_t v = vec->data[i];
             if (v.tag == BARS_I64) {
-                printf("%ld", (long)v.data.i64);
+                /* Use bars_print_any_i64 so nested vectors/strings/ADTs
+                   are pretty-printed instead of showing raw addresses. */
+                bars_print_any_i64(v.data.i64);
             } else if (v.tag == BARS_STRING) {
                 bars_print_string(v.data.string);
             } else {
@@ -518,6 +520,18 @@ bars_string_t* bars_string_slice(bars_string_t* s, int64_t start, int64_t end) {
     if (end <= start) return bars_string_new("");
     int64_t len = end - start;
     return bars_string_substring(s, start, len);
+}
+
+/* --- Char / string conversions --- */
+
+bars_string_t* bars_code_char(int64_t code) {
+    char buf[2] = { (char)(code & 0xFF), '\0' };
+    return bars_string_new(buf);
+}
+
+int64_t bars_char_code(bars_string_t* s) {
+    if (!s || s->len == 0) return -1;
+    return (int64_t)(unsigned char)s->data[0];
 }
 
 /* --- CLI args --- */

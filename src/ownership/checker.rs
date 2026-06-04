@@ -197,6 +197,7 @@ fn expr_is_copy(expr: &Expr, _registry: &FunctionRegistry) -> bool {
                     "even?" | "odd?" | "zero?" | "pos?" | "neg?" |
                     "empty?" | "contains?" | "index-of" | "str-count" |
                     "str-get" | "str-starts-with?" | "str-ends-with?" | "str-index-of" | "str-slice" |
+                    "code-char" | "char-code" |
                     "args-count" | "args-get" |
                     "square" | "cube" | "gcd" | "lcm" | "factorial" | "fib" |
                     "sum" | "product" | "first" | "last" | "nth" |

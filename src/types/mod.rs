@@ -494,12 +494,12 @@ impl InferCtx {
         env.insert("newline".to_string(), print_none);
 
         // Collection ops — polymorphic over GC-managed types
-        let t = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
-        let vec_new = TypeScheme { vars: vec![t], ty: Type::Fun(vec![], Box::new(Type::Var(t))) };
+        // Vectors/maps/sets are i64 pointers at the type level; element type is polymorphic
+        let vec_new = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
         let t2 = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
-        let push = TypeScheme { vars: vec![t2], ty: Type::Fun(vec![Type::Var(t2), Type::Var(t2)], Box::new(Type::I64)) };
+        let push = TypeScheme { vars: vec![t2], ty: Type::Fun(vec![Type::I64, Type::Var(t2)], Box::new(Type::I64)) };
         let t3 = match self.fresh_var() { Type::Var(id) => id, _ => unreachable!() };
-        let get = TypeScheme { vars: vec![t3], ty: Type::Fun(vec![Type::Var(t3), Type::I64], Box::new(Type::Var(t3))) };
+        let get = TypeScheme { vars: vec![t3], ty: Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::Var(t3))) };
         let count = TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64)));
         env.insert("vector".to_string(), vec_new);
         env.insert("push".to_string(), push);
@@ -549,6 +549,8 @@ impl InferCtx {
         env.insert("str-ends-with?".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
         env.insert("str-index-of".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64], Box::new(Type::I64))));
         env.insert("str-slice".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64, Type::I64, Type::I64], Box::new(Type::I64))));
+        env.insert("code-char".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
+        env.insert("char-code".to_string(), TypeScheme::mono(Type::Fun(vec![Type::I64], Box::new(Type::I64))));
 
         // CLI args
         env.insert("args-count".to_string(), TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64))));
