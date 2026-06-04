@@ -90,10 +90,12 @@ High-level constructs (`if`, `match`, `loop`/`recur`, `let`) are desugared to ~1
 
 #### Cranelift HIR Backend (`src/backends/cranelift/mod.rs`)
 
-- Consumes HIR and uses `cranelift-jit` for in-memory compilation.
-- `defn` functions are declared and defined in the JIT module, persisting across REPL iterations.
+- Consumes HIR and supports both **JIT** (`cranelift-jit`) and **AOT** (`cranelift-object`) compilation.
+- **JIT mode**: `defn` functions are declared and defined in the JIT module, persisting across REPL iterations.
+- **AOT mode**: Compiles to object file (`.o`) which is linked with `cc` to produce native binary.
 - HIR variables map to Cranelift `Variable`s with `def_var`/`use_var`, enabling automatic phi insertion.
 - Blocks are sealed only after all jumps are emitted, so backward edges (loops) resolve correctly.
+- **String literals** in AOT mode use `module.declare_data`/`define_data` to emit strings into the `.data` section of the object file (fix for self-hosting).
 
 ### C Runtime (`runtime/bars_runtime.c`)
 

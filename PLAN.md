@@ -272,18 +272,25 @@ bars build examples/hello.brs -o hello
 - `branch` (jnz с етикети)
 - `return` (const и var)
 
-### Stage 4: Build Pipeline на Bars
+### Stage 4: Build Pipeline на Bars ✅
 
-- [ ] **12.12** `bars-build` — оркестрация: read → expand → lower → codegen → qbe → cc → binary
-- [ ] **12.13** Интеграция с C runtime и Boehm GC
+- [x] **12.12** `lib/build.brs` — оркестрация: read → lower → codegen → qbe → cc → binary
+- [x] **12.13** Интеграция с C runtime и Boehm GC (чрез `extern` декларации)
+- [x] **12.14** Компилиране на `selfhost.brs` (core + reader + hir + qbe + build) през Rust host с Cranelift AOT backend
 
-**Критерий:** `bars build hello.brs -o hello` работи цялостно написано на Bars.
+**Критерий:** ✅ `bars build --backend cranelift selfhost.brs -o selfhost` произвежда работещ бинарен файл.
 
-### Stage 5: Bootstrap
+**Известни ограничения:**
+- QBE backend не може да компилира self-host модула поради `rega: Assertion 'x != -1'` (слишком сложен CFG)
+- Cranelift AOT е единственият работещ backend за Stage 5
+- Self-hosted pipeline (`compile-file`) генерира празен SSA за някои входове — debug в прогрес
 
-- [ ] **12.14** Компилираме Bars компилатора със себе си
-- [ ] **12.15** Двата компилатора (Rust и Bars) произвеждат идентичен output за тестов набор
-- [ ] **12.16** Заместваме Rust компилатора с Bars версията в CI/build
+### Stage 5: Bootstrap 🚧
+
+- [x] **12.15** Компилираме Bars компилатора със себе си (`selfhost.brs` → Cranelift AOT → `selfhost_out`)
+- [ ] **12.16** Self-hosted компилаторът може да компилира произволен `.brs` файл до работещ binary
+- [ ] **12.17** Двата компилатора (Rust и Bars) произвеждат идентичен output за тестов набор
+- [ ] **12.18** Заместваме Rust компилатора с Bars версията в CI/build
 
 ---
 

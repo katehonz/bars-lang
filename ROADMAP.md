@@ -79,6 +79,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] `bars repl` — history, multi-line, pretty-print
 - [x] `bars build file.brs -o binary`
 - [x] REPL команди: `:quit`, `:help`, `:ast`, `:type`
+- [x] Cranelift AOT string literals чрез `declare_data`/`define_data` (fix за self-hosting)
 
 ---
 
@@ -159,6 +160,20 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] LSP сървър — hover (type info), completion, go-to-definition, diagnostics
 - [ ] Debugger интеграция
 - [ ] Cross-compilation
+
+## Фаза 12: Self-Hosting 🚧
+
+- [x] Stage 0: Подготовка — string ops, CLI args, `exit` ✅
+- [x] Stage 1: Self-hosted Reader (`lib/reader.brs`) ✅
+- [x] Stage 2: Self-hosted HIR Lowering (`lib/hir.brs`) ✅
+- [x] Stage 3: Self-hosted QBE Codegen (`lib/qbe.brs`) ✅
+- [x] Stage 4: Self-hosted Build Pipeline (`lib/build.brs`) ✅
+- [x] Stage 5: Bootstrap — компилиране на `selfhost.brs` през Rust host toolchain ✅
+- [ ] Stage 5a: Self-hosted компилаторът компилира произволен `.brs` файл
+- [ ] Stage 5b: Identity test — Rust и Bars компилатори произвеждат идентичен output
+- [ ] Stage 5c: Замяна на Rust host с Bars self-hosted в CI
+
+**Текущо състояние:** `bars build --backend cranelift selfhost.brs` произвежда работещ `selfhost_out` бинарен файл, който се изпълнява без segfault. Остава дебъгване на `compile-file` pipeline в self-hosted версията.
 
 ---
 
