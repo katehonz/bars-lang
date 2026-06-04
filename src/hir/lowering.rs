@@ -597,8 +597,8 @@ impl LoweringCtx {
                 Ok(Operand::Const(0))
             }
 
-            Expr::Defn { .. } => {
-                bail!("Nested defn not supported in HIR lowering")
+            Expr::Defn { name, span, .. } => {
+                bail!("Nested defn '{}' not supported in HIR lowering at line {}, col {}", name.0, span.line, span.col)
             }
 
             Expr::Lambda { params, body, .. } => {

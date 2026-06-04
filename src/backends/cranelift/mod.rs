@@ -5,7 +5,7 @@ use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::settings;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{DataDescription, Linkage, Module};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -155,6 +155,7 @@ impl CraneliftBackend {
                 func,
                 &program.struct_registry,
                 &self.functions,
+                &HashMap::new(),
             )?;
         }
 
@@ -213,6 +214,7 @@ fn define_function_generic<M: Module>(
     func: &hir::Func,
     struct_registry: &HashMap<String, Vec<String>>,
     functions: &HashMap<String, cranelift_module::FuncId>,
+    string_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> Result<()> {
     let func_id = *functions.get(&func.name).unwrap();
 
@@ -262,6 +264,7 @@ fn define_function_generic<M: Module>(
                 struct_registry,
                 functions,
                 module,
+                string_data_ids,
             )?;
         }
 
@@ -291,6 +294,7 @@ fn compile_instr<M: Module>(
     struct_registry: &HashMap<String, Vec<String>>,
     functions: &HashMap<String, cranelift_module::FuncId>,
     module: &mut M,
+    string_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> Result<()> {
     match instr {
         hir::Instr::Assign { dest, value } => {
@@ -387,6 +391,7 @@ fn compile_instr<M: Module>(
         }
         hir::Instr::Call { dest, func: func_name, args } => {
             let arg_vals: Vec<ClifValue> = args.iter().map(|a| operand_to_value(a, values, builder)).collect();
+
 
             // Check for struct constructor
             if let Some(fields) = struct_registry.get(func_name) {
@@ -516,6 +521,9 @@ fn compile_instr<M: Module>(
                 "str-concat" | "str_concat" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_string_concat", &arg_vals)?
                 }
+                "str-concat" | "str_concat" if arg_vals.len() == 1 => {
+                    arg_vals[0]
+                }
                 // I/O
                 "slurp" if arg_vals.len() == 1 => {
                     call_runtime(builder, module, "bars_slurp", &arg_vals)?
@@ -571,6 +579,7 @@ fn compile_instr<M: Module>(
                         let call = builder.ins().call(func_ref, &arg_vals);
                         builder.inst_results(call)[0]
                     } else {
+                        eprintln!("DEBUG: Unknown func_name='{}' arg_count={}", func_name, arg_vals.len());
                         bail!("Unknown function in Cranelift backend: {}", func_name)
                     }
                 }
@@ -579,12 +588,19 @@ fn compile_instr<M: Module>(
             builder.def_var(var, result);
         }
         hir::Instr::StringLit { dest, content } => {
-            let mut bytes = content.as_bytes().to_vec();
-            bytes.push(0);
-            let leaked = Box::leak(bytes.into_boxed_slice());
-            let ptr = leaked.as_ptr() as i64;
-            let ptr_val = builder.ins().iconst(types::I64, ptr);
-            let result = call_runtime(builder, module, "bars_string_new", &[ptr_val])?;
+            let result = if let Some(&data_id) = string_data_ids.get(content) {
+                let gv = module.declare_data_in_func(data_id, builder.func);
+                let ptr_val = builder.ins().global_value(types::I64, gv);
+                call_runtime(builder, module, "bars_string_new", &[ptr_val])?
+            } else {
+                // Fallback for JIT mode (should not happen in AOT)
+                let mut bytes = content.as_bytes().to_vec();
+                bytes.push(0);
+                let leaked = Box::leak(bytes.into_boxed_slice());
+                let ptr = leaked.as_ptr() as i64;
+                let ptr_val = builder.ins().iconst(types::I64, ptr);
+                call_runtime(builder, module, "bars_string_new", &[ptr_val])?
+            };
             let var = get_or_declare_var(dest, values, builder);
             builder.def_var(var, result);
             string_temps.insert(dest.clone());
@@ -746,6 +762,31 @@ pub fn compile_hir_to_object(
         }
     }
 
+    // Collect and declare string literals as data objects
+    let mut string_data_ids: HashMap<String, cranelift_module::DataId> = HashMap::new();
+    let mut string_counter = 0;
+    for func in &program.funcs {
+        for block in &func.blocks {
+            for instr in &block.instrs {
+                if let hir::Instr::StringLit { content, .. } = instr {
+                    if !string_data_ids.contains_key(content) {
+                        let name = format!("_bars_str_{}", string_counter);
+                        string_counter += 1;
+                        let data_id = module.declare_data(&name, Linkage::Local, false, false)
+                            .map_err(|e| anyhow::anyhow!("declare_data error: {}", e))?;
+                        let mut data_desc = DataDescription::new();
+                        let mut bytes = content.as_bytes().to_vec();
+                        bytes.push(0);
+                        data_desc.define(bytes.into_boxed_slice());
+                        module.define_data(data_id, &data_desc)
+                            .map_err(|e| anyhow::anyhow!("define_data error: {}", e))?;
+                        string_data_ids.insert(content.clone(), data_id);
+                    }
+                }
+            }
+        }
+    }
+
     // Define all functions
     for func in &program.funcs {
         if func.is_extern {
@@ -756,6 +797,7 @@ pub fn compile_hir_to_object(
             func,
             &program.struct_registry,
             &functions,
+            &string_data_ids,
         )?;
     }
 

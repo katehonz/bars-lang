@@ -58,6 +58,9 @@ pub enum Commands {
         /// Cross-compilation target triple
         #[arg(long, value_name = "TRIPLE")]
         target: Option<String>,
+        /// Аргументи за Bars програмата (след --)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// Стартирай REPL
     Repl,

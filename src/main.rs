@@ -9,6 +9,7 @@ use std::process::Command;
 unsafe extern "C" {
     fn bars_print_any_i64(val: i64);
     fn bars_print_newline();
+    fn bars_set_args(argc: i32, argv: *mut *mut std::os::raw::c_char);
 }
 
 fn main() -> Result<()> {
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
                 bars_pkg::build_project(&project_dir, _release, backend_str, &bars_bin)?;
             }
         }
-        Commands::Run { file, backend, release: _release, target } => {
+        Commands::Run { file, backend, release: _release, target, args } => {
             let target_triple = target
                 .as_deref()
                 .map(TargetTriple::parse)
@@ -71,7 +72,9 @@ fn main() -> Result<()> {
                         run_file_qbe(&file, _release, target_triple.as_ref())?;
                     }
                     Backend::Cranelift => {
-                        run_file_cranelift(&file, _release, target_triple.as_ref())?;
+                        let mut all_args = vec![file.display().to_string()];
+                        all_args.extend(args);
+                        run_file_cranelift(&file, _release, target_triple.as_ref(), all_args)?;
                     }
                     #[cfg(feature = "llvm-backend")]
                     Backend::Llvm => {
@@ -245,7 +248,14 @@ fn build_cranelift(file: &Path, bin_out: &Path, release: bool, target: Option<&T
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
-    let hir_program = bars::lower_and_optimize(&expanded)?;
+    let mut hir_program = bars::lower_and_optimize(&expanded)?;
+
+    // Rename Bars main to _bars_main so we can inject a C wrapper
+    for func in &mut hir_program.funcs {
+        if func.name == "main" {
+            func.name = "_bars_main".to_string();
+        }
+    }
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
     let obj_file = format!("/tmp/{}_{}.o", stem, std::process::id());
@@ -257,6 +267,27 @@ fn build_cranelift(file: &Path, bin_out: &Path, release: bool, target: Option<&T
         target,
     )?;
 
+    // Build a small C wrapper that calls bars_set_args then _bars_main
+    let wrapper_c = format!("/tmp/{}_{}_wrapper.c", stem, std::process::id());
+    let wrapper_o = format!("/tmp/{}_{}_wrapper.o", stem, std::process::id());
+    std::fs::write(&wrapper_c, r#"
+#include <stdint.h>
+extern void bars_set_args(int argc, char** argv);
+extern int64_t _bars_main(void);
+int main(int argc, char** argv) {
+    bars_set_args(argc, argv);
+    return (int)_bars_main();
+}
+"#)?;
+    let wrapper_compile = Command::new("cc")
+        .args(["-c", &wrapper_c, "-o", &wrapper_o])
+        .output()?;
+    if !wrapper_compile.status.success() {
+        let stderr = String::from_utf8_lossy(&wrapper_compile.stderr);
+        bail!("Wrapper compilation failed:
+{}", stderr);
+    }
+
     let runtime_obj = find_runtime_obj(target.unwrap_or(&TargetTriple::host()))?;
     let runtime_obj_str = runtime_obj.to_string_lossy().to_string();
     let (linker, linker_extra) = find_linker(target.unwrap_or(&TargetTriple::host()))?;
@@ -265,10 +296,12 @@ fn build_cranelift(file: &Path, bin_out: &Path, release: bool, target: Option<&T
         link_args.push(extra.as_str());
     }
     link_args.push(obj_file.as_str());
+    link_args.push(wrapper_o.as_str());
     link_args.push(runtime_obj_str.as_str());
     link_args.push("-lgc");
     link_args.push("-lm");
     link_args.push("-no-pie");
+    link_args.push("-Wl,-z,now");
     if release {
         link_args.push("-O2");
     }
@@ -284,6 +317,8 @@ fn build_cranelift(file: &Path, bin_out: &Path, release: bool, target: Option<&T
     }
 
     let _ = std::fs::remove_file(&obj_file);
+    let _ = std::fs::remove_file(&wrapper_c);
+    let _ = std::fs::remove_file(&wrapper_o);
 
     Ok(())
 }
@@ -395,11 +430,23 @@ fn run_file_qbe(file: &Path, release: bool, target: Option<&TargetTriple>) -> Re
     Ok(())
 }
 
-fn run_file_cranelift(file: &Path, _release: bool, _target: Option<&TargetTriple>) -> Result<()> {
+fn run_file_cranelift(file: &Path, _release: bool, _target: Option<&TargetTriple>, args: Vec<String>) -> Result<()> {
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
     let hir_program = bars::lower_and_optimize(&expanded)?;
+
+    // Set args for the JIT-compiled program
+    let c_args: Vec<std::ffi::CString> = args.iter()
+        .map(|s| std::ffi::CString::new(s.clone()).unwrap())
+        .collect();
+    let mut ptrs: Vec<*mut std::os::raw::c_char> = c_args.iter()
+        .map(|s| s.as_ptr() as *mut std::os::raw::c_char)
+        .collect();
+    ptrs.push(std::ptr::null_mut());
+    unsafe {
+        bars_set_args(ptrs.len() as i32 - 1, ptrs.as_mut_ptr());
+    }
 
     let mut backend = bars::backends::cranelift::CraneliftBackend::new()?;
     let result = backend.compile_hir(&hir_program)?;

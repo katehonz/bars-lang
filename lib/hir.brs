@@ -134,10 +134,44 @@
               op  (ret-op res) t (st-t res) l (st-l res)]
           (recur (+ i 1) op t l))))))
 
+;; lower-program: process all top-level expressions
+;; Collects defn/extern, builds implicit main from other exprs
 (defn lower-program [ast-list]
   (let [lines (vector)
-        res   (lower-expr (get ast-list 0) 0 0 lines)]
-    lines))
+        n (count ast-list)
+        main-exprs (vector)
+        t 0 l 0]
+    (loop [i 0 t t l l]
+      (if (>= i n)
+        (if (> (count main-exprs) 0)
+          (let [entry (fresh-label l "entry_")
+                _ (put lines (str-concat "func main []:"))
+                _ (put lines (str-concat "  " (str-concat entry ":")))
+                do-ast (vector)]
+            (do (push do-ast [13 "do"])
+                (loop [j 0]
+                  (if (>= j (count main-exprs)) 0
+                    (do (push do-ast (get main-exprs j))
+                        (recur (+ j 1)))))
+            (let [res (lower-expr do-ast t l lines)
+                  op (ret-op res)]
+              (if (= op "<dead>") 0
+                (put lines (str-concat "    return " (op-fmt op))))
+              lines))
+          lines)
+        (let [expr (get ast-list i)
+              head (list-head expr)
+              tag (tag-of head)]
+          (if (= tag 10)
+            (let [res (lower-defn expr t l lines)]
+              (recur (+ i 1) (st-t res) (st-l res)))
+            (if (= tag 20)
+              (let [name (val-of (get expr 1))
+                    params (get expr 2)
+                    _ (put lines (str-concat "extern " (str-concat name (str-concat " " (fmt-params params)))))]
+                (recur (+ i 1) t l))
+              (do (push main-exprs expr)
+                  (recur (+ i 1) t l))))))))))
 
 (defn print-hir [lines]
   (let [n (count lines)]

@@ -341,7 +341,7 @@
             (do (push exprs expr) (recur exprs np)))))))
 
 ;; --- Public: read ---
-(defn read [source]
+(defn bars-read [source]
   (let [tokens (tokenize source)]
     (parse-all tokens)))
 
@@ -351,10 +351,10 @@
 
 (defn main []
   (println "=== Reader ===")
-  (println (read "(defn main [] 42)"))
-  (println (read "(+ 1 2)"))
-  (println (read "[1 2 3]"))
-  (println (read ":hello"))
-  (println (read "'sym"))
-  (println (read "\"hi\""))
+  (println (bars-read "(defn main [] 42)"))
+  (println (bars-read "(+ 1 2)"))
+  (println (bars-read "[1 2 3]"))
+  (println (bars-read ":hello"))
+  (println (bars-read "'sym"))
+  (println (bars-read "\"hi\""))
   0)

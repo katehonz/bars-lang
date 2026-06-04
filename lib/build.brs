@@ -31,7 +31,7 @@
 
 (defn compile-file [input-path output-path]
   (let [source (slurp input-path)]
-    (let [ast (reader/read source)]
+    (let [ast (bars-read source)]
       (let [hir-lines (hir/lower-program ast)]
         (let [ssa-vec (qbe/hir-to-qbe hir-lines)]
           (let [ssa-raw (join-lines ssa-vec)]
