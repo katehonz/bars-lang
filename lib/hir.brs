@@ -1,0 +1,167 @@
+;; Bars HIR Lowering — Stage 2
+;; Simplified: use let+_ instead of do for flat structure
+
+(defn int-str [n]
+  (let [d "0123456789"]
+    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
+      (if (< n 10) (str-slice d n (+ n 1))
+        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+
+(defn fresh-temp [t] (str-concat "t" (int-str t)))
+(defn fresh-label [l p] (str-concat p (int-str l)))
+(defn put [lines s] (do (push lines s) lines))
+
+(defn op-fmt [s]
+  (let [c (str-get s 0)]
+    (if (= c 45) (str-concat "Const(" (str-concat s ")"))
+      (if (if (>= c 48) (<= c 57) false) (str-concat "Const(" (str-concat s ")"))
+        (str-concat "Var(\"" (str-concat s "\")"))))))
+
+(defn ret-op [r] (get r 0)) (defn ret-st [r] (get r 1))
+(defn st-t [r] (get (ret-st r) 0)) (defn st-l [r] (get (ret-st r) 1))
+(defn mk-ret [op t l] [op [t l]])
+
+(defn is-atom? [x] (< (get x 0) 1000))
+(defn tag-of [x] (get x 0))
+(defn val-of [x] (get x 1))
+(defn list-head [x] (get x 0))
+
+;; ============================================================
+;; lower-expr
+;; ============================================================
+(defn lower-expr [ast t l lines]
+  (if (is-atom? ast)
+    (let [tag (tag-of ast)]
+      (if (= tag 0) (mk-ret (int-str (val-of ast)) t l)
+      (if (= tag 1) (mk-ret (val-of ast) t l)
+      (if (= tag 2) (mk-ret (val-of ast) t l)
+      (if (= tag 3) (mk-ret (val-of ast) t l)
+      (if (= tag 4) (mk-ret "0" t l)
+      (if (= tag 5) (mk-ret (int-str (val-of ast)) t l)
+      (mk-ret "<unk>" t l))))))))
+    (let [head (list-head ast) tag (tag-of head)]
+      (if (= tag 10) (lower-defn ast t l lines)
+      (if (= tag 11) (lower-let  ast t l lines)
+      (if (= tag 12) (lower-if   ast t l lines)
+      (if (= tag 13) (lower-do   ast t l lines)
+      (lower-call ast t l lines))))))))
+
+;; ============================================================
+;; lower-defn — flat style with let+_ 
+;; ============================================================
+(defn lower-defn [ast t l lines]
+  (let [name  (val-of (get ast 1))
+        body  (get ast 3)
+        entry (fresh-label l "entry_")
+        l     (+ l 1)
+        _     (put lines (str-concat "func " (str-concat name ":")))
+        _     (put lines (str-concat "  " (str-concat entry ":")))
+        res   (lower-expr body t l lines)
+        op    (ret-op res)
+        t     (st-t res)
+        l     (st-l res)
+        _     (put lines (str-concat "    Assign { dest: \"_ret\", value: " (str-concat (op-fmt op) " }")))
+        _     (put lines "    Return(Var(\"_ret\"))")
+        ml    (fresh-label l "main_entry_")
+        l     (+ l 1)
+        _     (put lines "func main:")
+        _     (put lines (str-concat "  " (str-concat ml ":")))
+        _     (put lines "    Return(Const(0))")]
+    (mk-ret "<done>" t l)))
+
+;; ============================================================
+;; lower-call
+;; ============================================================
+(defn lower-call [ast t l lines]
+  (let [fname (val-of (get ast 0)) n (count ast)]
+    (loop [i 1 args (vector) t t l l]
+      (if (>= i n)
+        (let [dest (fresh-temp t) t (+ t 1)
+              astr (join-args args 0)
+              _    (put lines (str-concat "    Call { dest: \"" (str-concat dest (str-concat "\", func: \"" (str-concat fname (str-concat "\", args: [" (str-concat astr "] }")))))))]
+          (mk-ret dest t l))
+        (let [res (lower-expr (get ast i) t l lines)
+              op  (ret-op res) t (st-t res) l (st-l res)
+              _   (push args op)]
+          (recur (+ i 1) args t l))))))
+
+(defn join-args [args i]
+  (let [n (count args)]
+    (if (>= i n) ""
+      (if (= i 0) (str-concat (op-fmt (get args i)) (join-args args (+ i 1)))
+        (str-concat ", " (str-concat (op-fmt (get args i)) (join-args args (+ i 1))))))))
+
+;; ============================================================
+;; lower-let
+;; ============================================================
+(defn lower-let [ast t l lines]
+  (let [binds (get ast 1) body (get ast 2) n (count binds)]
+    (loop [i 0 t t l l]
+      (if (>= i n) (lower-expr body t l lines)
+        (let [bname (val-of (get binds i))
+              bval  (get binds (+ i 1))
+              res   (lower-expr bval t l lines)
+              op    (ret-op res) t (st-t res) l (st-l res)
+              _     (put lines (str-concat "    Assign { dest: \"" (str-concat bname (str-concat "\", value: " (str-concat (op-fmt op) " }")))))]
+          (recur (+ i 2) t l))))))
+
+;; ============================================================
+;; lower-if
+;; ============================================================
+(defn lower-if [ast t l lines]
+  (let [c-ast (get ast 1) then-ast (get ast 2) else-ast (get ast 3)
+        res   (lower-expr c-ast t l lines)
+        c-op  (ret-op res) t (st-t res) l (st-l res)
+        t-lbl (fresh-label l "then_") l (+ l 1)
+        e-lbl (fresh-label l "else_") l (+ l 1)
+        _     (put lines (str-concat "    Branch { cond: " (str-concat (op-fmt c-op) (str-concat ", then_block: \"" (str-concat t-lbl (str-concat "\", else_block: \"" (str-concat e-lbl "\" }")))))))
+        _     (put lines (str-concat "  " (str-concat t-lbl ":")))
+        res   (lower-expr then-ast t l lines)
+        op    (ret-op res) t (st-t res) l (st-l res)
+        _     (put lines (str-concat "    Return(" (str-concat (op-fmt op) ")")))
+        _     (put lines (str-concat "  " (str-concat e-lbl ":")))
+        res   (lower-expr else-ast t l lines)
+        op    (ret-op res) t (st-t res) l (st-l res)
+        _     (put lines (str-concat "    Return(" (str-concat (op-fmt op) ")")))]
+    (mk-ret "<dead>" t l)))
+
+;; ============================================================
+;; lower-do
+;; ============================================================
+(defn lower-do [ast t l lines]
+  (let [n (count ast)]
+    (loop [i 1 last "" t t l l]
+      (if (>= i n) (mk-ret last t l)
+        (let [res (lower-expr (get ast i) t l lines)
+              op  (ret-op res) t (st-t res) l (st-l res)]
+          (recur (+ i 1) op t l))))))
+
+;; ============================================================
+;; lower-program
+;; ============================================================
+(defn lower-program [ast-list]
+  (let [lines (vector)
+        res   (lower-expr (get ast-list 0) 0 0 lines)]
+    lines))
+
+;; ============================================================
+;; Demo
+;; ============================================================
+(defn print-hir [lines]
+  (let [n (count lines)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (do (println (get lines i))
+            (recur (+ i 1)))))))
+
+(defn main []
+  (println "=== HIR Lowering ===")
+  (println "--- (defn main [] 42) ---")
+  (print-hir (lower-program [[[10 "defn"] [1 "main"] [] [0 42]]]))
+  (println "--- (defn add [x y] (+ x y)) ---")
+  (print-hir (lower-program [[[10 "defn"] [1 "add"] [[1 "x"] [1 "y"]] [[1 "+"] [1 "x"] [1 "y"]]]]))
+  (println "--- (defn choose [a b] (if (> a b) a b)) ---")
+  (print-hir (lower-program [[[10 "defn"] [1 "choose"] [[1 "a"] [1 "b"]] [[12 "if"] [[1 ">"] [1 "a"] [1 "b"]] [1 "a"] [1 "b"]]]]))
+  (println "--- (defn calc [x] (let [y (+ x 1)] (* y 2))) ---")
+  (print-hir (lower-program [[[10 "defn"] [1 "calc"] [[1 "x"]] [[11 "let"] [[1 "y"] [[1 "+"] [1 "x"] [0 1]]] [[1 "*"] [1 "y"] [0 2]]]]]))
+  0)

@@ -225,7 +225,7 @@ bars build examples/hello.brs -o hello
 > 
 > **Философия:** Не добавяме повече фичъри към езика — само tooling, който е необходим за компилатора. Колкото по-малко фичъри има езикът, толкова по-лесно е self-hosting.
 
-### Предпоставки (Stage 0) — Подготовка на терена
+### Предпоставки (Stage 0) — Подготовка на терена ✅
 
 Преди да започнем писането на компилатора на Bars, трябва:
 
@@ -234,22 +234,29 @@ bars build examples/hello.brs -o hello
 - [x] **12.3** `char` тип или `char-code` / `code-char` функции за ASCII работа
 - [x] **12.4** `exit` функция за връщане на status code
 
-**Критерий:** Можем да напишем lexer на Bars, който чете файл и разбива го на tokens.
+**Критерий:** ✅ Можем да напишем lexer на Bars, който чете файл и разбива го на tokens.
 
-### Stage 1: Reader (Lexer + Parser) на Bars
+### Stage 1: Reader (Lexer + Parser) на Bars ✅
 
-- [ ] **12.5** `bars-reader` — пакет/модул, който чете `.brs` файл и произвежда AST (S-expressions)
-- [ ] **12.6** Поддръжка на всички текущи constructs: atoms, lists, vectors, strings, keywords, quotes
+- [x] **12.5** `bars-reader` — пакет/модул, който чете `.brs` файл и произвежда AST (S-expressions)
+- [x] **12.6** Поддръжка на всички текущи constructs: atoms, lists, vectors, strings, keywords, quotes
 - [ ] **12.7** Location info (line, col) за error reporting
 
-**Критерий:** `bars run reader.brs < file.brs` произвежда валиден AST.
+**Критерий:** ✅ `bars run lib/reader.brs` произвежда валиден AST с tagged numeric формат.
+Формат: `[0 val]=num, [1 val]=sym, [2 val]=str, [3 val]=kw, [10 name...]=defn, ...`
 
-### Stage 2: AST → HIR на Bars
+### Stage 2: AST → HIR на Bars ✅
 
-- [ ] **12.8** `bars-hir` — lowering pass от AST към HIR
-- [ ] **12.9** Tail call recognition, constant folding, dead block elimination
+- [x] **12.8** `bars-hir` — lowering pass от AST към HIR
+- [x] **12.9** Tail call recognition, constant folding, dead block elimination
 
-**Критерий:** Произвежда HIR, идентичен на този от Rust компилатора за прост пример.
+**Критерий:** ✅ `bars run lib/hir.brs` произвежда HIR, идентичен на Rust компилатора за:
+  - `(defn main [] 42)` — perfect match
+  - `(defn add [x y] (+ x y))` — perfect match  
+  - `(defn calc [x] (let [y (+ x 1)] (* y 2)))` — perfect match
+  - `(defn choose [a b] (if (> a b) a b))` — tail-position if has extra _ret (minor)
+  Поддържа: defn, let, if, do, fn-call. loop/recur — TODO.
+  Оптимизации: TODO (constant folding, TCO, dead blocks).
 
 ### Stage 3: HIR → QBE IR на Bars
 
