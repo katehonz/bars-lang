@@ -187,7 +187,7 @@ fn build_qbe(file: &Path, bin_out: &Path, release: bool, target: Option<&TargetT
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
-    let qbe_ir = bars::compile_to_qbe(&expanded)?;
+    let qbe_ir = bars::compile_to_qbe(&expanded)?; eprintln!("{}", qbe_ir);
 
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();
     let qbe_file = format!("/tmp/{}_{}.ssa", stem, std::process::id());
@@ -331,7 +331,7 @@ fn run_file_qbe(file: &Path, release: bool, target: Option<&TargetTriple>) -> Re
     let program = read_file(file)?;
     let expanded = bars::expand_macros(&program)?;
     check_ownership(&expanded, file)?;
-    let qbe_ir = bars::compile_to_qbe(&expanded)?;
+    let qbe_ir = bars::compile_to_qbe(&expanded)?; eprintln!("{}", qbe_ir);
 
     // Write QBE IR to temp file
     let stem = file.file_stem().unwrap_or_default().to_string_lossy();

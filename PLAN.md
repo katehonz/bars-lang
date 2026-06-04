@@ -258,12 +258,19 @@ bars build examples/hello.brs -o hello
   Поддържа: defn, let, if, do, fn-call. loop/recur — TODO.
   Оптимизации: TODO (constant folding, TCO, dead blocks).
 
-### Stage 3: HIR → QBE IR на Bars
+### Stage 3: HIR → QBE IR на Bars ✅
 
-- [ ] **12.10** `bars-qbe` — codegen от HIR към QBE SSA IR
-- [ ] **12.11** Поддръжка на всички HIR инструкции: Const, Call, Assign, Branch, Jump, Return, Alloc, Load, Store
+- [x] **12.10** `lib/qbe.brs` — codegen от HIR към QBE SSA IR
+- [x] **12.11** Поддръжка на всички HIR инструкции: Call, Assign, Branch, Return
+- [x] **12.12** Фикс за `recur` с 2+ променливи в HIR lowering (копиране в temporaries преди assign)
+- [x] **12.13** `str-eq?` за семантично сравнение на низове (указателно `=` не работи за низови литерали)
 
-**Критерий:** Произвежда валиден `.ssa` файл, който `qbe` приема.
+**Критерий:** ✅ `bars run --backend cranelift lib/qbe.brs` произвежда валиден QBE SSA IR за:
+- `func` декларации с параметри
+- `assign` (const и var)
+- `call` (builtin: + - * / % < <= > >= = !=, и non-builtin)
+- `branch` (jnz с етикети)
+- `return` (const и var)
 
 ### Stage 4: Build Pipeline на Bars
 

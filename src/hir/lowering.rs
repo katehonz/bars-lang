@@ -407,7 +407,15 @@ impl LoweringCtx {
                         }
                         arg_vals.push(val);
                     }
-                    for (i, val) in arg_vals.iter().enumerate() {
+                    // Copy all arg values into fresh temporaries to prevent
+                    // loop variable updates from affecting later reads.
+                    let mut temps = Vec::new();
+                    for val in &arg_vals {
+                        let temp = self.fresh_temp();
+                        self.emit(Instr::Assign { dest: temp.clone(), value: val.clone() });
+                        temps.push(Operand::Var(temp));
+                    }
+                    for (i, val) in temps.iter().enumerate() {
                         if i < loop_vars.len() {
                             self.emit(Instr::Assign { dest: loop_vars[i].clone(), value: val.clone() });
                         }
