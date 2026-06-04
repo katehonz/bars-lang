@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
 
 void bars_gc_init(void) {
     /* Boehm GC initializes automatically, but we can force it */
@@ -354,8 +355,9 @@ bars_string_t* bars_string_concat(bars_string_t* a, bars_string_t* b) {
 
 /* --- I/O --- */
 
-bars_string_t* bars_slurp(const char* path) {
-    FILE* f = fopen(path, "rb");
+bars_string_t* bars_slurp(bars_string_t* path) {
+    const char* p = (path && path->data) ? path->data : "";
+    FILE* f = fopen(p, "rb");
     if (!f) return bars_string_new("");
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
@@ -370,9 +372,10 @@ bars_string_t* bars_slurp(const char* path) {
     return s;
 }
 
-int64_t bars_spit(const char* path, bars_string_t* content) {
+int64_t bars_spit(bars_string_t* path, bars_string_t* content) {
     if (!content || !content->data) return 0;
-    FILE* f = fopen(path, "wb");
+    const char* p = (path && path->data) ? path->data : "";
+    FILE* f = fopen(p, "wb");
     if (!f) return 0;
     size_t written = fwrite(content->data, 1, content->len, f);
     fclose(f);
@@ -557,4 +560,9 @@ bars_string_t* bars_args_get(int64_t idx) {
 
 void bars_exit(int64_t status) {
     exit((int)status);
+}
+
+int64_t bars_system(bars_string_t* cmd) {
+    if (!cmd || !cmd->data) return -1;
+    return (int64_t)system(cmd->data);
 }

@@ -63,6 +63,14 @@
   (let [parts (split-line arg)]
     (if (= (count parts) 2)
       (if (str-eq? (get parts 0) "const")
+        (get parts 1)
+        (str-concat "%" (get parts 1)))
+      "")))
+
+(defn emit-arg-call [arg]
+  (let [parts (split-line arg)]
+    (if (= (count parts) 2)
+      (if (str-eq? (get parts 0) "const")
         (str-concat "l " (get parts 1))
         (str-concat "l %" (get parts 1)))
       "")))
@@ -105,6 +113,12 @@
         suffix (str-concat ", " rhs)]
     (str-concat prefix (str-concat mid suffix))))
 
+(defn emit-call-args [args i]
+  (if (>= i (count args))
+    ""
+    (if (= i 0)
+      (str-concat (emit-arg-call (get args i)) (emit-call-args args (+ i 1)))
+      (str-concat ", " (str-concat (emit-arg-call (get args i)) (emit-call-args args (+ i 1)))))))
 (defn emit-call [dest fname parts]
   (let [args (vector)]
     (loop [i 3]
@@ -113,7 +127,7 @@
             (recur (+ i 2)))))
     (let [prefix (str-concat "  %" (str-concat dest " =l call $"))
         mid (str-concat fname "(")
-        suffix (str-concat (emit-args args 0) ")")]
+        suffix (str-concat (emit-call-args args 0) ")")]
     (str-concat prefix (str-concat mid suffix)))))
 
 (defn emit-branch [cond then-lbl else-lbl]
@@ -127,6 +141,12 @@
     (str-concat "  ret " val)
     (str-concat "  ret %" val)))
 
+(defn emit-println [dest parts]
+  (if (> (count parts) 3)
+    (let [arg (emit-arg-call (str-concat (get parts 3) (str-concat " " (get parts 4))))]
+      (str-concat "  %" (str-concat dest (str-concat " =l call $bars_print_any_i64(" (str-concat arg ")")))))
+    (str-concat "  %" (str-concat dest " =l call $bars_print_newline()"))))
+
 (defn emit-instr [line]
   (let [parts (split-line line)]
     (let [cmd (get parts 0)]
@@ -135,11 +155,13 @@
         (if (str-eq? cmd "call")
           (let [dest (get parts 1)
                 fname (get parts 2)]
-            (if (is-builtin? fname)
-              (emit-builtin-call dest fname
-                (emit-arg (str-concat (get parts 3) (str-concat " " (get parts 4))))
-                (emit-arg (str-concat (get parts 5) (str-concat " " (get parts 6)))))
-              (emit-call dest fname parts)))
+            (if (str-eq? fname "println")
+              (emit-println dest parts)
+              (if (is-builtin? fname)
+                (emit-builtin-call dest fname
+                  (emit-arg (str-concat (get parts 3) (str-concat " " (get parts 4))))
+                  (emit-arg (str-concat (get parts 5) (str-concat " " (get parts 6)))))
+                (emit-call dest fname parts))))
           (if (str-eq? cmd "branch")
             (emit-branch
               (emit-arg (str-concat (get parts 1) (str-concat " " (get parts 2))))

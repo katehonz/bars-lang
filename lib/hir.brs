@@ -76,12 +76,7 @@
         t      (st-t res)
         l      (st-l res)
         _      (if (= op "<dead>") 0
-                 (put lines (str-concat "    return " (op-fmt op))))
-        ml     (fresh-label l "main_entry_")
-        l      (+ l 1)
-        _      (put lines "func main []:")
-        _      (put lines (str-concat "  " (str-concat ml ":")))
-        _      (put lines "    return const 0")]
+                 (put lines (str-concat "    return " (op-fmt op))))]
     (mk-ret "<done>" t l)))
 
 (defn lower-call [ast t l lines]

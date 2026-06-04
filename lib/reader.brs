@@ -55,7 +55,21 @@
       false)))
 
 (defn sym-char? [c]
-  (if (>= c 33) true false))
+  (if (>= c 33)
+    (if (= c 40) false
+      (if (= c 41) false
+        (if (= c 91) false
+          (if (= c 93) false
+            (if (= c 34) false
+              (if (= c 39) false
+                (if (= c 96) false
+                  (if (= c 94) false
+                    (if (= c 64) false
+                      (if (= c 126) false
+                        (if (= c 59) false
+                          (if (= c 58) false
+                            true))))))))))))
+    false))
 
 (defn parse-int [s]
   (let [len (count s)]

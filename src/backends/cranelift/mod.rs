@@ -54,6 +54,7 @@ unsafe extern "C" {
     fn bars_exit(status: i64);
     fn bars_code_char(code: i64) -> *mut u8;
     fn bars_char_code(s: *const u8) -> i64;
+    fn bars_system(s: *const u8) -> i64;
 }
 
 pub struct CraneliftBackend {
@@ -118,6 +119,7 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_exit", bars_exit as *const u8);
         jit_builder.symbol("bars_code_char", bars_code_char as *const u8);
         jit_builder.symbol("bars_char_code", bars_char_code as *const u8);
+        jit_builder.symbol("bars_system", bars_system as *const u8);
 
         let module = JITModule::new(jit_builder);
 

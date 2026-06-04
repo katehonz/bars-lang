@@ -137,8 +137,8 @@ bars_vector_t* bars_string_split(bars_string_t* s, bars_string_t* delim);
 bars_string_t* bars_string_join(bars_vector_t* vec, bars_string_t* delim);
 
 /* I/O */
-bars_string_t* bars_slurp(const char* path);
-int64_t bars_spit(const char* path, bars_string_t* content);
+bars_string_t* bars_slurp(bars_string_t* path);
+int64_t bars_spit(bars_string_t* path, bars_string_t* content);
 
 /* String introspection */
 int64_t bars_string_get(bars_string_t* s, int64_t idx);
@@ -158,5 +158,6 @@ int64_t bars_char_code(bars_string_t* s);
 
 /* Process */
 void bars_exit(int64_t status);
+int64_t bars_system(bars_string_t* cmd);
 
 #endif
