@@ -62,34 +62,34 @@ def emit_let_chain(bindings, body):
     return [f"(let [{name} {value}]"] + [f"  {line}" for line in rest] + [")"]
 
 # Type constructors
-emit_defn("T-I64", "[]", ["(let [v (vector)] (do (push v 0) v))"])
-emit_defn("T-F64", "[]", ["(let [v (vector)] (do (push v 1) v))"])
-emit_defn("T-Bool", "[]", ["(let [v (vector)] (do (push v 2) v))"])
-emit_defn("T-Void", "[]", ["(let [v (vector)] (do (push v 3) v))"])
-emit_defn("T-Str", "[]", ["(let [v (vector)] (do (push v 4) v))"])
-emit_defn("T-Var", "[id]", ["(let [v (vector)] (do (push v 5) (do (push v id) v)))"])
-emit_defn("T-Fun", "[params ret]", ["(let [v (vector)] (do (push v 6) (do (push v params) (do (push v ret) v))))"])
-emit_defn("T-Named", "[name]", ["(let [v (vector)] (do (push v 7) (do (push v name) v)))"])
+emit_defn("T_I64", "[]", ["(let [v (vector)] (do (push v 0) v))"])
+emit_defn("T_F64", "[]", ["(let [v (vector)] (do (push v 1) v))"])
+emit_defn("T_Bool", "[]", ["(let [v (vector)] (do (push v 2) v))"])
+emit_defn("T_Void", "[]", ["(let [v (vector)] (do (push v 3) v))"])
+emit_defn("T_Str", "[]", ["(let [v (vector)] (do (push v 4) v))"])
+emit_defn("T_Var", "[id]", ["(let [v (vector)] (do (push v 5) (do (push v id) v)))"])
+emit_defn("T_Fun", "[params ret]", ["(let [v (vector)] (do (push v 6) (do (push v params) (do (push v ret) v))))"])
+emit_defn("T_Named", "[name]", ["(let [v (vector)] (do (push v 7) (do (push v name) v)))"])
 
 # Type predicates
-emit_defn("type-tag", "[t]", ["(get t 0)"])
-emit_defn("is-var?", "[t]", ["(= (type-tag t) 5)"])
-emit_defn("is-fun?", "[t]", ["(= (type-tag t) 6)"])
-emit_defn("var-id", "[t]", ["(get t 1)"])
-emit_defn("fun-params", "[t]", ["(get t 1)"])
-emit_defn("fun-ret", "[t]", ["(get t 2)"])
-emit_defn("named-name", "[t]", ["(get t 1)"])
+emit_defn("type_tag", "[t]", ["(get t 0)"])
+emit_defn("is_var?", "[t]", ["(= (type_tag t) 5)"])
+emit_defn("is_fun?", "[t]", ["(= (type_tag t) 6)"])
+emit_defn("var_id", "[t]", ["(get t 1)"])
+emit_defn("fun_params", "[t]", ["(get t 1)"])
+emit_defn("fun_ret", "[t]", ["(get t 2)"])
+emit_defn("named_name", "[t]", ["(get t 1)"])
 
 # Type equality
-emit_defn("type-eq?", "[a b]",
-    ["(if (not (= (type-tag a) (type-tag b)))"
+emit_defn("type_eq?", "[a b]",
+    ["(if (not (= (type_tag a) (type_tag b)))"
     ,"  false"
-    ,"  (if (is-var? a)"
-    ,"    (= (var-id a) (var-id b))"
-    ,"    (if (is-fun? a)"
-    ,"      (if (= (count (fun-params a)) (count (fun-params b)))"
+    ,"  (if (is_var? a)"
+    ,"    (= (var_id a) (var_id b))"
+    ,"    (if (is_fun? a)"
+    ,"      (if (= (count (fun_params a)) (count (fun_params b)))"
     ,"        (loop [i 0]"
-    ,"          (if (>= i (count (fun-params a)))"
+    ,"          (if (>= i (count (fun_params a)))"
     ,"            true"
     ,"            (if true"
     ,"              (recur (+ i 1))"
@@ -98,24 +98,24 @@ emit_defn("type-eq?", "[a b]",
     ,"      true)))"])
 
 # Type to string (for error messages)
-emit_defn("type-str", "[t]",
-    ["(if (is-var? t) \"<var>\""
-    ,"  (if (is-fun? t) \"<fn>\""
-    ,"    (let [tag (type-tag t)]"
+emit_defn("type_str", "[t]",
+    ["(if (is_var? t) \"<var>\""
+    ,"  (if (is_fun? t) \"<fn>\""
+    ,"    (let [tag (type_tag t)]"
     ,"      (cond"
     ,"        (= tag 0) \"i64\""
     ,"        (= tag 1) \"f64\""
     ,"        (= tag 2) \"bool\""
     ,"        (= tag 3) \"void\""
     ,"        (= tag 4) \"str\""
-    ,"        (= tag 7) (named-name t)"
+    ,"        (= tag 7) (named_name t)"
     ,"        :else    \"<?>\")"])
 
 w.emit(";; ====== Environment ======")
 w.emit("")
 
 # Env: vector of [name, scheme] pairs
-emit_defn("env-lookup", "[env name]",
+emit_defn("env_lookup", "[env name]",
     ["(loop [i 0]"
     ,"  (if (>= i (count env)) (t0 4)"  # nil = not found
     ,"    (let [pair (get env i)]"
@@ -123,7 +123,7 @@ emit_defn("env-lookup", "[env name]",
     ,"        (get pair 1)"
     ,"        (recur (+ i 1))))))"])
 
-emit_defn("env-insert", "[env name scheme]",
+emit_defn("env_insert", "[env name scheme]",
     ["(let [pair (vector)]"
     ,"  (do (push pair name) (do (push pair scheme) (do (push env pair) env))))"])
 
@@ -131,7 +131,7 @@ w.emit(";; ====== Substitution ======")
 w.emit("")
 
 # Substitution: vector of [id, type] pairs
-emit_defn("subst-get", "[subst id]",
+emit_defn("subst_get", "[subst id]",
     ["(loop [i 0]"
     ,"  (if (>= i (count subst)) (t0 4)"  # nil
     ,"    (let [pair (get subst i)]"
@@ -139,24 +139,24 @@ emit_defn("subst-get", "[subst id]",
     ,"        (get pair 1)"
     ,"        (recur (+ i 1))))))"])
 
-emit_defn("subst-insert", "[subst id ty]",
+emit_defn("subst_insert", "[subst id ty]",
     ["(let [pair (vector)]"
     ,"  (do (push pair id) (do (push pair ty) (do (push subst pair) subst))))"])
 
-# apply-subst recursively applies substitution to a type
-emit_defn("apply-subst", "[subst ty]",
+# apply_subst recursively applies substitution to a type
+emit_defn("apply_subst", "[subst ty]",
     ["(loop [ty ty]"
-    ,"  (if (is-var? ty)"
-    ,"    (let [found (subst-get subst (var-id ty))]"
+    ,"  (if (is_var? ty)"
+    ,"    (let [found (subst_get subst (var_id ty))]"
     ,"      (if (> (count found) 0)"
     ,"        (recur found)"
     ,"        ty))"
-    ,"    (if (is-fun? ty)"
-    ,"      (let [ps (fun-params ty)"
+    ,"    (if (is_fun? ty)"
+    ,"      (let [ps (fun_params ty)"
     ,"            nps (loop [i 0 acc (vector)]"
     ,"                  (if (>= i (count ps)) acc"
     ,"                    (do (push acc (get ps i)) (recur (+ i 1) acc))))]"
-    ,"        (T-Fun nps (fun-ret ty)))"
+    ,"        (T_Fun nps (fun_ret ty)))"
     ,"      ty))"])
 
 w.emit(";; ====== Unification ======")
@@ -164,27 +164,27 @@ w.emit("")
 
 emit_defn("normalize", "[ty subst]",
     ["(loop [ty ty]"
-    ,"  (if (is-var? ty)"
-    ,"    (let [found (subst-get subst (var-id ty))]"
+    ,"  (if (is_var? ty)"
+    ,"    (let [found (subst_get subst (var_id ty))]"
     ,"      (if (> (count found) 0)"
     ,"        (recur found)"
     ,"        ty))"
     ,"      ty))"])
 
-emit_defn("occurs?", "[var-id ty subst]",
+emit_defn("occurs?", "[vid ty subst]",
     ["(let [ty (normalize ty subst)]"
-    ,"  (if (is-var? ty)"
-    ,"    (= (var-id ty) var-id)"
-    ,"    (if (is-fun? ty)"
-    ,"      (loop [i 0 ps (fun-params ty)]"
+    ,"  (if (is_var? ty)"
+    ,"    (= (var_id ty) vid)"
+    ,"    (if (is_fun? ty)"
+    ,"      (loop [i 0 ps (fun_params ty)]"
     ,"        (if (>= i (count ps))"
-    ,"          (let [rr (normalize (fun-ret ty) subst)]"
-    ,"            (if (is-var? rr)"
-    ,"              (= (var-id rr) var-id)"
+    ,"          (let [rr (normalize (fun_ret ty) subst)]"
+    ,"            (if (is_var? rr)"
+    ,"              (= (var_id rr) vid)"
     ,"              false))"
     ,"          (let [p (normalize (get ps i) subst)]"
-    ,"            (if (is-var? p)"
-    ,"              (if (= (var-id p) var-id)"
+    ,"            (if (is_var? p)"
+    ,"              (if (= (var_id p) vid)"
     ,"                true"
     ,"                (recur (+ i 1) ps))"
     ,"              (recur (+ i 1) ps)))))"
@@ -194,22 +194,22 @@ emit_defn("occurs?", "[var-id ty subst]",
 emit_defn("unify", "[a b subst]",
     ["(let [a (normalize a subst)"
     ,"      b (normalize b subst)]"
-    ,"  (if (type-eq? a b)"
+    ,"  (if (type_eq? a b)"
     ,"    [true subst]"
-    ,"    (if (is-var? a)"
-    ,"      (if (occurs? (var-id a) b subst)"
+    ,"    (if (is_var? a)"
+    ,"      (if (occurs? (var_id a) b subst)"
     ,"        [false subst]"
-    ,"        [true (subst-insert subst (var-id a) b)])"
-    ,"      (if (is-var? b)"
-    ,"        (if (occurs? (var-id b) a subst)"
+    ,"        [true (subst_insert subst (var_id a) b)])"
+    ,"      (if (is_var? b)"
+    ,"        (if (occurs? (var_id b) a subst)"
     ,"          [false subst]"
-    ,"          [true (subst-insert subst (var-id b) a)])"
-    ,"        (if (is-fun? a)"
-    ,"          (if (is-fun? b)"
-    ,"            (if (not (= (count (fun-params a)) (count (fun-params b))))"
+    ,"          [true (subst_insert subst (var_id b) a)])"
+    ,"        (if (is_fun? a)"
+    ,"          (if (is_fun? b)"
+    ,"            (if (not (= (count (fun_params a)) (count (fun_params b))))"
     ,"              [false subst]"
     ,"              (loop [i 0 s subst]"
-    ,"                (if (>= i (count (fun-params a)))"
+    ,"                (if (>= i (count (fun_params a)))"
     ,"                  [true s]"
     ,"                  (let [res [true s]]"
     ,"                    (if (get res 0)"
@@ -221,11 +221,11 @@ emit_defn("unify", "[a b subst]",
 w.emit(";; ====== Free Variables ======")
 w.emit("")
 
-emit_defn("ty-free-vars", "[ty]",
-    ["(if (is-var? ty)"
-    ,"  (let [v (vector)] (do (push v (var-id ty)) v))"
-    ,"  (if (is-fun? ty)"
-    ,"    (let [ps (fun-params ty)"
+emit_defn("ty_free_vars", "[ty]",
+    ["(if (is_var? ty)"
+    ,"  (let [v (vector)] (do (push v (var_id ty)) v))"
+    ,"  (if (is_fun? ty)"
+    ,"    (let [ps (fun_params ty)"
     ,"          vars (vector)]"
     ,"      (do (loop [i 0]"
     ,"            (if (>= i (count ps)) 0"
@@ -241,30 +241,30 @@ emit_defn("ty-free-vars", "[ty]",
     ,"                vars))))"
     ,"    (let [v (vector)] v)))"])
 
-emit_defn("vec-contains?", "[v x]",
+emit_defn("vec_contains?", "[v x]",
     ["(loop [i 0]"
     ,"  (if (>= i (count v)) false"
     ,"    (if (= (get v i) x) true"
     ,"      (recur (+ i 1)))))"])
 
-emit_defn("vec-diff", "[from rem]",
+emit_defn("vec_diff", "[from rem]",
     ["(let [result (vector)]"
     ,"  (do (loop [i 0]"
     ,"        (if (>= i (count from)) 0"
     ,"          (let [x (get from i)]"
-    ,"            (if (vec-contains? rem x) 0"
+    ,"            (if (vec_contains? rem x) 0"
     ,"              (do (push result x) 0))"
     ,"            (recur (+ i 1)))))"
     ,"      result))"])
 
 # Collect free vars from all types in an environment
-emit_defn("env-free-vars", "[env]",
+emit_defn("env_free_vars", "[env]",
     ["(let [vars (vector)]"
     ,"  (do (loop [i 0]"
     ,"        (if (>= i (count env)) 0"
     ,"          (let [scheme (get (get env i) 1)"
     ,"                ty (get scheme 1)"
-    ,"                fv (ty-free-vars ty)]"
+    ,"                fv (ty_free_vars ty)]"
     ,"            (do (loop [j 0]"
     ,"                  (if (>= j (count fv)) 0"
     ,"                    (do (push vars (get fv j)) (recur (+ j 1)))))"
@@ -275,12 +275,12 @@ w.emit(";; ====== Generalize / Instantiate ======")
 w.emit("")
 
 emit_defn("generalize", "[env ty]",
-    ["(let [ty-vars (ty-free-vars ty)"
-    ,"      env-vars (env-free-vars env)"
-    ,"      gen-vars (vec-diff ty-vars env-vars)]"
+    ["(let [ty-vars (ty_free_vars ty)"
+    ,"      env-vars (env_free_vars env)"
+    ,"      gen-vars (vec_diff ty-vars env-vars)]"
     ,"  (let [v (vector)] (do (push v gen-vars) (do (push v ty) v))))"])
 
-emit_defn("mono-scheme", "[ty]",
+emit_defn("mono_scheme", "[ty]",
     ["(let [v (vector)] (do (push v (vector)) (do (push v ty) v)))"])
 
 emit_defn("instantiate", "[scheme counter]",
@@ -290,14 +290,14 @@ emit_defn("instantiate", "[scheme counter]",
     ,"  (do (loop [i 0]"
     ,"        (if (>= i (count vars)) 0"
     ,"          (let [id (get vars i)"
-    ,"                new-var (T-Var (+ counter i))]"
-    ,"            (do (subst-insert subst id new-var) (recur (+ i 1))))))"
-    ,"      (apply-subst subst ty)))"])
+    ,"                new-var (T_Var (+ counter i))]"
+    ,"            (do (subst_insert subst id new-var) (recur (+ i 1))))))"
+    ,"      (apply_subst subst ty)))"])
 
 w.emit(";; ====== Inference Context ======")
 w.emit("")
 
-emit_defn("set-at", "[v idx val]",
+emit_defn("set_at", "[v idx val]",
     ["(loop [i 0 acc (vector)]"
     ,"  (if (>= i (count v)) acc"
     ,"    (if (= i idx)"
@@ -306,89 +306,89 @@ emit_defn("set-at", "[v idx val]",
 
 w.emit("")
 
-# Fix fresh-var to use set-at and return new ctx
-emit_defn("fresh-var", "[ctx]",
+# Fix fresh_var to use set_at and return new ctx
+emit_defn("fresh_var", "[ctx]",
     ["(let [id (get ctx 0)"
-    ,"      new-ctx (set-at ctx 0 (+ id 1))]"
-    ,"  (T-Var id))"])
+    ,"      new-ctx (set_at ctx 0 (+ id 1))]"
+    ,"  (T_Var id))"])
 
-emit_defn("make-ctx", "[]",
+emit_defn("make_ctx", "[]",
     ["(let [v (vector)] (do (push v 0) (do (push v (vector)) v)))"])
 # ctx = [var-counter, constraints-vec]
 
-emit_defn("ctx-add-constraint", "[ctx a b]",
+emit_defn("ctx_add_constraint", "[ctx a b]",
     ["(let [c (vector)]"
     ,"  (do (push c a) (do (push c b) (do (push (get ctx 1) c) (get ctx 1)))))"])
 
 w.emit(";; ====== Builtin Environment ======")
 w.emit("")
 
-# Simple approach: call env-insert once per builtin in a sequential do block
+# Simple approach: call env_insert once per builtin in a sequential do block
 # Type aliases as helper defns
-w.emit("(defn i64-vec [] (let [v (vector)] (do (push v (T-I64)) v)))")
-w.emit("(defn i64-i64 [] (let [v (vector)] (do (push v (T-I64)) (do (push v (T-I64)) v))))")
-w.emit("(defn i64-i64-i64 [] (let [v (vector)] (do (push v (T-I64)) (do (push v (T-I64)) (do (push v (T-I64)) v)))))")
-w.emit("(defn bool-vec [] (let [v (vector)] (do (push v (T-Bool)) v)))")
-w.emit("(defn empty-vec [] (vector))")
+w.emit("(defn i64_vec [] (let [v (vector)] (do (push v (T_I64)) v)))")
+w.emit("(defn i64_i64 [] (let [v (vector)] (do (push v (T_I64)) (do (push v (T_I64)) v))))")
+w.emit("(defn i64_i64-i64 [] (let [v (vector)] (do (push v (T_I64)) (do (push v (T_I64)) (do (push v (T_I64)) v)))))")
+w.emit("(defn bool_vec [] (let [v (vector)] (do (push v (T_Bool)) v)))")
+w.emit("(defn empty_vec [] (vector))")
 w.emit("")
 
 # Build env by inserting each entry sequentially
-emit_defn("builtin-env", "[ctx]",
-    ["(let [arith (mono-scheme (T-Fun (i64-i64) (T-I64)))"
-    ,"      cmp   (mono-scheme (T-Fun (i64-i64) (T-Bool)))"
-    ,"      unary (mono-scheme (T-Fun (i64-vec) (T-I64)))"
-    ,"      unary-bool (mono-scheme (T-Fun (i64-vec) (T-Bool)))"
-    ,"      bin   (mono-scheme (T-Fun (i64-i64) (T-I64)))"
-    ,"      i64-t (mono-scheme (T-I64))"
-    ,"      void-fn (mono-scheme (T-Fun (empty-vec) (T-Void)))"
-    ,"      slice3 (mono-scheme (T-Fun (i64-i64-i64) (T-I64)))"
+emit_defn("builtin_env", "[ctx]",
+    ["(let [arith (mono_scheme (T_Fun (i64_i64) (T_I64)))"
+    ,"      cmp   (mono_scheme (T_Fun (i64_i64) (T_Bool)))"
+    ,"      unary (mono_scheme (T_Fun (i64_vec) (T_I64)))"
+    ,"      unary-bool (mono_scheme (T_Fun (i64_vec) (T_Bool)))"
+    ,"      bin   (mono_scheme (T_Fun (i64_i64) (T_I64)))"
+    ,"      i64-t (mono_scheme (T_I64))"
+    ,"      void-fn (mono_scheme (T_Fun (empty_vec) (T_Void)))"
+    ,"      slice3 (mono_scheme (T_Fun (i64_i64-i64) (T_I64)))"
     ,"      env (vector)]"
-    ,"  (do (env-insert env \"+\" arith)"
-    ,"      (env-insert env \"-\" arith)"
-    ,"      (env-insert env \"*\" arith)"
-    ,"      (env-insert env \"/\" arith)"
-    ,"      (env-insert env \"%\" arith)"
-    ,"      (env-insert env \"max\" arith)"
-    ,"      (env-insert env \"min\" arith)"
-    ,"      (env-insert env \"=\" cmp)"
-    ,"      (env-insert env \"!=\" cmp)"
-    ,"      (env-insert env \"<\" cmp)"
-    ,"      (env-insert env \">\" cmp)"
-    ,"      (env-insert env \"<=\" cmp)"
-    ,"      (env-insert env \">=\" cmp)"
-    ,"      (env-insert env \"inc\" unary)"
-    ,"      (env-insert env \"dec\" unary)"
-    ,"      (env-insert env \"abs\" unary)"
-    ,"      (env-insert env \"factorial\" unary)"
-    ,"      (env-insert env \"fib\" unary)"
-    ,"      (env-insert env \"even?\" unary-bool)"
-    ,"      (env-insert env \"odd?\" unary-bool)"
-    ,"      (env-insert env \"zero?\" unary-bool)"
-    ,"      (env-insert env \"pos?\" unary-bool)"
-    ,"      (env-insert env \"neg?\" unary-bool)"
-    ,"      (env-insert env \"not\" (mono-scheme (T-Fun (bool-vec) (T-Bool))))"
-    ,"      (env-insert env \"println\" unary)"
-    ,"      (env-insert env \"print\" unary)"
-    ,"      (env-insert env \"print-str\" unary)"
-    ,"      (env-insert env \"str-concat\" bin)"
-    ,"      (env-insert env \"str-get\" bin)"
-    ,"      (env-insert env \"str-slice\" slice3)"
-    ,"      (env-insert env \"str-index-of\" bin)"
-    ,"      (env-insert env \"str-starts-with?\" bin)"
-    ,"      (env-insert env \"str-ends-with?\" bin)"
-    ,"      (env-insert env \"count\" unary)"
-    ,"      (env-insert env \"first\" unary)"
-    ,"      (env-insert env \"last\" unary)"
-    ,"      (env-insert env \"get\" bin)"
-    ,"      (env-insert env \"push\" bin)"
-    ,"      (env-insert env \"vector\" (mono-scheme (T-Fun (empty-vec) (T-I64))))"
-    ,"      (env-insert env \"slurp\" unary)"
-    ,"      (env-insert env \"spit\" bin)"
-    ,"      (env-insert env \"exit\" void-fn)"
-    ,"      (env-insert env \"bars_system\" unary)"
-    ,"      (env-insert env \"args-count\" (mono-scheme (T-Fun (empty-vec) (T-I64))))"
-    ,"      (env-insert env \"args-get\" unary)"
-    ,"      (env-insert env \"nil\" i64-t)"
+    ,"  (do (env_insert env \"+\" arith)"
+    ,"      (env_insert env \"-\" arith)"
+    ,"      (env_insert env \"*\" arith)"
+    ,"      (env_insert env \"/\" arith)"
+    ,"      (env_insert env \"%\" arith)"
+    ,"      (env_insert env \"max\" arith)"
+    ,"      (env_insert env \"min\" arith)"
+    ,"      (env_insert env \"=\" cmp)"
+    ,"      (env_insert env \"!=\" cmp)"
+    ,"      (env_insert env \"<\" cmp)"
+    ,"      (env_insert env \">\" cmp)"
+    ,"      (env_insert env \"<=\" cmp)"
+    ,"      (env_insert env \">=\" cmp)"
+    ,"      (env_insert env \"inc\" unary)"
+    ,"      (env_insert env \"dec\" unary)"
+    ,"      (env_insert env \"abs\" unary)"
+    ,"      (env_insert env \"factorial\" unary)"
+    ,"      (env_insert env \"fib\" unary)"
+    ,"      (env_insert env \"even?\" unary-bool)"
+    ,"      (env_insert env \"odd?\" unary-bool)"
+    ,"      (env_insert env \"zero?\" unary-bool)"
+    ,"      (env_insert env \"pos?\" unary-bool)"
+    ,"      (env_insert env \"neg?\" unary-bool)"
+    ,"      (env_insert env \"not\" (mono_scheme (T_Fun (bool_vec) (T_Bool))))"
+    ,"      (env_insert env \"println\" unary)"
+    ,"      (env_insert env \"print\" unary)"
+    ,"      (env_insert env \"print-str\" unary)"
+    ,"      (env_insert env \"str-concat\" bin)"
+    ,"      (env_insert env \"str-get\" bin)"
+    ,"      (env_insert env \"str-slice\" slice3)"
+    ,"      (env_insert env \"str-index-of\" bin)"
+    ,"      (env_insert env \"str-starts-with?\" bin)"
+    ,"      (env_insert env \"str-ends-with?\" bin)"
+    ,"      (env_insert env \"count\" unary)"
+    ,"      (env_insert env \"first\" unary)"
+    ,"      (env_insert env \"last\" unary)"
+    ,"      (env_insert env \"get\" bin)"
+    ,"      (env_insert env \"push\" bin)"
+    ,"      (env_insert env \"vector\" (mono_scheme (T_Fun (empty_vec) (T_I64))))"
+    ,"      (env_insert env \"slurp\" unary)"
+    ,"      (env_insert env \"spit\" bin)"
+    ,"      (env_insert env \"exit\" void-fn)"
+    ,"      (env_insert env \"bars_system\" unary)"
+    ,"      (env_insert env \"args-count\" (mono_scheme (T_Fun (empty_vec) (T_I64))))"
+    ,"      (env_insert env \"args-get\" unary)"
+    ,"      (env_insert env \"nil\" i64-t)"
     ,"      ;; do removed from builtin — it's a special form"
     ,"      env))"])
 # 56 do-blocks above — verified: count them and add 2 close parens for let+defn=58
@@ -404,76 +404,76 @@ emit_defn("builtin-env", "[ctx]",
 w.emit(";; ====== AST Helpers ======")
 w.emit("")
 
-emit_defn("ast-tag", "[x]", ["(get x 0)"])
-emit_defn("ast-val", "[x]", ["(get x 1)"])
-emit_defn("is-atom?", "[x]", ["(< (ast-tag x) 10)"])
-emit_defn("contains-tag?", "[v tag]",
+emit_defn("ast_tag", "[x]", ["(get x 0)"])
+emit_defn("ast_val", "[x]", ["(get x 1)"])
+emit_defn("is_atom?", "[x]", ["(< (ast_tag x) 10)"])
+emit_defn("contains_tag?", "[v tag]",
     ["(loop [i 0]"
     ,"  (if (>= i (count v)) false"
-    ,"    (if (= (ast-tag (get v i)) tag) true"
+    ,"    (if (= (ast_tag (get v i)) tag) true"
     ,"      (recur (+ i 1)))))"])
 
 w.emit(";; ====== Error Reporting ======")
 w.emit("")
 
-emit_defn("type-error", "[msg]",
-    ["(do (println (str-concat \"Type error: \" msg)) (exit 1) (T-Void))"])
+emit_defn("type_error", "[msg]",
+    ["(do (println (str-concat \"Type error: \" msg)) (exit 1) (T_Void))"])
 
 w.emit(";; ====== INFER-EXPR (core recursive function) ======")
 w.emit("")
 
-w.emit(";; infer-expr returns [type, ctx]")
+w.emit(";; infer_expr returns [type, ctx]")
 w.emit(";; Handles: atoms (0=num, 1=sym, 2=str, 3=kw, 4=nil, 5=bool)")
 w.emit(";;          special forms: 10=defn, 11=let, 12=if, 13=do, 14=loop, 15=recur")
 w.emit(";;          regular lists: function calls")
 
-emit_defn("infer-expr", "[env ctx expr]",
-    ["(if (is-atom? expr)"
-    ,"  (let [tag (ast-tag expr)]"
+emit_defn("infer_expr", "[env ctx expr]",
+    ["(if (is_atom? expr)"
+    ,"  (let [tag (ast_tag expr)]"
     ,"    (cond"
-    ,"      (= tag 0) [(T-I64) ctx]"
-    ,"      (= tag 1) (let [name (ast-val expr)"
-    ,"                      found (env-lookup env name)]"
+    ,"      (= tag 0) [(T_I64) ctx]"
+    ,"      (= tag 1) (let [name (ast_val expr)"
+    ,"                      found (env_lookup env name)]"
     ,"                  (if (> (count found) 0)"
-    ,"                    [(apply-subst (vector) (get found 1)) ctx]"
-    ,"                    [(type-error (str-concat \"undefined variable: \" name)) ctx]))"
-    ,"      (= tag 2) [(T-Str) ctx]"
-    ,"      (= tag 3) [(T-Str) ctx]"
-    ,"      (= tag 4) [(T-Void) ctx]"
-    ,"      (= tag 5) [(T-Bool) ctx]"
-    ,"      :else     [(type-error \"unknown atom tag\") ctx]))"
-    ,"  (let [tag (ast-tag (get expr 0))]"
+    ,"                    [(apply_subst (vector) (get found 1)) ctx]"
+    ,"                    [(type_error (str-concat \"undefined variable: \" name)) ctx]))"
+    ,"      (= tag 2) [(T_Str) ctx]"
+    ,"      (= tag 3) [(T_Str) ctx]"
+    ,"      (= tag 4) [(T_Void) ctx]"
+    ,"      (= tag 5) [(T_Bool) ctx]"
+    ,"      :else     [(type_error \"unknown atom tag\") ctx]))"
+    ,"  (let [tag (ast_tag (get expr 0))]"
     ,"    (cond"
     ,"      (= tag 10) (let [name-sym (get expr 1)"
-    ,"                            name (ast-val name-sym)"
+    ,"                            name (ast_val name-sym)"
     ,"                            params (get expr 2)"
     ,"                            body (get expr 3)]"
     ,"                        (do (loop [i 0]"
     ,"                              (if (>= i (count params)) 0"
     ,"                                (let [p (get params i)"
-    ,"                                      pname (ast-val p)]"
-    ,"                                  (do (env-insert env pname (mono-scheme (fresh-var ctx)))"
+    ,"                                      pname (ast_val p)]"
+    ,"                                  (do (env_insert env pname (mono_scheme (fresh_var ctx)))"
     ,"                                      (recur (+ i 1))))))"
     ,"                            (let [param-tys (loop [i 0 acc (vector)]"
     ,"                                              (if (>= i (count params)) acc"
-    ,"                                                (let [found (env-lookup env (ast-val (get params i)))]"
+    ,"                                                (let [found (env_lookup env (ast_val (get params i)))]"
     ,"                                                  (if (> (count found) 0)"
     ,"                                                    (do (push acc (get found 1)) (recur (+ i 1) acc))"
     ,"                                                    (recur (+ i 1) acc)))))"
-    ,"                                  res (infer-expr env ctx body)"
+    ,"                                  res (infer_expr env ctx body)"
     ,"                                  body-ty (get res 0)"
     ,"                                  ctx (get res 1)]"
-    ,"                              (let [fn-ty (T-Fun param-tys body-ty)]"
-    ,"                                (do (env-insert env name (mono-scheme fn-ty))"
-    ,"                                    [(T-Void) ctx])))))"
-    ,"      (= tag 11) (infer-let env ctx expr)"
-    ,"      (= tag 12) (infer-if env ctx expr)"
-    ,"      (= tag 13) (infer-do env ctx expr)"
-    ,"      (= tag 14) (infer-loop env ctx expr)"
-    ,"      (= tag 15) (infer-recur env ctx expr)"
-    ,"      (= tag 17) (infer-match env ctx expr)"
-    ,"      (= tag 22) (infer-quote env ctx expr)"
-    ,"      :else      (infer-call env ctx expr))))"])
+    ,"                              (let [fn-ty (T_Fun param-tys body-ty)]"
+    ,"                                (do (env_insert env name (mono_scheme fn-ty))"
+    ,"                                    [(T_Void) ctx])))))"
+    ,"      (= tag 11) (infer_let env ctx expr)"
+    ,"      (= tag 12) (infer_if env ctx expr)"
+    ,"      (= tag 13) (infer_do env ctx expr)"
+    ,"      (= tag 14) (infer_loop env ctx expr)"
+    ,"      (= tag 15) (infer_recur env ctx expr)"
+    ,"      (= tag 17) (infer_match env ctx expr)"
+    ,"      (= tag 22) (infer_quote env ctx expr)"
+    ,"      :else      (infer_call env ctx expr))))"])
 
 w.emit(";; ====== Special Form Handlers ======")
 w.emit("")
@@ -481,167 +481,167 @@ w.emit("")
 # defn: [10, name-sym, params-vec, body, ret-type-or-nil]
 
 
-# Old version (problematic ordering): param-tys computed after infer-expr
-# New version: param-tys computed BEFORE infer-expr consumes func-env
+# Old version (problematic ordering): param-tys computed after infer_expr
+# New version: param-tys computed BEFORE infer_expr consumes func-env
 
 # let: [11, [[name-sym, val], ...], body]
-emit_defn("infer-let", "[env ctx expr]",
+emit_defn("infer_let", "[env ctx expr]",
     ["(let [bindings (get expr 1)"
     ,"      n (count bindings)"
     ,"      body (get expr 2)]"
     ,"  (loop [i 0 env env ctx ctx]"
     ,"    (if (>= i n)"
-    ,"      (infer-expr env ctx body)"
+    ,"      (infer_expr env ctx body)"
     ,"      (let [pair (get bindings i)"
-    ,"            name (ast-val (get pair 0))"
+    ,"            name (ast_val (get pair 0))"
     ,"            val-expr (get pair 1)"
-    ,"            res (infer-expr env ctx val-expr)"
+    ,"            res (infer_expr env ctx val-expr)"
     ,"            val-ty (get res 0)"
     ,"            ctx (get res 1)]"
-    ,"        (do (env-insert env name (mono-scheme val-ty))"
+    ,"        (do (env_insert env name (mono_scheme val-ty))"
     ,"            (recur (+ i 1) env ctx))))))"])
 
 # if: [12, cond, then, else]
-emit_defn("infer-if", "[env ctx expr]",
+emit_defn("infer_if", "[env ctx expr]",
     ["(let [cond-expr (get expr 1)"
     ,"      then-expr (get expr 2)"
     ,"      else-expr (get expr 3)"
-    ,"      res-cond (infer-expr env ctx cond-expr)"
+    ,"      res-cond (infer_expr env ctx cond-expr)"
     ,"      cond-ty (get res-cond 0)"
     ,"      ctx (get res-cond 1)"
-    ,"      res-then (infer-expr env ctx then-expr)"
+    ,"      res-then (infer_expr env ctx then-expr)"
     ,"      then-ty (get res-then 0)"
     ,"      ctx (get res-then 1)"
-    ,"      res-else (infer-expr env ctx else-expr)"
+    ,"      res-else (infer_expr env ctx else-expr)"
     ,"      else-ty (get res-else 0)"
     ,"      ctx (get res-else 1)]"
-    ,"  (do (ctx-add-constraint ctx cond-ty (T-Bool))"
-    ,"      (ctx-add-constraint ctx then-ty else-ty)"
+    ,"  (do (ctx_add_constraint ctx cond-ty (T_Bool))"
+    ,"      (ctx_add_constraint ctx then-ty else-ty)"
     ,"      [then-ty ctx]))"])
 
 # do: [13, expr1, expr2, ...]
-emit_defn("infer-do", "[env ctx expr]",
+emit_defn("infer_do", "[env ctx expr]",
     ["(let [n (count expr)]"
-    ,"  (loop [i 1 last-ty (T-Void) ctx ctx]"
+    ,"  (loop [i 1 last-ty (T_Void) ctx ctx]"
     ,"    (if (>= i n) [last-ty ctx]"
-    ,"      (let [res (infer-expr env ctx (get expr i))"
+    ,"      (let [res (infer_expr env ctx (get expr i))"
     ,"            ty (get res 0)"
     ,"            ctx (get res 1)]"
     ,"        (recur (+ i 1) ty ctx)))))"])
 
 # loop: [14, [[name-sym, val], ...], body]
-emit_defn("infer-loop", "[env ctx expr]",
+emit_defn("infer_loop", "[env ctx expr]",
     ["(let [bindings (get expr 1)"
     ,"      n (count bindings)"
     ,"      body (get expr 2)]"
     ,"  (loop [i 0 env env ctx ctx]"
     ,"    (if (>= i n)"
-    ,"      (infer-expr env ctx body)"
+    ,"      (infer_expr env ctx body)"
     ,"      (let [pair (get bindings i)"
-    ,"            name (ast-val (get pair 0))"
+    ,"            name (ast_val (get pair 0))"
     ,"            val-expr (get pair 1)"
-    ,"            res (infer-expr env ctx val-expr)"
+    ,"            res (infer_expr env ctx val-expr)"
     ,"            val-ty (get res 0)"
     ,"            ctx (get res 1)]"
-    ,"        (do (env-insert env name (mono-scheme val-ty))"
+    ,"        (do (env_insert env name (mono_scheme val-ty))"
     ,"            (recur (+ i 1) env ctx))))))"])
 
 # recur: [15, arg1, arg2, ...] — doesn't return
-emit_defn("infer-recur", "[env ctx expr]",
+emit_defn("infer_recur", "[env ctx expr]",
     ["(let [n (count expr)]"
     ,"  (loop [i 1 ctx ctx]"
-    ,"    (if (>= i n) [(fresh-var ctx) ctx]"
-    ,"      (let [res (infer-expr env ctx (get expr i))"
+    ,"    (if (>= i n) [(fresh_var ctx) ctx]"
+    ,"      (let [res (infer_expr env ctx (get expr i))"
     ,"            ctx (get res 1)]"
     ,"        (recur (+ i 1) ctx)))))"])
 
 # match: [17, matched-expr, [pattern, body], ...]
-emit_defn("infer-match", "[env ctx expr]",
+emit_defn("infer_match", "[env ctx expr]",
     ["(let [matched (get expr 1)"
     ,"      n (count expr)"
-    ,"      res-mat (infer-expr env ctx matched)"
+    ,"      res-mat (infer_expr env ctx matched)"
     ,"      mat-ty (get res-mat 0)"
     ,"      ctx (get res-mat 1)"
-    ,"      result-ty (fresh-var ctx)]"
+    ,"      result-ty (fresh_var ctx)]"
     ,"  (loop [i 2 ctx ctx]"
     ,"    (if (>= i n) [result-ty ctx]"
     ,"      (let [arm (get expr i)"
     ,"            pattern (get arm 0)"
     ,"            body (get arm 1)"
     ,"            arm-env env]"
-    ,"        (do (infer-pattern pattern arm-env ctx)"
-    ,"            (let [res (infer-expr arm-env ctx body)"
+    ,"        (do (infer_pattern pattern arm-env ctx)"
+    ,"            (let [res (infer_expr arm-env ctx body)"
     ,"                  arm-ty (get res 0)"
     ,"                  ctx (get res 1)]"
-    ,"              (do (ctx-add-constraint ctx result-ty arm-ty)"
+    ,"              (do (ctx_add_constraint ctx result-ty arm-ty)"
     ,"                  (recur (+ i 1) ctx))))))))"])
 
 # Simple pattern binding
-emit_defn("infer-pattern", "[pattern env ctx]",
-    ["(if (is-atom? pattern)"
-    ,"  (let [tag (ast-tag pattern)]"
+emit_defn("infer_pattern", "[pattern env ctx]",
+    ["(if (is_atom? pattern)"
+    ,"  (let [tag (ast_tag pattern)]"
     ,"    (if (= tag 1)"  # symbol — binding
-    ,"      (env-insert env (ast-val pattern) (mono-scheme (fresh-var ctx)))"
+    ,"      (env_insert env (ast_val pattern) (mono_scheme (fresh_var ctx)))"
     ,"      0))"
     ,"  0)"])
 
 # quote: [22, expr]
-emit_defn("infer-quote", "[env ctx expr]",
-    ["[(T-Void) ctx]"])
+emit_defn("infer_quote", "[env ctx expr]",
+    ["[(T_Void) ctx]"])
 
 w.emit(";; ====== Function Call Inference ======")
 w.emit("")
 
 # Regular list: function call [head-expr, arg1, arg2, ...]
-emit_defn("infer-call", "[env ctx expr]",
+emit_defn("infer_call", "[env ctx expr]",
     ["(let [head (get expr 0)"
     ,"      n (count expr)]"
-    ,"  (if (is-atom? head)"
-    ,"    (let [tag (ast-tag head)]"
+    ,"  (if (is_atom? head)"
+    ,"    (let [tag (ast_tag head)]"
     ,"      (if (= tag 1)"  # symbol = named function call
-    ,"        (let [name (ast-val head)"
-    ,"              found (env-lookup env name)]"
+    ,"        (let [name (ast_val head)"
+    ,"              found (env_lookup env name)]"
     ,"          (if (> (count found) 0)"
     ,"            (let [scheme found"
     ,"                  fn-ty (get scheme 1)]"
-    ,"              (if (is-fun? fn-ty)"
-    ,"                (let [param-tys (fun-params fn-ty)"
-    ,"                      ret-ty (fun-ret fn-ty)]"
+    ,"              (if (is_fun? fn-ty)"
+    ,"                (let [param-tys (fun_params fn-ty)"
+    ,"                      ret-ty (fun_ret fn-ty)]"
     ,"                  (loop [i 1 ctx ctx]"
     ,"                    (if (>= i n) [ret-ty ctx]"
     ,"                      (let [arg (get expr i)"
-    ,"                            res (infer-expr env ctx arg)"
+    ,"                            res (infer_expr env ctx arg)"
     ,"                            arg-ty (get res 0)"
     ,"                            ctx (get res 1)"
     ,"                            param-idx (- i 1)]"
     ,"                        (if (< param-idx (count param-tys))"
-    ,"                          (do (ctx-add-constraint ctx arg-ty (get param-tys param-idx))"
+    ,"                          (do (ctx_add_constraint ctx arg-ty (get param-tys param-idx))"
     ,"                              (recur (+ i 1) ctx))"
     ,"                          (recur (+ i 1) ctx))))))"
     ,"                ;; Not a function type — allow with fresh result"
-    ,"                (let [ret-ty (fresh-var ctx)]"
+    ,"                (let [ret-ty (fresh_var ctx)]"
     ,"                  (loop [i 1 ctx ctx]"
     ,"                    (if (>= i n) [ret-ty ctx]"
-    ,"                      (let [res (infer-expr env ctx (get expr i))"
+    ,"                      (let [res (infer_expr env ctx (get expr i))"
     ,"                            ctx (get res 1)]"
     ,"                        (recur (+ i 1) ctx)))))))"
-    ,"            [(type-error (str-concat \"undefined function: \" name)) ctx]))"
+    ,"            [(type_error (str-concat \"undefined function: \" name)) ctx]))"
     ,"        ;; Non-symbol head (lambda call etc) — just infer args and return fresh"
-    ,"        (let [res (infer-expr env ctx head)"
+    ,"        (let [res (infer_expr env ctx head)"
     ,"              ctx (get res 1)"
-    ,"              ret-ty (fresh-var ctx)]"
+    ,"              ret-ty (fresh_var ctx)]"
     ,"          (loop [i 1 ctx ctx]"
     ,"            (if (>= i n) [ret-ty ctx]"
-    ,"              (let [res (infer-expr env ctx (get expr i))"
+    ,"              (let [res (infer_expr env ctx (get expr i))"
     ,"                    ctx (get res 1)]"
     ,"                (recur (+ i 1) ctx)))))))"
     ,"    ;; Head is a complex expression — same as non-symbol"
-    ,"    (let [res (infer-expr env ctx head)"
+    ,"    (let [res (infer_expr env ctx head)"
     ,"          ctx (get res 1)"
-    ,"          ret-ty (fresh-var ctx)]"
+    ,"          ret-ty (fresh_var ctx)]"
     ,"      (loop [i 1 ctx ctx]"
     ,"        (if (>= i n) [ret-ty ctx]"
-    ,"          (let [res (infer-expr env ctx (get expr i))"
+    ,"          (let [res (infer_expr env ctx (get expr i))"
     ,"                ctx (get res 1)]"
     ,"            (recur (+ i 1) ctx))))))"])
 
@@ -659,20 +659,20 @@ emit_defn("solve", "[ctx]",
     ,"            res (unify a b subst)]"
     ,"        (if (get res 0)"
     ,"          (recur (+ i 1) (get res 1))"
-    ,"          (let [err (str-concat \"type mismatch: \" (str-concat (type-str a) (str-concat \" vs \" (type-str b))))]"
+    ,"          (let [err (str-concat \"type mismatch: \" (str-concat (type_str a) (str-concat \" vs \" (type_str b))))]"
     ,"            (do (println (str-concat \"Type error: \" err)) [false subst])))))))"])
 
 w.emit(";; ====== Top-Level Inference ======")
 w.emit("")
 
-emit_defn("infer-program", "[ast-list]",
-    ["(let [ctx (make-ctx)"
-    ,"      env (builtin-env ctx)]"
+emit_defn("infer_program", "[ast-list]",
+    ["(let [ctx (make_ctx)"
+    ,"      env (builtin_env ctx)]"
     ,"  (loop [i 0 env env ctx ctx]"
     ,"    (if (>= i (count ast-list))"
     ,"      (solve ctx)"
     ,"      (let [expr (get ast-list i)"
-    ,"            res (infer-expr env ctx expr)"
+    ,"            res (infer_expr env ctx expr)"
     ,"            ty (get res 0)"
     ,"            ctx (get res 1)]"
     ,"        (recur (+ i 1) env ctx)))))"])
@@ -680,8 +680,8 @@ emit_defn("infer-program", "[ast-list]",
 w.emit(";; ====== Public API ======")
 w.emit("")
 
-emit_defn("type-check", "[ast-list]",
-    ["(let [result (infer-program ast-list)]"
+emit_defn("type_check", "[ast-list]",
+    ["(let [result (infer_program ast-list)]"
     ,"  (if (get result 0)"
     ,"    (do (println \"Type check passed\") 0)"
     ,"    (do (println \"Type check failed\") 1)))"])
