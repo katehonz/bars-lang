@@ -3,6 +3,7 @@
 (require "compiler/reader.brs" :as reader)
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/qbe.brs" :as qbe)
+(require "compiler/ownership.brs" :as own)
 (require "compiler/types.brs" :as types)
 
 (extern "bars_system" [cmd i64] -> i64)
@@ -34,6 +35,7 @@
   (let [source (slurp input-path)]
     (let [ast (reader/bars-read source)]
       (do (types/type_check ast)
+          (do (own/check_ownership ast)
           (let [hir-lines (hir/lower-program ast)]
         (let [ssa-vec (qbe/hir-to-qbe hir-lines)]
           (let [ssa-raw (join-lines ssa-vec)]
@@ -51,7 +53,7 @@
                                 (if (= cc-res 0)
                                   0
                                   (do (println "Link failed") 1))))))
-                        (do (println "QBE compilation failed") 1))))))))))))))
+                        (do (println "QBE compilation failed") 1)))))))))))))))
 
 (defn main []
   (let [args-count (args-count)]
