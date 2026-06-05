@@ -1,8 +1,10 @@
-# Bars — Пътна Карта (v5.0)
+# Bars — Пътна Карта (v6.0)
 
-> Актуална към: 2026-06-03  
-> Състояние: Фази 0–9 завършени. Фаза 10 в прогрес.  
-> Философия: Минимален core, богата екосистема.
+> Актуална към: 2026-06-05  
+> Състояние: Фази 0–11 завършени. Фаза 12 в прогрес.  
+> Философия: Следващите версии на компилатора се пишат на Bars.
+> 
+> Структура: `bootstrap/` — Rust bootstrap (замразен), `compiler/` — компилатор на Bars, `lib/` — stdlib
 
 ---
 
@@ -164,16 +166,16 @@ Bars е работещ компилатор за системен Lisp с owners
 ## Фаза 12: Self-Hosting 🚧
 
 - [x] Stage 0: Подготовка — string ops, CLI args, `exit` ✅
-- [x] Stage 1: Self-hosted Reader (`lib/reader.brs`) ✅
-- [x] Stage 2: Self-hosted HIR Lowering (`lib/hir.brs`) ✅
-- [x] Stage 3: Self-hosted QBE Codegen (`lib/qbe.brs`) ✅
-- [x] Stage 4: Self-hosted Build Pipeline (`lib/build.brs`) ✅
-- [x] Stage 5: Bootstrap — компилиране на `selfhost.brs` през Rust host toolchain ✅
+- [x] Stage 1: Self-hosted Reader (`compiler/reader.brs`) ✅
+- [x] Stage 2: Self-hosted HIR Lowering (`compiler/hir.brs`) ✅
+- [x] Stage 3: Self-hosted QBE Codegen (`compiler/codegen/qbe.brs`) ✅
+- [x] Stage 4: Self-hosted Build Pipeline (`compiler/build.brs`) ✅
+- [x] Stage 5: Bootstrap — компилиране през Rust host toolchain ✅
 - [ ] Stage 5a: Self-hosted компилаторът компилира произволен `.brs` файл
 - [ ] Stage 5b: Identity test — Rust и Bars компилатори произвеждат идентичен output
 - [ ] Stage 5c: Замяна на Rust host с Bars self-hosted в CI
 
-**Текущо състояние:** `bars build --backend cranelift selfhost.brs` произвежда работещ `selfhost_out` бинарен файл, който се изпълнява без segfault. Остава дебъгване на `compile-file` pipeline в self-hosted версията.
+**Текущо състояние:** `bars build --backend cranelift compiler/build.brs` произвежда работещ binary, който се изпълнява без segfault. Остава дебъгване на `compile-file` pipeline в self-hosted версията.
 
 ---
 

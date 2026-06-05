@@ -86,7 +86,7 @@ impl TargetTriple {
 pub fn find_runtime_obj(target: &TargetTriple) -> Result<std::path::PathBuf> {
     let manifest_dir = std::env!("CARGO_MANIFEST_DIR");
     if target.is_host() {
-        let path = std::path::PathBuf::from(format!("{}/runtime/bars_runtime.o", manifest_dir));
+        let path = std::path::PathBuf::from(format!("{}/../runtime/bars_runtime.o", manifest_dir));
         if path.exists() {
             return Ok(path);
         }
@@ -95,7 +95,7 @@ pub fn find_runtime_obj(target: &TargetTriple) -> Result<std::path::PathBuf> {
 
     // Опит 1: bars_runtime_<triple>.o
     let path = std::path::PathBuf::from(format!(
-        "{}/runtime/bars_runtime_{}.o",
+        "{}/../runtime/bars_runtime_{}.o",
         manifest_dir,
         target.triple.replace("-", "_")
     ));
@@ -106,7 +106,7 @@ pub fn find_runtime_obj(target: &TargetTriple) -> Result<std::path::PathBuf> {
     // Опит 2: bars_runtime_<arch>.o
     let arch = target.triple.split('-').next().unwrap_or(&target.triple);
     let path = std::path::PathBuf::from(format!(
-        "{}/runtime/bars_runtime_{}.o",
+        "{}/../runtime/bars_runtime_{}.o",
         manifest_dir, arch
     ));
     if path.exists() {
@@ -115,7 +115,7 @@ pub fn find_runtime_obj(target: &TargetTriple) -> Result<std::path::PathBuf> {
 
     bail!(
         "cross-compiled runtime за '{}' не е намерен.\n\
-         Компилирай: cc -c -o runtime/bars_runtime_{}.o runtime/bars_runtime.c\n\
+         Компилирай: cc -c -o ../runtime/bars_runtime_{}.o runtime/bars_runtime.c\n\
          или инсталирай cross toolchain.",
         target.triple,
         target.triple.replace("-", "_")

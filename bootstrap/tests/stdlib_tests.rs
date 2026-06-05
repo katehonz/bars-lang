@@ -1,9 +1,10 @@
 use std::process::Command;
 
 fn run_bars(file: &str) -> String {
+    let root = format!("{}/..", env!("CARGO_MANIFEST_DIR"));
     let output = Command::new("cargo")
         .args(["run", "--", "run", file])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(&root)
         .output()
         .expect("cargo run failed");
     let stdout = String::from_utf8_lossy(&output.stdout);

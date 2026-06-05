@@ -1,0 +1,36 @@
+[package]
+name = "bars"
+version = "0.1.0"
+edition = "2024"
+authors = ["Bars Contributors"]
+description = "Bars — системен Lisp с ownership"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+qbe = "4"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+thiserror = "2"
+rustyline = "14"
+cranelift-codegen = { version = "0.132.0", features = ["all-arch"] }
+cranelift-frontend = "0.132.0"
+cranelift-jit = "0.132.0"
+cranelift-module = "0.132.0"
+cranelift-native = "0.132.0"
+cranelift-object = "0.132.0"
+target-lexicon = "0.13"
+inkwell = { version = "0.5", features = ["llvm14-0"], optional = true }
+llvm-sys = { version = "140", features = ["prefer-dynamic"], optional = true }
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bars-pkg = { path = "../bars-pkg" }
+
+[features]
+default = []
+llvm-backend = ["inkwell", "llvm-sys"]
+
+[[bin]]
+name = "bars"
+path = "src/main.rs"

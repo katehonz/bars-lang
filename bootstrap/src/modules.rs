@@ -23,15 +23,15 @@ fn find_module_file(base: &Path, path_str: &str) -> Option<PathBuf> {
             current = dir.parent();
         }
 
-        // 2. Search in lib/ relative to manifest dir
+        // 2. Search in lib/ relative to workspace root (manifest_dir = bootstrap/)
         let manifest_dir = std::env!("CARGO_MANIFEST_DIR");
-        let lib_candidate = PathBuf::from(manifest_dir).join(candidate_str);
+        let lib_candidate = PathBuf::from(manifest_dir).join("..").join(candidate_str);
         if lib_candidate.exists() {
             return Some(lib_candidate);
         }
 
         // 3. Search in bars-pkg dependencies: target/bars-deps/*/src/
-        let deps_dir = PathBuf::from(manifest_dir).join("target/bars-deps");
+        let deps_dir = PathBuf::from(manifest_dir).join("../target/bars-deps");
         if let Ok(entries) = std::fs::read_dir(&deps_dir) {
             for entry in entries.flatten() {
                 let dep_src = entry.path().join("src").join(candidate_str);

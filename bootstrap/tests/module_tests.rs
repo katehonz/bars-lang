@@ -1,13 +1,19 @@
 use std::process::Command;
 
-fn bars_bin() -> String {
-    std::env::var("CARGO_BIN_EXE_bars")
-        .unwrap_or_else(|_| "./target/debug/bars".to_string())
+fn workspace_root() -> String {
+    format!("{}/..", env!("CARGO_MANIFEST_DIR"))
+}
+
+fn bars() -> Command {
+    let mut cmd = Command::new(std::env::var("CARGO_BIN_EXE_bars")
+        .unwrap_or_else(|_| "./target/debug/bars".to_string()));
+    cmd.current_dir(workspace_root());
+    cmd
 }
 
 #[test]
 fn test_require_core_inc() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_demo.brs"])
         .output()
         .unwrap();
@@ -21,7 +27,7 @@ fn test_require_core_inc() {
 
 #[test]
 fn test_require_module_with_internal_call() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_demo2.brs"])
         .output()
         .unwrap();
@@ -35,7 +41,7 @@ fn test_require_module_with_internal_call() {
 
 #[test]
 fn test_require_adt_constructors() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_adt.brs"])
         .output()
         .unwrap();
@@ -49,7 +55,7 @@ fn test_require_adt_constructors() {
 
 #[test]
 fn test_require_struct() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_struct.brs"])
         .output()
         .unwrap();
@@ -63,7 +69,7 @@ fn test_require_struct() {
 
 #[test]
 fn test_require_no_conflict() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_conflict.brs"])
         .output()
         .unwrap();
@@ -77,7 +83,7 @@ fn test_require_no_conflict() {
 
 #[test]
 fn test_nested_require() {
-    let out = Command::new(bars_bin())
+    let out = bars()
         .args(["run", "examples/module_nested.brs"])
         .output()
         .unwrap();

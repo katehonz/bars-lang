@@ -1,9 +1,13 @@
 use std::process::Command;
 
+fn workspace_root() -> String {
+    format!("{}/..", env!("CARGO_MANIFEST_DIR"))
+}
+
 fn bars() -> Command {
     let mut cmd = Command::new("cargo");
     cmd.args(["run", "--quiet", "--"]);
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
+    cmd.current_dir(workspace_root());
     cmd
 }
 

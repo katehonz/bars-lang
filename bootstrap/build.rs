@@ -1,12 +1,17 @@
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=runtime/bars_runtime.c");
-    println!("cargo:rerun-if-changed=runtime/bars_runtime.h");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let runtime_dir = format!("{}/../runtime", manifest_dir);
+
+    println!("cargo:rerun-if-changed={}/bars_runtime.c", runtime_dir);
+    println!("cargo:rerun-if-changed={}/bars_runtime.h", runtime_dir);
 
     // Compile C runtime to object file
+    let obj_path = format!("{}/bars_runtime.o", runtime_dir);
+    let src_path = format!("{}/bars_runtime.c", runtime_dir);
     let output = Command::new("cc")
-        .args(["-c", "-o", "runtime/bars_runtime.o", "runtime/bars_runtime.c"])
+        .args(["-c", "-o", &obj_path, &src_path])
         .args(["-I/usr/include"])
         .output()
         .expect("Failed to compile runtime");
@@ -19,8 +24,9 @@ fn main() {
     }
 
     // Create static library
+    let lib_path = format!("{}/libbars_runtime.a", runtime_dir);
     let output = Command::new("ar")
-        .args(["rcs", "runtime/libbars_runtime.a", "runtime/bars_runtime.o"])
+        .args(["rcs", &lib_path, &obj_path])
         .output()
         .expect("Failed to create static library");
 
@@ -31,7 +37,7 @@ fn main() {
         );
     }
 
-    println!("cargo:rustc-link-search=native=runtime");
+    println!("cargo:rustc-link-search=native={}", runtime_dir);
     println!("cargo:rustc-link-lib=static=bars_runtime");
     println!("cargo:rustc-link-lib=gc");
 }

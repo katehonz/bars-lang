@@ -1,8 +1,8 @@
 ;; Stage 4: Self-hosted build pipeline
 
-(require "lib/reader.brs" :as reader)
-(require "lib/hir.brs" :as hir)
-(require "lib/qbe.brs" :as qbe)
+(require "compiler/reader.brs" :as reader)
+(require "compiler/hir.brs" :as hir)
+(require "compiler/codegen/qbe.brs" :as qbe)
 
 (extern "bars_system" [cmd i64] -> i64)
 (extern "slurp" [path i64] -> i64)

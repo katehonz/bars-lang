@@ -19,4 +19,4 @@ examples:
 	cargo run -- build examples/ownership.brs
 
 install:
-	cargo install --path .
+	cargo install --path bootstrap

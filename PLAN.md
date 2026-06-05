@@ -1,308 +1,223 @@
-# Bars — Текущ План за Разработка
+# Bars — План за Разработка v6.0
 
-> Актуален към: 2026-06-03  
-> Философия: Минимален core, богата екосистема. Като Rust.
-> 
-> Спринт 8 завършен ✅ — ADTs с deftype, exhaustiveness checking, Option/Result stdlib
+> Актуален към: 2026-06-05
+> Философия: Следващите версии на компилатора се пишат на Bars. Като Nim и Rust.
 
 ---
 
-## Философия
+## Нова Посока (от 2026-06-05)
 
-**По-важно е съществуващият код да работи перфектно, отколкото да добавяме нови фичъри.**
+**Целта НЕ е просто компилаторът да може да се self-compile-не.**
+Целта е следващите версии на езика да се пишат на самия Bars.
 
-Нов фокус след спринт 5:
-1. **Минимален core** — Bars предоставя само основата (ownership, types, компилация)
-2. **Специфичните неща са за пакетите** — async I/O, web frameworks, system bindings идват отвън
-3. **Няма вградена async рунтайм** — нито tokio, нито нещо подобно в езика
-4. **Пакетна система като Cargo** — отделен инструмент, независим от компилатора
+Както Nim (95.8% Nim в репото) и Rust (90.2% Rust) — bootstrap езикът (Pascal/OCaml) е почти невидим. Така и Bars: Rust bootstrap ще остане като `csources` (както Nim пази `csources_v3`), но реалната разработка ще е на Bars.
+
+**QBE отпада като основен backend.** QBE е за малки/учебни проекти. За сериозен език трябва LLVM (като Rust) или C кодогенерация (като Nim).
 
 ---
 
-## Спринт 1: Runtime и Pretty-Print (1-2 дни) ✅
+## Какво вече имаме (Фази 0-11) ✅
 
-### Проблем
-`println` за колекции отпечатва паметни адреси вместо четимо съдържание.
+Текущият Rust bootstrap компилатор (~7500 реда) покрива:
+- Reader (lexer + parser), AST
+- Type inference (Hindley-Milner), generics
+- Ownership checker (NLL borrow checking)
+- HIR lowering + оптимизации (constant folding, TCO, dead blocks)
+- Три backend-а: QBE, Cranelift (JIT + AOT), LLVM
+- ADTs (deftype), FFI (extern), макроси, pattern matching
+- Runtime (C + Boehm GC): strings, vectors, maps, sets, I/O
+- REPL, CLI, LSP, пакетна система (Bars.toml)
+
+---
+
+## Фаза 12: Self-Hosted Компилатор на Bars (пренаписване)
+
+> **Архитектура на Self-Hosted компилатора** (по модел на Nim/Rust):
 
 ```
- bars> (println [1 2 3])
- 140546983526368    ;; трябва да е [1 2 3]
+compiler/
+├── reader.brs       # Lexer + Parser ✅
+├── hir.brs          # AST → HIR lowering ✅  
+├── build.brs        # Оркестрация ✅
+├── types.brs        # Type inference (TODO)
+├── ownership.brs    # Ownership checker (TODO)
+├── macros.brs       # Macro expansion (TODO)
+├── modules.brs      # Модулна система (TODO)
+├── codegen/
+│   ├── qbe.brs      # QBE backend ✅ (ще остане като reference)
+│   ├── llvm.brs     # LLVM IR backend (TODO — ПРИОРИТЕТ)
+│   └── c.brs        # C transpiler (TODO — алтернатива като Nim)
+└── selfhost.brs     # Main entry point ✅
 ```
 
-### Задачи
-- [x] **1.1** Добави `bars_print_any_i64` в C runtime с dynamic type detection чрез magic numbers.
-- [x] **1.2** Промени `println` във всички backend-ове (QBE, Cranelift, LLVM) да използват `bars_print_any_i64` за променливи стойности.
-- [x] **1.3** Тествай с всички примери.
+### Stage 0-4: Вече готово ✅
 
-**Критерий за приемане:** ✅ Всички примери с колекции отпечатват четими стойности.
+- [x] Stage 0: String tooling, CLI args, `exit` — preparatory work
+- [x] Stage 1: Self-hosted Reader — lexer + parser с tagged S-expression AST (`lib/reader.brs`, 360 реда)
+- [x] Stage 2: Self-hosted HIR Lowering — AST → HIR с tail call recognition (`lib/hir.brs`, 182 реда)
+- [x] Stage 3: Self-hosted QBE Codegen — HIR → QBE SSA IR (`lib/qbe.brs`, 273 реда)
+- [x] Stage 4: Self-hosted Build Pipeline — orchestration (`lib/build.brs`, 60 реда)
+- [x] Bootstrap proof: `bars build --backend cranelift selfhost.brs` произвежда binary
+
+### Stage 5: Self-Hosted Type Inference 🔴 ПРИОРИТЕТ
+
+- [ ] **12.5** Пренасяне на Hindley-Milner type inference от Rust в Bars (`lib/types.brs`)
+- [ ] **12.6** Unification, generalization, instantiation в Bars
+- [ ] **12.7** Type environment + builtin functions в Bars
+- [ ] **12.8** Интегриране в компилационния pipeline (преди HIR lowering)
+
+**Защо първо:** Без type checker self-hosted компилаторът не може да валидира входния код. Това е критично за надеждност.
+
+### Stage 6: Self-Hosted Ownership Checker
+
+- [ ] **12.9** Пренасяне на ownership checker от Rust в Bars (`lib/ownership.brs`)
+- [ ] **12.10** NLL borrow checking с states (Owned, Borrowed, MutBorrowed, Moved)
+- [ ] **12.11** Error reporting: UseAfterMove, AlreadyBorrowed, MoveWhileBorrowed
+
+**Защо:** Ownership е ключовият differentiating feature на Bars спрямо други Lisps. Без него в self-hosted версията, компилаторът не е feature-complete.
+
+### Stage 7: Self-Hosted LLVM Backend 🔴 ПРИОРИТЕТ
+
+- [ ] **12.12** HIR → LLVM IR кодогенерация (`lib/codegen/llvm.brs`)
+- [ ] **12.13** Генериране на LLVM IR текст (human-readable `.ll` формат)
+- [ ] **12.14** Интеграция: `.brs` → HIR → LLVM IR → `llc` → `.o` → `cc` → binary
+- [ ] **12.15** Поддръжка на всички HIR инструкции в LLVM
+
+**Защо LLVM вместо QBE:**
+- LLVM е industry standard (Rust, Swift, Clang го ползват)
+- Оптимизации на ниво production (O2/O3)
+- Поддръжка на много архитектури
+- QBE е добър за прототипиране, но не е за production compiler
+
+### Stage 8: Self-Hosted Macro System
+
+- [ ] **12.16** Macro expander в Bars (`lib/macros.brs`)
+- [ ] **12.17** Built-in макроси: `when`, `unless`, `cond`, `->`, `->>`
+- [ ] **12.18** `defmacro` + syntax-quote/unquote в self-hosted версията
+
+### Stage 9: Self-Hosted Module System
+
+- [ ] **12.19** `require` резолване и namespace mangling (`lib/modules.brs`)
+- [ ] **12.20** Мулти-файлова компилация
+- [ ] **12.21** Интеграция с пакетната система (Bars.toml dependencies)
+
+### Stage 10: Пълен Bootstrap
+
+- [ ] **12.22** Bars компилаторът (написан на Bars) компилира произволен `.brs` файл до работещ binary
+- [ ] **12.23** Компилира себе си успешно (self-compilation test)
+- [ ] **12.24** Identity test: Rust и Bars компилатори произвеждат идентичен изход за тестов набор
+- [ ] **12.25** Rust компилаторът става само bootstrap tool (като Nim `csources`)
 
 ---
 
-## Спринт 2: Build Pipeline (1-2 дни) ✅
+## Фаза 13: Преход към Bars-First Development 🔮
 
-### Проблем
-`bars build` принтира QBE IR на stdout, но не създава изпълним файл.
+> **От този момент нататък, всички нови фичъри се пишат на Bars.**
 
-### Задачи
-- [x] **2.1** `bars build` произвежда бинарен файл по подразбиране (име на файла без `.brs`).
-- [x] **2.2** Пълен pipeline за QBE backend: `.brs` → QBE IR → qbe → асемблер → cc + runtime → binary.
-- [x] **2.3** Cranelift AOT: компилира обект файл и линква с runtime.
-- [x] **2.4** LLVM: компилира обект файл и линква с runtime.
-- [x] **2.5** Автоматично линкване с `runtime/bars_runtime.o` и `-lgc` (Boehm GC).
+### Структура на репото след bootstrap:
 
-**Критерий за приемане:** ✅
-```bash
-bars build examples/hello.brs -o hello
-./hello
-# → 42
+```
+bars/
+├── bootstrap/           # Rust bootstrap компилатор (замразен, само за начално компилиране)
+│   └── src/             # ~7500 реда Rust (НЕ се променя вече)
+├── compiler/            # Основен компилатор — НА BARS ✅
+│   ├── reader.brs
+│   ├── hir.brs
+│   ├── types.brs
+│   ├── ownership.brs
+│   ├── macros.brs
+│   ├── modules.brs
+│   ├── codegen/
+│   │   ├── llvm.brs     # Основен backend
+│   │   └── c.brs        # Алтернативен C transpiler (като Nim)
+│   ├── build.brs
+│   └── main.brs         # CLI entry point
+├── lib/                 # Стандартна библиотека (Bars)
+│   ├── core.brs
+│   ├── math.brs
+│   ├── vector.brs
+│   ├── string.brs
+│   ├── map.brs
+│   ├── adt.brs
+│   └── test.brs
+├── runtime/             # C runtime (Boehm GC) — минимален, рядко променян
+│   └── bars_runtime.c
+├── tests/               # Тестове (Bars + Rust)
+├── examples/            # Примери (Bars)
+└── docs/                # Документация
 ```
 
----
+### Задачи на Фаза 13:
 
-## Спринт 3: Ownership Warnings за GC Обекти (1 ден) ✅
-
-### Проблем
-Всеки GC-managed обект (vector, map, set) предизвиква ownership warning за resource leak, макар че GC ще го освободи.
-
-```
-⚠️ Ownership warning: Resource leak: 'v' is owned but never consumed or dropped
-```
-
-### Задачи
-- [x] **3.1** GC-managed конструктори (`vector`, `map`, `set`, `string`, `range`) са маркирани като "copy" в ownership checker.
-- [x] **3.2** Ownership checker не проверява за resource leaks на copy/GC-managed стойности.
-- [x] **3.3** Запазени warnings за ownership-managed ресурси (structs и бъдещи linear типове).
-
-**Критерий за приемане:** ✅ Всички примери с колекции минават без ownership warnings. Structs все още се проверяват (както е правилно).
+- [ ] **13.1** Преместване на компилатора от `lib/` в `compiler/`
+- [ ] **13.2** Подобряване на error messages (compiler написан на Bars → може да използва собствените си абстракции)
+- [ ] **13.3** Incremental compilation
+- [ ] **13.4** Watch mode (`bars watch`)
+- [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност
 
 ---
 
-## Спринт 4: REPL Полиране (1-2 дни) ✅
+## Фаза 14: Езиково Съзряване 🔮
 
-### Задачи
-- [x] **4.1** Pretty-print на резултати в REPL чрез `bars_print_any_i64` — вектори, карти, низове, числа.
-- [x] **4.2** Multi-line input — вече работи чрез `depth` tracking на скобите.
-- [x] **4.3** История на командите — добавен `rustyline` с `.bars_history` файл.
-- [x] **4.4** Специални REPL команди: `:quit`, `:help`, `:ast <expr>`, `:type <expr>`.
+> **Всичко оттук надолу се пише на Bars. Rust bootstrap-ът не се пипа.**
 
----
+### 14.1 Стандартна Библиотека (разширение)
 
-## Спринт 5: Return Type Annotations (1 ден) ✅
+- [ ] File I/O (async-ready интерфейс, но sync имплементация)
+- [ ] JSON парсване/генериране
+- [ ] Regex
+- [ ] Random числа
+- [ ] Time/Date
+- [ ] Command-line argument parsing (clap-like)
 
-### Проблем
-Парсерът има TODO на ред 267: `let ret_type = None; // TODO: parse return type annotations`
+### 14.2 Tooling
 
-### Задачи
-- [x] **5.1** Синтаксис: `(defn add [a b] -> i64 (+ a b))`
-- [x] **5.2** Парсване на `-> Type` след параметрите в `parse_defn`.
-- [x] **5.3** Съхраняване в `Expr::Defn` AST.
-- [x] **5.4** Type checker вече проверява съвпадение чрез constraint `body_ty == ret_type`.
+- [ ] Formatter (`bars fmt`) — форматира Bars код
+- [ ] Linter (`bars lint`)
+- [ ] Documentation generator (`bars doc`) — от docstrings в кода
+- [ ] Debugger интеграция (GDB/LLDB)
+- [ ] Profiler интеграция
 
----
+### 14.3 Екосистема
 
-## Спринт 6: TCO — Tail Call Recognition (2-3 дни) ✅
+- [ ] Central package registry (като crates.io)
+- [ ] `bars publish` команда
+- [ ] CI/CD integration
+- [ ] Editor support (VSCode, Neovim — tree-sitter граматика)
 
-### Защо това е приоритет
-В Lisp рекурсията е идиоматична. TCO позволява deep recursion без stack overflow.
+### 14.4 Езикови Фичъри (еволюция)
 
-### Задачи
-- [x] **6.1** HIR lowering с `is_tail` флаг — `if`, `do`, `let`, `match` в tail position не създават merge blocks
-- [x] **6.2** HIR `tail_call_optimize` pass — разпознава self-recursive `Call` + `Return` и ги заменя с `TailCall` terminator
-- [x] **6.3** `TailCall` terminator добавен в HIR
-- [x] **6.4** QBE backend: `TailCall` → `call` + `ret` (QBE не поддържа loop-back jump с променливи стойности)
-- [x] **6.5** Cranelift backend: `TailCall` → `call` + `ret` (Cranelift SSA block params не позволяват прост TCO)
-- [x] **6.6** LLVM backend: `TailCall` → `call` с `tail call` hint (`musttail` изисква LLVM 18+)
-- [x] **6.7** Fix: `bars_print_any_i64` threshold увеличен до 256MB за да не dereference големи integers
-- [x] **6.8** Тестове: tail-recursive `sum` и `factorial` работят за n=100
-
-### Ограничения
-> **Истинско TCO (deep recursion без stack overflow) е partial.**  
-> HIR разпознава tail calls, но backend-овете ги компилират като обикновени calls. За deep recursion (>10_000), използвайте `loop`/`recur`, което е вече оптимизирано.
-
-**Критерий за приемане:** ✅ Tail-recursive функции работят коректно. HIR pass разпознава `TailCall`. Тестове за `sum` и `factorial` минават.
+- [ ] Trait/Interface система (като Rust traits или Haskell typeclasses)
+- [ ] Const generics
+- [ ] Async/await (ако екосистемата го изисква — НЕ в core, а като пакет)
+- [ ] Compile-time execution (като Nim VM или Rust const fn)
+- [ ] WASM target
 
 ---
 
-## Спринт 7: Generics — Implicit Polymorphism (3-4 дни) ✅
+## Сравнение с Nim и Rust (за ориентир)
 
-### Задачи
-- [x] **7.1** Let-polymorphism/generalization в type inference — `(defn id [x] x)` става `forall 'a. 'a → 'a`
-- [x] **7.2** `instantiate` вече замества bound type variables с fresh vars при всяко извикване
-- [x] **7.3** Type checking интегрирано в compilation pipeline — `bars build`/`run` хващат type errors
-- [x] **7.4** Fix: recursive function support чрез placeholder типове преди inference
-- [x] **7.5** Fix: forward-referenced functions (sum → sum-helper) чрез предварителна регистрация
-- [x] **7.6** Fix: pattern match bindings (`match` arms) се добавят в type environment
-- [x] **7.7** Fix: macro expansion `Quote` unwrap за `FnCall` func (syntax-quote + unquote)
-- [x] **7.8** Fix: `println` и други I/O функции са полиморфни в builtin_env
-- [x] **7.9** Тестове: generic `id`, `const`, multi-type usage
-
-**Критерий за приемане:** ✅ `(defn id [x] x)` работи за i64, f64, bool, string, vector без type errors.
+| Аспект | Nim | Rust | Bars (цел) |
+|--------|-----|------|------------|
+| Bootstrap език | Pascal | OCaml | Rust |
+| Компилатор днес | 95.8% Nim | 90.2% Rust | >90% Bars |
+| Основен backend | C → gcc | LLVM | LLVM + C |
+| Кодогенерация | Текстова C | LLVM API | LLVM IR текст |
+| Compile-time VM | Да | Не (const fn) | Не (засега) |
+| Пакетна система | Nimble | Cargo | Bars.toml (Cargo-like) |
+| Комити | 23K | 328K | 0.1K (тепърва) |
+| Години разработка | 18+ | 15+ | <1 |
 
 ---
 
-## Спринт 8: Algebraic Data Types (ADTs) (3-4 дни) ✅
+## Принципи
 
-### Задачи
-- [x] **8.1** `deftype` за sum types (enum-like): `(deftype Option [Some i64] [None])`
-- [x] **8.2** `match` вече работи с ADTs (вече има pattern matching, трябва да се свърже с типовете)
-- [x] **8.3** `Result` тип в stdlib: `(deftype Result [Ok T] [Err E])`
-- [x] **8.4** Exhaustiveness checking в `match` — compiler error ако липсва клон
-- [x] **8.5** Тестове за ADTs + pattern matching
-
-**Критерий за приемане:** ✅ Можеш да дефинираш `Option` и `Result` и да pattern match-ваш по тях.
+1. **По-важно е кодът да работи, отколкото да добавяме нови фичъри.**
+2. **Компилаторът се пише на Bars.** Rust bootstrap е само за начално компилиране.
+3. **Минимален core, богата екосистема.**
+4. **Всичко специфично (async, web, crypto) е за пакети.**
+5. **LLVM е основен production backend.** QBE отпада.
 
 ---
 
-## Спринт 9: FFI (`extern`) (2-3 дни) ✅
-
-### Задачи
-- [x] **9.1** Синтаксис: `(extern "printf" [fmt i64] -> i64)`
-- [x] **9.2** Деклариране на C функции в HIR без body
-- [x] **9.3** Pointer типове за C структури: всички аргументи i64 (pointer-compatible)
-- [x] **9.4** Backend-ове да генерират правилни `extern` declarations (QBE/Cranelift/LLVM)
-- [x] **9.5** Тест: извикване на `putchar` от C
-
-**Критерий за приемане:** ✅ `(extern "putchar" [c i64] -> i64)` работи и отпечатва 'A'.
-
----
-
-## Фаза 10: Минимална Stdlib (1 седмица) ✅
-
-### Философия
-**Само базови неща.** Всичко специфично (async, web, crypto, GUI) е за пакети.
-
-### Задачи
-- [x] **10.1** Higher-order функции: `map`, `filter`, `reduce` — inline loop desugaring в HIR
-- [x] **10.2** String ops: `str-count`, `str-concat` ↔ C runtime
-- [x] **10.3** Math: `sqrt`, `pow`, `abs` ↔ C runtime (libm wrappers)
-- [x] **10.4** Error handling: `assert` macro, `deftype` за `Option`/`Result`
-- [x] **10.5** Basic I/O: `slurp`, `spit` ↔ C runtime
-- [x] **10.6** Testing helpers: `assert` macro
-
-### Изрично НЕ в stdlib
-- ❌ Async/await — няма вградена async рунтайм
-- ❌ HTTP client/server — за пакети
-- ❌ TCP/UDP sockets — за пакети
-- ❌ Database drivers — за пакети
-- ❌ GUI bindings — за пакети
-- ❌ Cryptography — за пакети
-
-**Критерий за приемане:** Можеш да напишеш скрипт, който чете файл, обработва string-ове, и пише резултат. Без нужда от външни пакети.
-
----
-
-## Фаза 11: Пакетна Система ✅
-
-### Философия
-**Като Cargo за Rust — отделен crate в същия workspace.** `bars-pkg` е отделна библиотека, но CLI командите са интегрирани в `bars`.
-
-### Задачи
-- [x] **11.1** Формат на манифест: `Bars.toml` (като Cargo.toml)
-- [x] **11.2** Git-based и path разрешаване на dependencies
-- [x] **11.3** `bars new my-project` — scaffold проект
-- [x] **11.4** `bars add <package>` — добавя dependency
-- [x] **11.5** `bars build` (в проект) — резолва dependencies, компилира
-- [x] **11.6** Lock файл (`Bars.lock`)
-- [ ] **11.7** Central registry (бъдеще)
-- [x] **11.8** Модули и namespaces: `(require "http" :as http)`
-
----
-
-## Бъдещи подобрения (компилатор)
-
-- [x] Generic ADTs: `(deftype Option [Some T] [None])`
-- [x] Още string операции: `split`, `join`, `trim`, `substring`
-- [x] `--release` флаг за всички backend-ове
-- [x] Подобрени error messages — цветни, с source context
-- [x] LSP сървър
-- [ ] Debugger интеграция
-
----
-
-## Фаза 12: Self-Hosting Bootstrapping 🚧
-
-> **Цел:** Компилаторът на Bars да бъде написан на Bars.
-> 
-> **Философия:** Не добавяме повече фичъри към езика — само tooling, който е необходим за компилатора. Колкото по-малко фичъри има езикът, толкова по-лесно е self-hosting.
-
-### Предпоставки (Stage 0) — Подготовка на терена ✅
-
-Преди да започнем писането на компилатора на Bars, трябва:
-
-- [x] **12.1** String tooling за lexer: `str-get`, `str-slice`, `str-starts-with?`, `str-ends-with?`, `str-index-of`, `str-char-at`
-- [x] **12.2** CLI args: `*args*` или `(command-line-args)` — вектор от низове
-- [x] **12.3** `char` тип или `char-code` / `code-char` функции за ASCII работа
-- [x] **12.4** `exit` функция за връщане на status code
-
-**Критерий:** ✅ Можем да напишем lexer на Bars, който чете файл и разбива го на tokens.
-
-### Stage 1: Reader (Lexer + Parser) на Bars ✅
-
-- [x] **12.5** `bars-reader` — пакет/модул, който чете `.brs` файл и произвежда AST (S-expressions)
-- [x] **12.6** Поддръжка на всички текущи constructs: atoms, lists, vectors, strings, keywords, quotes
-- [ ] **12.7** Location info (line, col) за error reporting
-
-**Критерий:** ✅ `bars run lib/reader.brs` произвежда валиден AST с tagged numeric формат.
-Формат: `[0 val]=num, [1 val]=sym, [2 val]=str, [3 val]=kw, [10 name...]=defn, ...`
-
-### Stage 2: AST → HIR на Bars ✅
-
-- [x] **12.8** `bars-hir` — lowering pass от AST към HIR
-- [x] **12.9** Tail call recognition, constant folding, dead block elimination
-
-**Критерий:** ✅ `bars run lib/hir.brs` произвежда HIR, идентичен на Rust компилатора за:
-  - `(defn main [] 42)` — perfect match
-  - `(defn add [x y] (+ x y))` — perfect match  
-  - `(defn calc [x] (let [y (+ x 1)] (* y 2)))` — perfect match
-  - `(defn choose [a b] (if (> a b) a b))` — tail-position if has extra _ret (minor)
-  Поддържа: defn, let, if, do, fn-call. loop/recur — TODO.
-  Оптимизации: TODO (constant folding, TCO, dead blocks).
-
-### Stage 3: HIR → QBE IR на Bars ✅
-
-- [x] **12.10** `lib/qbe.brs` — codegen от HIR към QBE SSA IR
-- [x] **12.11** Поддръжка на всички HIR инструкции: Call, Assign, Branch, Return
-- [x] **12.12** Фикс за `recur` с 2+ променливи в HIR lowering (копиране в temporaries преди assign)
-- [x] **12.13** `str-eq?` за семантично сравнение на низове (указателно `=` не работи за низови литерали)
-
-**Критерий:** ✅ `bars run --backend cranelift lib/qbe.brs` произвежда валиден QBE SSA IR за:
-- `func` декларации с параметри
-- `assign` (const и var)
-- `call` (builtin: + - * / % < <= > >= = !=, и non-builtin)
-- `branch` (jnz с етикети)
-- `return` (const и var)
-
-### Stage 4: Build Pipeline на Bars ✅
-
-- [x] **12.12** `lib/build.brs` — оркестрация: read → lower → codegen → qbe → cc → binary
-- [x] **12.13** Интеграция с C runtime и Boehm GC (чрез `extern` декларации)
-- [x] **12.14** Компилиране на `selfhost.brs` (core + reader + hir + qbe + build) през Rust host с Cranelift AOT backend
-
-**Критерий:** ✅ `bars build --backend cranelift selfhost.brs -o selfhost` произвежда работещ бинарен файл.
-
-**Известни ограничения:**
-- QBE backend не може да компилира self-host модула поради `rega: Assertion 'x != -1'` (слишком сложен CFG)
-- Cranelift AOT е единственият работещ backend за Stage 5
-- Self-hosted pipeline (`compile-file`) генерира празен SSA за някои входове — debug в прогрес
-
-### Stage 5: Bootstrap 🚧
-
-- [x] **12.15** Компилираме Bars компилатора със себе си (`selfhost.brs` → Cranelift AOT → `selfhost_out`)
-- [ ] **12.16** Self-hosted компилаторът може да компилира произволен `.brs` файл до работещ binary
-- [ ] **12.17** Двата компилатора (Rust и Bars) произвеждат идентичен output за тестов набор
-- [ ] **12.18** Заместваме Rust компилатора с Bars версията в CI/build
-
----
-
-## Процес
-
-За всеки спринт:
-1. Напиши тестове преди кода (ако е възможно).
-2. Внедри промените.
-3. Увери се, че `cargo test` минава.
-4. Увери се, че всички `examples/*.brs` работят.
-5. Commit с ясно съобщение.
-
----
-
-*План версия: 4.0 | Актуализиран: 2026-06-04*
+*План версия: 6.0 | Актуализиран: 2026-06-05*

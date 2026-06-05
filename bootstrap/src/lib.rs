@@ -123,7 +123,7 @@ pub fn compile_file_llvm(path: &std::path::Path, optimize: bool) -> Result<()> {
 
     // Link with runtime and produce binary
     let bin_file = format!("/tmp/{}_{}.out", stem, std::process::id());
-    let runtime_obj = format!("{}/runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
+    let runtime_obj = format!("{}/../runtime/bars_runtime.o", env!("CARGO_MANIFEST_DIR"));
     let link = std::process::Command::new("cc")
         .args([&obj_file, &runtime_obj, "-lgc", "-lm", "-o", &bin_file])
         .output()?;
