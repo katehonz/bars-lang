@@ -135,29 +135,31 @@
 )
 
 (defn apply-subst [subst ty]
-  (if (is-var? ty)
-    (let [found (subst-get subst (var-id ty))]
-      (if (> (count found) 0)
-        (apply-subst subst found)
-        ty))
-    (if (is-fun? ty)
-      (let [ps (fun-params ty)
-            nps (loop [i 0 acc (vector)]
-                  (if (>= i (count ps)) acc
-                    (do (push acc (apply-subst subst (get ps i))) (recur (+ i 1) acc))))]
-        (T-Fun nps (apply-subst subst (fun-ret ty))))
-      ty))
+  (loop [ty ty]
+    (if (is-var? ty)
+      (let [found (subst-get subst (var-id ty))]
+        (if (> (count found) 0)
+          (recur found)
+          ty))
+      (if (is-fun? ty)
+        (let [ps (fun-params ty)
+              nps (loop [i 0 acc (vector)]
+                    (if (>= i (count ps)) acc
+                      (do (push acc (apply-subst subst (get ps i))) (recur (+ i 1) acc))))]
+          (T-Fun nps (apply-subst subst (fun-ret ty))))
+        ty)))
 )
 
 ;; ====== Unification ======
 
 (defn normalize [ty subst]
-  (if (is-var? ty)
-    (let [found (subst-get subst (var-id ty))]
-      (if (> (count found) 0)
-        (normalize found subst)
-        ty))
-    ty)
+  (loop [ty ty]
+    (if (is-var? ty)
+      (let [found (subst-get subst (var-id ty))]
+        (if (> (count found) 0)
+          (recur found)
+          ty))
+      ty))
 )
 
 (defn occurs? [var-id ty subst]
@@ -165,13 +167,18 @@
     (if (is-var? ty)
       (= (var-id ty) var-id)
       (if (is-fun? ty)
-        (let [ps (fun-params ty)]
-          (loop [i 0]
-            (if (>= i (count ps))
-              (occurs? var-id (fun-ret ty) subst)
-              (if (occurs? var-id (get ps i) subst)
-                true
-                (recur (+ i 1))))))
+        (loop [i 0 ps (fun-params ty)]
+          (if (>= i (count ps))
+            (let [rr (normalize (fun-ret ty) subst)]
+              (if (is-var? rr)
+                (= (var-id rr) var-id)
+                false))
+            (let [p (normalize (get ps i) subst)]
+              (if (is-var? p)
+                (if (= (var-id p) var-id)
+                  true
+                  (recur (+ i 1) ps))
+                (recur (+ i 1) ps)))))
         false)))
 )
 
@@ -451,17 +458,17 @@
                   pname (ast-val p)]
               (do (env-insert env pname (mono-scheme (fresh-var ctx)))
                   (recur (+ i 1))))))
-        (let [placeholder (mono-scheme (fresh-var ctx))]
-          (do (env-insert env name placeholder)
-              (let [param-tys (loop [i 0 acc (vector)]
-                              (if (>= i (count params)) acc
-                                (let [found (env-lookup env (ast-val (get params i)))]
-                                  (if (> (count found) 0)
-                                    (do (push acc (get found 1)) (recur (+ i 1) acc))
-                                    (recur (+ i 1) acc)))))
-                    res (infer-expr env ctx body)
-                    body-ty (get res 0)
-                    ctx (get res 1)]
+        (let [param-tys (loop [i 0 acc (vector)]
+                          (if (>= i (count params)) acc
+                            (let [found (env-lookup env (ast-val (get params i)))]
+                              (if (> (count found) 0)
+                                (do (push acc (get found 1)) (recur (+ i 1) acc))
+                                (recur (+ i 1) acc)))))
+              res (infer-expr env ctx body)
+              body-ty (get res 0)
+              ctx (get res 1)]
+          (let [fn-ty (T-Fun param-tys body-ty)]
+            (do (env-insert env name (mono-scheme fn-ty))
                 [(T-Void) ctx])))))
 )
 
