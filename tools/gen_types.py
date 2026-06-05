@@ -465,7 +465,7 @@ emit_defn("infer-expr", "[env ctx expr]",
     ,"                                  ctx (get res 1)]"
     ,"                              (let [fn-ty (T-Fun param-tys body-ty)]"
     ,"                                (do (env-insert env name (mono-scheme fn-ty))"
-    ,"                                    [(T-Void) ctx])))))
+    ,"                                    [(T-Void) ctx])))))"
     ,"      (= tag 11) (infer-let env ctx expr)"
     ,"      (= tag 12) (infer-if env ctx expr)"
     ,"      (= tag 13) (infer-do env ctx expr)"
