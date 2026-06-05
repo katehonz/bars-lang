@@ -595,10 +595,13 @@ impl InferCtx {
     /// Solve accumulated constraints via unification
     pub fn solve(&mut self) -> Result<Substitution, TypeError> {
         let mut subst: Substitution = HashMap::new();
-        for Constraint(a, b) in std::mem::take(&mut self.constraints) {
+        for (i, Constraint(a, b)) in std::mem::take(&mut self.constraints).into_iter().enumerate() {
             let a_sub = apply_subst(&subst, &a);
             let b_sub = apply_subst(&subst, &b);
-            unify(&a_sub, &b_sub, &mut subst)?;
+            if let Err(e) = unify(&a_sub, &b_sub, &mut subst) {
+                eprintln!("DEBUG constraint #{} FAILED: {} == {}", i, a_sub, b_sub);
+                return Err(e);
+            }
         }
         Ok(subst)
     }

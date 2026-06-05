@@ -373,7 +373,7 @@
         (env-insert env "args-count" (mono-scheme (T-Fun (empty-vec) (T-I64))))
         (env-insert env "args-get" unary)
         (env-insert env "nil" i64-t)
-        (env-insert env "do" i64-t)
+        ;; do removed from builtin — it's a special form
         env))
 )
 

@@ -382,7 +382,7 @@ emit_defn("builtin-env", "[ctx]",
     ,"      (env-insert env \"args-count\" (mono-scheme (T-Fun (empty-vec) (T-I64))))"
     ,"      (env-insert env \"args-get\" unary)"
     ,"      (env-insert env \"nil\" i64-t)"
-    ;; "do" is a special form, not a builtin function
+    ,"      ;; do removed from builtin — it's a special form"
     ,"      env))"])
 # 56 do-blocks above — verified: count them and add 2 close parens for let+defn=58
 
