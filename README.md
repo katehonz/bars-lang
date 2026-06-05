@@ -4,7 +4,7 @@
 
 ![Bars — the Snow Leopard](bars-kotka.png)
 
-A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **QBE**, **Cranelift**, and **LLVM**.
+A systems programming language with **Clojure** syntax, **Rust**-like ownership (lighter), and compilation to native code via **Cranelift** and **LLVM**.
 
 ```clojure
 ;; examples/hello.brs
@@ -24,7 +24,7 @@ Hello, World!
 - **Clojure syntax** — parentheses naturally express scope and structure. Only `()` and `[]` brackets.
 - **Lightweight ownership** — NLL borrow checking, drop checking, no lifetime annotations.
 - **Type inference** — Hindley-Milner type system with `bars check --types`.
-- **Three backends** — QBE for fast AOT, Cranelift for JIT/REPL and fast AOT, LLVM for `--release`.
+- **Two backends** — Cranelift for JIT/REPL and fast AOT, LLVM for `--release`.
 - **Lambda functions** — anonymous `(fn [x] body)` with full pipeline support.
 - **Zero-cost FFI** — direct C ABI access through the runtime.
 - **GC when you want it** — stack + ownership + Boehm GC for complex data.
@@ -37,7 +37,6 @@ Hello, World!
 ### Prerequisites
 
 - Rust 1.70+ (for building the compiler)
-- `qbe` (AOT backend, installed at `~/.local/bin/qbe` or on PATH)
 - `libgc-dev` (Boehm GC for the runtime)
 - `cc` / `gcc` (for linking)
 
@@ -55,10 +54,7 @@ cargo build --release
 # Read and print AST
 bars read examples/hello.brs
 
-# Compile to QBE IR
-bars build examples/hello.brs
-
-# Compile and run (default QBE backend)
+# Compile and run (default Cranelift backend)
 bars run examples/math.brs
 
 # Compile and run with Cranelift backend
@@ -234,7 +230,7 @@ $ bars check --types examples/hello.brs
   (putchar 65))  ;; отпечатва 'A'
 ```
 
-Работи с QBE, Cranelift и LLVM — генерира правилни extern declarations.
+Работи с Cranelift и LLVM — генерира правилни extern declarations.
 
 ---
 
@@ -243,11 +239,11 @@ $ bars check --types examples/hello.brs
 | Command | Description |
 |---------|-------------|
 | `bars read <file>` | Parse and print AST |
-| `bars build <file>` | Compile to QBE IR via HIR (stdout) |
-| `bars build --backend cranelift <file>` | Compile via Cranelift to object file |
-| `bars build --backend llvm <file>` | Compile via LLVM to object file |
+| `bars build <file>` | Compile to binary via HIR |
+| `bars build --backend cranelift <file>` | Compile via Cranelift |
+| `bars build --backend llvm <file>` | Compile via LLVM |
 | `bars build --release <file>` | Release build with optimizations |
-| `bars run <file>` | Compile, link, and execute (default QBE) |
+| `bars run <file>` | Compile, link, and execute (default Cranelift) |
 | `bars run --backend cranelift <file>` | Compile, link, and execute (Cranelift) |
 | `bars run --backend llvm <file>` | Compile, link, and execute (LLVM) |
 | `bars repl` | Interactive Cranelift JIT session |
@@ -261,14 +257,22 @@ $ bars check --types examples/hello.brs
 
 ```
 .
-├── src/              # Compiler source (Rust)
+├── bootstrap/        # Rust bootstrap compiler
+│   ├── src/           # Compiler source (Rust)
 │   ├── reader/       # Lexer + Parser
 │   ├── ast/          # AST types
 │   ├── macro/        # Macro expansion
 │   ├── ownership/    # Ownership checker
 │   ├── types/        # Hindley-Milner type inference
 │   ├── hir/          # High-level IR (flattened)
-│   └── backends/     # QBE + Cranelift + LLVM backends
+│   └── backends/     # Cranelift + LLVM backends
+├── compiler/         # Self-hosted compiler (Bars)
+│   ├── reader.brs    # Lexer + Parser
+│   ├── hir.brs       # AST → HIR lowering
+│   ├── types.brs     # Type inference
+│   ├── ownership.brs # Ownership checker
+│   ├── build.brs     # Build pipeline
+│   └── codegen/      # LLVM backend
 ├── runtime/          # C runtime + Boehm GC
 ├── lib/              # Standard library (.brs)
 ├── examples/         # Example programs
@@ -282,7 +286,6 @@ $ bars check --types examples/hello.brs
 
 | Backend | Mode | Status |
 |---------|------|--------|
-| **QBE HIR** | Fast AOT debug/release | ✅ Working |
 | **Cranelift** | JIT / REPL / AOT | ✅ Working |
 | **LLVM** | Optimized release (--release) | ✅ Working |
 
@@ -317,8 +320,7 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 ## Architecture
 
 ```
-.brs → Reader → AST → Macro Expansion → Ownership Check → HIR → Backend → Native Code
-                                                                    ├── QBE IR → qbe → cc
+.brs → Reader → AST → Macro → Ownership → Types → HIR → Codegen → Native
                                                                     ├── Cranelift → cc
                                                                     └── LLVM IR → llc → cc
 ```
@@ -332,7 +334,7 @@ See [ROADMAP.md](ROADMAP.md) for the full plan.
 | Feature | Status |
 |---------|--------|
 | Reader (Lexer + Parser) | ✅ |
-| AST → HIR → QBE IR | ✅ |
+| AST → HIR → LLVM IR | ✅ |
 | Functions & recursion | ✅ |
 | Ownership checker | ✅ |
 | Runtime + Boehm GC | ✅ |
