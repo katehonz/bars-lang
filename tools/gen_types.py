@@ -444,7 +444,28 @@ emit_defn("infer-expr", "[env ctx expr]",
     ,"      :else     [(type-error \"unknown atom tag\") ctx]))"
     ,"  (let [tag (ast-tag (get expr 0))]"
     ,"    (cond"
-    ,"      (= tag 10) (infer-defn env ctx expr)"
+    ,"      (= tag 10) (let [name-sym (get expr 1)"
+    ,"                            name (ast-val name-sym)"
+    ,"                            params (get expr 2)"
+    ,"                            body (get expr 3)]"
+    ,"                        (do (loop [i 0]"
+    ,"                              (if (>= i (count params)) 0"
+    ,"                                (let [p (get params i)"
+    ,"                                      pname (ast-val p)]"
+    ,"                                  (do (env-insert env pname (mono-scheme (fresh-var ctx)))"
+    ,"                                      (recur (+ i 1))))))"
+    ,"                            (let [param-tys (loop [i 0 acc (vector)]"
+    ,"                                              (if (>= i (count params)) acc"
+    ,"                                                (let [found (env-lookup env (ast-val (get params i)))]"
+    ,"                                                  (if (> (count found) 0)"
+    ,"                                                    (do (push acc (get found 1)) (recur (+ i 1) acc))"
+    ,"                                                    (recur (+ i 1) acc)))))"
+    ,"                                  res (infer-expr env ctx body)"
+    ,"                                  body-ty (get res 0)"
+    ,"                                  ctx (get res 1)]"
+    ,"                              (let [fn-ty (T-Fun param-tys body-ty)]"
+    ,"                                (do (env-insert env name (mono-scheme fn-ty))"
+    ,"                                    [(T-Void) ctx])))))
     ,"      (= tag 11) (infer-let env ctx expr)"
     ,"      (= tag 12) (infer-if env ctx expr)"
     ,"      (= tag 13) (infer-do env ctx expr)"
@@ -458,29 +479,7 @@ w.emit(";; ====== Special Form Handlers ======")
 w.emit("")
 
 # defn: [10, name-sym, params-vec, body, ret-type-or-nil]
-emit_defn("infer-defn", "[env ctx expr]",
-    ["(let [name-sym (get expr 1)"
-    ,"      name (ast-val name-sym)"
-    ,"      params (get expr 2)"
-    ,"      body (get expr 3)]"
-    ,"  (do (loop [i 0]"
-    ,"        (if (>= i (count params)) 0"
-    ,"          (let [p (get params i)"
-    ,"                pname (ast-val p)]"
-    ,"            (do (env-insert env pname (mono-scheme (fresh-var ctx)))"
-    ,"                (recur (+ i 1))))))"
-    ,"      (let [param-tys (loop [i 0 acc (vector)]"
-    ,"                        (if (>= i (count params)) acc"
-    ,"                          (let [found (env-lookup env (ast-val (get params i)))]"
-    ,"                            (if (> (count found) 0)"
-    ,"                              (do (push acc (get found 1)) (recur (+ i 1) acc))"
-    ,"                              (recur (+ i 1) acc)))))"
-    ,"            res (infer-expr env ctx body)"
-    ,"            body-ty (get res 0)"
-    ,"            ctx (get res 1)]"
-    ,"        (let [fn-ty (T-Fun param-tys body-ty)]"
-    ,"          (do (env-insert env name (mono-scheme fn-ty))"
-    ,"              [(T-Void) ctx])))))"])
+
 
 # Old version (problematic ordering): param-tys computed after infer-expr
 # New version: param-tys computed BEFORE infer-expr consumes func-env
