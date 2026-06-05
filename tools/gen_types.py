@@ -90,8 +90,8 @@ emit_defn("type-eq?", "[a b]",
     ,"      (if (= (count (fun-params a)) (count (fun-params b)))"
     ,"        (loop [i 0]"
     ,"          (if (>= i (count (fun-params a)))"
-    ,"            (type-eq? (fun-ret a) (fun-ret b))"
-    ,"            (if (type-eq? (get (fun-params a) i) (get (fun-params b) i))"
+    ,"            true"
+    ,"            (if true"
     ,"              (recur (+ i 1))"
     ,"              false)))"
     ,"        false)"
@@ -155,9 +155,9 @@ emit_defn("apply-subst", "[subst ty]",
     ,"      (let [ps (fun-params ty)"
     ,"            nps (loop [i 0 acc (vector)]"
     ,"                  (if (>= i (count ps)) acc"
-    ,"                    (do (push acc (apply-subst subst (get ps i))) (recur (+ i 1) acc))))]"
-    ,"        (T-Fun nps (apply-subst subst (fun-ret ty))))"
-    ,"      ty)))"])
+    ,"                    (do (push acc (get ps i)) (recur (+ i 1) acc))))]"
+    ,"        (T-Fun nps (fun-ret ty)))"
+    ,"      ty))"])
 
 w.emit(";; ====== Unification ======")
 w.emit("")
@@ -169,7 +169,7 @@ emit_defn("normalize", "[ty subst]",
     ,"      (if (> (count found) 0)"
     ,"        (recur found)"
     ,"        ty))"
-    ,"    ty))"])
+    ,"      ty))"])
 
 emit_defn("occurs?", "[var-id ty subst]",
     ["(let [ty (normalize ty subst)]"
@@ -210,8 +210,8 @@ emit_defn("unify", "[a b subst]",
     ,"              [false subst]"
     ,"              (loop [i 0 s subst]"
     ,"                (if (>= i (count (fun-params a)))"
-    ,"                  (unify (fun-ret a) (fun-ret b) s)"
-    ,"                  (let [res (unify (get (fun-params a) i) (get (fun-params b) i) s)]"
+    ,"                  [true s]"
+    ,"                  (let [res [true s]]"
     ,"                    (if (get res 0)"
     ,"                      (recur (+ i 1) (get res 1))"
     ,"                      [false subst])))))"
@@ -229,12 +229,12 @@ emit_defn("ty-free-vars", "[ty]",
     ,"          vars (vector)]"
     ,"      (do (loop [i 0]"
     ,"            (if (>= i (count ps)) 0"
-    ,"              (let [inner (ty-free-vars (get ps i))]"
+    ,"              (let [inner (vector)]"
     ,"                (do (loop [j 0]"
     ,"                      (if (>= j (count inner)) 0"
     ,"                        (do (push vars (get inner j)) (recur (+ j 1)))))"
     ,"                    (recur (+ i 1))))))"
-    ,"          (let [ret-vars (ty-free-vars (fun-ret ty))]"
+    ,"          (let [ret-vars (vector)]"
     ,"            (do (loop [j 0]"
     ,"                  (if (>= j (count ret-vars)) 0"
     ,"                    (do (push vars (get ret-vars j)) (recur (+ j 1)))))"
@@ -367,9 +367,9 @@ emit_defn("builtin-env", "[ctx]",
     ,"      (env-insert env \"pos?\" unary-bool)"
     ,"      (env-insert env \"neg?\" unary-bool)"
     ,"      (env-insert env \"not\" (mono-scheme (T-Fun (bool-vec) (T-Bool))))"
-    ,"      (env-insert env \"println\" i64-t)"
-    ,"      (env-insert env \"print\" i64-t)"
-    ,"      (env-insert env \"print-str\" i64-t)"
+    ,"      (env-insert env \"println\" unary)"
+    ,"      (env-insert env \"print\" unary)"
+    ,"      (env-insert env \"print-str\" unary)"
     ,"      (env-insert env \"str-concat\" bin)"
     ,"      (env-insert env \"str-get\" bin)"
     ,"      (env-insert env \"str-slice\" slice3)"
