@@ -59,14 +59,18 @@ compiler/
 - [x] Stage 4: Self-hosted Build Pipeline — orchestration (`lib/build.brs`, 60 реда)
 - [x] Bootstrap proof: `bars build --backend cranelift selfhost.brs` произвежда binary
 
-### Stage 5: Self-Hosted Type Inference 🔴 ПРИОРИТЕТ
+### Stage 5: Self-Hosted Type Inference ✅
 
-- [ ] **12.5** Пренасяне на Hindley-Milner type inference от Rust в Bars (`lib/types.brs`)
-- [ ] **12.6** Unification, generalization, instantiation в Bars
-- [ ] **12.7** Type environment + builtin functions в Bars
+- [x] **12.5** Пренасяне на Hindley-Milner type inference от Rust в Bars (`compiler/types.brs`)
+- [x] **12.6** Unification, generalization, instantiation в Bars
+- [x] **12.7** Type environment + builtin functions в Bars
 - [ ] **12.8** Интегриране в компилационния pipeline (преди HIR lowering)
 
 **Защо първо:** Без type checker self-hosted компилаторът не може да валидира входния код. Това е критично за надеждност.
+
+**Статус:** ~680 реда, генериран чрез `tools/gen_types.py`. Компилира се с `BARS_SKIP_TYPECHECK=1` (bootstrap pattern — като Go/Rust/Nim).
+Бинарният файл работи. Интеграцията в build.brs е блокирана от Cranelift hyphen issue (`_m_types_var-id`).
+Всички self-recursive функции са конвертирани към `loop`/`recur`.
 
 ### Stage 6: Self-Hosted Ownership Checker
 
@@ -76,9 +80,9 @@ compiler/
 
 **Защо:** Ownership е ключовият differentiating feature на Bars спрямо други Lisps. Без него в self-hosted версията, компилаторът не е feature-complete.
 
-### Stage 7: Self-Hosted LLVM Backend 🔴 ПРИОРИТЕТ
+### Stage 7: Self-Hosted LLVM Backend 🔴 ПРИОРИТЕТ (следващ)
 
-- [ ] **12.12** HIR → LLVM IR кодогенерация (`lib/codegen/llvm.brs`)
+- [ ] **12.12** HIR → LLVM IR кодогенерация (`compiler/codegen/llvm.brs`)
 - [ ] **12.13** Генериране на LLVM IR текст (human-readable `.ll` формат)
 - [ ] **12.14** Интеграция: `.brs` → HIR → LLVM IR → `llc` → `.o` → `cc` → binary
 - [ ] **12.15** Поддръжка на всички HIR инструкции в LLVM
