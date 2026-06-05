@@ -87,7 +87,7 @@ emit_defn("check_expr", "[env expr]",
     ,"      (= tag 11) (check_let env expr)"
     ,"      (= tag 12) (check_if env expr)"
     ,"      (= tag 13) (check_do env expr)"
-    ,"      :else      (check_call env expr)))))"])
+    ,"      :else      (check_call env expr)))"])
 
 emit_defn("check_let", "[env expr]",
     ["(let [bindings (get expr 1)"
