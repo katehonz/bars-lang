@@ -7,6 +7,11 @@
 
 (defn state-tag [s] (get s 0))
 
+;; str-eq? — compare strings by content (not pointer)
+(defn str-eq? [a b]
+  (if (!= (count a) (count b)) false
+    (= (str-starts-with? a b) 1)))
+
 (defn S_Copy [] (let [v (vector)] (do (push v 0) v)))
 (defn S_Owned [] (let [v (vector)] (do (push v 1) v)))
 (defn S_Moved [] (let [v (vector)] (do (push v 2) v)))
@@ -48,7 +53,7 @@
         (if (< idx 0)
           (recur (- si 1) -1)
           (let [pair (get scope idx)]
-            (if (= (get pair 0) name)
+            (if (str-eq? (get pair 0) name)
               (get pair 1)
               (recur si (- idx 1)))))))))
 
@@ -125,40 +130,40 @@
           tag (ast-tag head)]
       (if (if (is-atom? head) (= tag 1) false)
         (let [name (ast-val head)]
-          (if (= name "+") true
-          (if (= name "-") true
-          (if (= name "*") true
-          (if (= name "/") true
-          (if (= name "%") true
-          (if (= name "=") true
-          (if (= name "!=") true
-          (if (= name "<") true
-          (if (= name ">") true
-          (if (= name "<=") true
-          (if (= name ">=") true
-          (if (= name "inc") true
-          (if (= name "dec") true
-          (if (= name "abs") true
-          (if (= name "max") true
-          (if (= name "min") true
-          (if (= name "not") true
-          (if (= name "even?") true
-          (if (= name "odd?") true
-          (if (= name "zero?") true
-          (if (= name "pos?") true
-          (if (= name "neg?") true
-          (if (= name "count") true
-          (if (= name "get") true
-          (if (= name "first") true
-          (if (= name "last") true
-          (if (= name "str-count") true
-          (if (= name "str-get") true
-          (if (= name "str-starts-with?") true
-          (if (= name "str-ends-with?") true
-          (if (= name "str-index-of") true
-          (if (= name "str-slice") true
-          (if (= name "int-str") true
-          (if (= name "vector") true
+          (if (str-eq? name "+") true
+          (if (str-eq? name "-") true
+          (if (str-eq? name "*") true
+          (if (str-eq? name "/") true
+          (if (str-eq? name "%") true
+          (if (str-eq? name "=") true
+          (if (str-eq? name "!=") true
+          (if (str-eq? name "<") true
+          (if (str-eq? name ">") true
+          (if (str-eq? name "<=") true
+          (if (str-eq? name ">=") true
+          (if (str-eq? name "inc") true
+          (if (str-eq? name "dec") true
+          (if (str-eq? name "abs") true
+          (if (str-eq? name "max") true
+          (if (str-eq? name "min") true
+          (if (str-eq? name "not") true
+          (if (str-eq? name "even?") true
+          (if (str-eq? name "odd?") true
+          (if (str-eq? name "zero?") true
+          (if (str-eq? name "pos?") true
+          (if (str-eq? name "neg?") true
+          (if (str-eq? name "count") true
+          (if (str-eq? name "get") true
+          (if (str-eq? name "first") true
+          (if (str-eq? name "last") true
+          (if (str-eq? name "str-count") true
+          (if (str-eq? name "str-get") true
+          (if (str-eq? name "str-starts-with?") true
+          (if (str-eq? name "str-ends-with?") true
+          (if (str-eq? name "str-index-of") true
+          (if (str-eq? name "str-slice") true
+          (if (str-eq? name "int-str") true
+          (if (str-eq? name "vector") true
           false
           ))))))))))))))))))))))))))))))))))))
         false)))
