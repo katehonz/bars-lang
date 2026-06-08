@@ -521,6 +521,13 @@ fn compile_instr<M: Module>(
                 "str-concat" | "str_concat" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_string_concat", &arg_vals)?
                 }
+                "str-concat" | "str_concat" if arg_vals.len() >= 3 => {
+                    let mut acc = call_runtime(builder, module, "bars_string_concat", &[arg_vals[0], arg_vals[1]])?;
+                    for arg in &arg_vals[2..] {
+                        acc = call_runtime(builder, module, "bars_string_concat", &[acc, *arg])?;
+                    }
+                    acc
+                }
                 "str-concat" | "str_concat" if arg_vals.len() == 1 => {
                     arg_vals[0]
                 }

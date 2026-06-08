@@ -70,10 +70,16 @@
   (let [lines (vector)]
     (do (lines-push lines "target triple = \"x86_64-unknown-linux-gnu\"")
         (lines-push lines "")
+        (lines-push lines "declare i64 @bars_string_new(i64)")
         (lines-push lines "declare i64 @bars_print_any_i64(i64)")
+        (lines-push lines "declare i64 @bars_print_newline()")
+        (lines-push lines "declare i64 @bars_print_i64(i64)")
         (lines-push lines "declare i64 @bars_str_concat(i64, i64)")
         (lines-push lines "declare i64 @bars_str_get(i64, i64)")
         (lines-push lines "declare i64 @bars_str_slice(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_str_count(i64)")
+        (lines-push lines "declare i64 @bars_str_starts_with(i64, i64)")
+        (lines-push lines "declare i64 @bars_str_index_of(i64, i64)")
         (lines-push lines "declare i64 @bars_vec_new()")
         (lines-push lines "declare i64 @bars_vec_push(i64, i64)")
         (lines-push lines "declare i64 @bars_vec_get(i64, i64)")
@@ -86,6 +92,26 @@
         (lines-push lines "declare i64 @bars_exit(i64)")
         (lines-push lines "")
         lines)))
+
+;; ---- function name mapping ----
+
+(defn map-fname [fname]
+  (if (str-eq? fname "println") "bars_print_any_i64"
+  (if (str-eq? fname "str-concat") "bars_str_concat"
+  (if (str-eq? fname "str-get") "bars_str_get"
+  (if (str-eq? fname "str-slice") "bars_str_slice"
+  (if (str-eq? fname "str-count") "bars_str_count"
+  (if (str-eq? fname "count") "bars_vec_count"
+  (if (str-eq? fname "push") "bars_vec_push"
+  (if (str-eq? fname "get") "bars_vec_get"
+  (if (str-eq? fname "vector") "bars_vec_new"
+  (if (str-eq? fname "slurp") "bars_slurp"
+  (if (str-eq? fname "spit") "bars_spit"
+  (if (str-eq? fname "exit") "bars_exit"
+  (if (str-eq? fname "args-count") "bars_args_count"
+  (if (str-eq? fname "args-get") "bars_args_get"
+  (if (str-eq? fname "str-starts-with?") "bars_str_starts_with"
+  fname))))))))))))))))
 
 ;; ---- operator inlining ----
 ;; Returns 1 if fname is a known operator (output already pushed), else 0
@@ -125,29 +151,36 @@
 
 ;; ---- emit one HIR instruction -> LLVM IR lines ----
 
-(defn emit-instr [output words]
+(defn llvm-name [dest cnt]
+  (str-concat "%" (str-concat dest (str-concat "_" (int-str cnt)))))
+
+(defn emit-instr [output words cnt]
   (let [cmd (get words 0) n (count words)]
-    ;; assign dest var/const val  ->  words: ["assign" dest prefix val]
+    ;; assign dest var/const val
     (if (str-eq? cmd "assign")
       (let [dest (get words 1)
-            llvm-val (pair-to-llvm words 2)]
-        (lines-push output (str-concat "  %" (str-concat dest (str-concat " = add i64 " (str-concat llvm-val ", 0"))))))
+            llvm-val (pair-to-llvm words 2)
+            name (llvm-name dest cnt)]
+        (lines-push output (str-concat "  " (str-concat name (str-concat " = add i64 " (str-concat llvm-val ", 0"))))))
     ;; call dest fname [var/const arg ...]
     (if (str-eq? cmd "call")
       (let [dest (get words 1)
             fname (get words 2)
-            handled (inline-op output dest fname words 3 n)]
+            handled (inline-op output dest fname words 3 n)
+            name (llvm-name dest cnt)]
         (if (= handled 1) output
-          (if (<= n 3)
-            (lines-push output (str-concat "  %" (str-concat dest (str-concat " = call i64 @" (str-concat fname "()")))))
-            (let [arglist (loop [i 3 acc ""]
-                            (if (>= i n) acc
-                              (let [a (pair-to-llvm words i)]
-                                (if (= i 3)
-                                  (recur (+ i 2) (str-concat "i64 " a))
-                                  (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)))))))]
-              (lines-push output (str-concat "  %" (str-concat dest (str-concat " = call i64 @" (str-concat fname (str-concat "(" (str-concat arglist ")")))))))))))))
-    ;; branch var/const cond then_lbl else_lbl  ->  words: ["branch" prefix val lbl1 lbl2]
+          (let [mapped (map-fname fname)]
+            (if (<= n 3)
+              (lines-push output (str-concat "  " (str-concat name (str-concat " = call i64 @" (str-concat mapped "()")))))
+              (let [arglist (loop [i 3 acc ""]
+                              (if (>= i n) acc
+                                (let [a (pair-to-llvm words i)]
+                                  (if (= i 3)
+                                    (recur (+ i 2) (str-concat "i64 " a))
+                                    (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)))))))]
+                (lines-push output (str-concat "  " (str-concat name (str-concat " = call i64 @" (str-concat mapped (str-concat "(" (str-concat arglist ")"))))))))))))))
+    )
+    ;; branch var/const cond then_lbl else_lbl
     (if (str-eq? cmd "branch")
       (let [c (pair-to-llvm words 1)
             then-lbl (get words 3)
@@ -155,22 +188,23 @@
             tmp (str-concat then-lbl "_c")]
         (do (lines-push output (str-concat "  %" (str-concat tmp (str-concat " = trunc i64 " (str-concat c " to i1")))))
             (lines-push output (str-concat "  br i1 %" (str-concat tmp (str-concat ", label %" (str-concat then-lbl (str-concat ", label %" else-lbl))))))))
-    ;; return var/const val  ->  words: ["return" prefix val]
+    ;; return var/const val
     (if (str-eq? cmd "return")
       (let [llvm-val (pair-to-llvm words 1)]
         (lines-push output (str-concat "  ret i64 " llvm-val)))
-    ;; stringlit dest content...  ->  placeholder
+    ;; stringlit dest content... -> placeholder with unique name
     (if (str-eq? cmd "stringlit")
-      (let [dest (get words 1)]
+      (let [dest (get words 1)
+            name (llvm-name dest cnt)]
         (do (lines-push output (str-concat "  ; stringlit " dest))
-            (lines-push output (str-concat "  %" (str-concat dest " = add i64 0, 0")))))
+            (lines-push output (str-concat "  " (str-concat name " = add i64 0, 0")))))
     output
-    )))))
+    ))))
 
 ;; ---- main line processing ----
 
-(defn process-line [output line in-func]
-  (if (< (count line) 1) [output in-func]
+(defn process-line [output line in-func cnt]
+  (if (< (count line) 1) [output in-func cnt]
   ;; -- function def: "func name [params]:"
   (if (str-starts-with? line "func ")
     (let [output (if (= in-func 1) (lines-push output "}") output)
@@ -178,33 +212,33 @@
           params (split-words (extract-params-str line))
           nparams (count params)]
       (if (= nparams 0)
-        [(lines-push output (str-concat "define i64 @" (str-concat name "() {"))) 1]
+        [(lines-push output (str-concat "define i64 @" (str-concat name "() {"))) 1 cnt]
         (let [plist (loop [i 0 acc ""]
                       (if (>= i nparams) acc
                         (if (= i 0)
                           (recur (+ i 1) (str-concat "i64 %" (get params i)))
                           (recur (+ i 1) (str-concat acc (str-concat ", i64 %" (get params i)))))))]
-          [(lines-push output (str-concat "define i64 @" (str-concat name (str-concat "(" (str-concat plist ") {"))))) 1])))
+          [(lines-push output (str-concat "define i64 @" (str-concat name (str-concat "(" (str-concat plist ") {"))))) 1 cnt])))
   ;; -- indented lines --
   (if (str-starts-with? line "  ")
     (if (str-starts-with? line "    ")
       ;; 4+ spaces = instruction
-      [(emit-instr output (split-words (trim-left line))) in-func]
+      [(emit-instr output (split-words (trim-left line)) cnt) in-func (+ cnt 1)]
       ;; 2 spaces = label
-      [(lines-push output (str-slice line 2 (count line))) in-func])
+      [(lines-push output (str-slice line 2 (count line))) in-func cnt])
     ;; 0 spaces, not func -> skip
-    [output in-func]))))
+    [output in-func cnt]))))
 
 ;; ---- pipeline ----
 
 (defn hir-to-llvm [hir-lines]
   (let [n (count hir-lines)]
-    (loop [i 0 output (llvm-header) in-func 0]
+    (loop [i 0 output (llvm-header) in-func 0 cnt 0]
       (if (>= i n)
         (if (= in-func 1) (lines-push output "}") output)
         (let [line (get hir-lines i)
-              res (process-line output line in-func)]
-          (recur (+ i 1) (get res 0) (get res 1)))))))
+              res (process-line output line in-func cnt)]
+          (recur (+ i 1) (get res 0) (get res 1) (get res 2)))))))
 
 (defn compile-llvm [hir-lines out-path]
   (let [ll-lines (hir-to-llvm hir-lines)
