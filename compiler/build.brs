@@ -22,7 +22,7 @@
 (defn main []
   (let [args-count (args-count)]
     (if (< args-count 3)
-      (do (println "Usage: build <input.brs> <output_bin>") 1)
+      (do (println "Usage: <input.brs> <output_bin>") 1)
       (let [input-path (args-get 1)]
         (let [output-path (args-get 2)]
           (compile-file input-path output-path))))))
