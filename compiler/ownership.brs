@@ -41,16 +41,16 @@
   (let [v (vector)] (do (push v (vector)) v)))
 
 (defn env-lookup [env name]
-  (loop [si (- (count env) 1)]
+  (loop [si (- (count env) 1) i -1]
     (if (< si 0) (S_Owned)
-      (let [scope (get env si)]
-        (loop [i (- (count scope) 1)]
-          (if (< i 0)
-            (recur (- si 1))
-            (let [pair (get scope i)]
-              (if (= (get pair 0) name)
-                (get pair 1)
-                (recur (- i 1))))))))))
+      (let [scope (get env si)
+            idx (if (< i 0) (- (count scope) 1) i)]
+        (if (< idx 0)
+          (recur (- si 1) -1)
+          (let [pair (get scope idx)]
+            (if (= (get pair 0) name)
+              (get pair 1)
+              (recur si (- idx 1)))))))))
 
 ;; Append entry to current scope. Shadows any existing entry for the same name.
 (defn env-insert [env name state]
