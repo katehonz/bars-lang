@@ -164,8 +164,7 @@
       (let [dest (get words 1)]
         (do (lines-push output (str-concat "  ; stringlit " dest))
             (lines-push output (str-concat "  %" (str-concat dest " = add i64 0, 0")))))
-    ;; unknown
-    (lines-push output (str-concat "  ; unknown HIR: " cmd))
+    output
     )))))
 
 ;; ---- main line processing ----
