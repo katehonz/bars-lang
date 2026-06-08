@@ -1,10 +1,8 @@
 ;; Self-hosted build pipeline — Stage 4
-;; Codegen via LLVM (Stage 7)
-;; NOTE: Ownership + Type checkers disabled — Cranelift AOT compiler
-;;       bug with loop patterns in these modules. Both are done by
-;;       the Rust bootstrap compiler. Re-enable when Cranelift matures.
+;; Codegen via LLVM (Stage 7) + Macro expansion (Stage 8)
 
 (require "compiler/reader.brs" :as reader)
+(require "compiler/macros.brs" :as macros)
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/llvm.brs" :as llvm)
 
@@ -15,8 +13,9 @@
 (defn compile-file [input-path output-path]
   (let [source (slurp input-path)]
     (let [ast (reader/bars-read source)]
-      (let [hir-lines (hir/lower-program ast)]
-        (llvm/compile-llvm hir-lines output-path)))))
+      (let [expanded (macros/expand-program ast)]
+        (let [hir-lines (hir/lower-program expanded)]
+          (llvm/compile-llvm hir-lines output-path))))))
 
 (defn main []
   (let [args-count (args-count)]
