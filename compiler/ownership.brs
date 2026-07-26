@@ -134,52 +134,36 @@
               (recur (+ i 1))))))))
 
 ;; ---- Copy type detection ----
+;; Flat name list + loop (deep nested ifs overflow Gen1 HIR/LLVM).
+
+(defn copy-op-names []
+  (let [v (vector)]
+    (do (push v "+") (push v "-") (push v "*") (push v "/") (push v "%")
+        (push v "=") (push v "!=") (push v "<") (push v ">") (push v "<=") (push v ">=")
+        (push v "inc") (push v "dec") (push v "abs") (push v "max") (push v "min")
+        (push v "not") (push v "even?") (push v "odd?") (push v "zero?") (push v "pos?") (push v "neg?")
+        (push v "count") (push v "get") (push v "first") (push v "last")
+        (push v "str-count") (push v "str-get") (push v "str-starts-with?")
+        (push v "str-ends-with?") (push v "str-index-of") (push v "str-slice")
+        (push v "int-str") (push v "vector")
+        v)))
+
+(defn name-in-copy-ops? [name]
+  (let [ops (copy-op-names)
+        n (count ops)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get ops i) name) true
+          (recur (+ i 1)))))))
 
 (defn is-copy-expr? [expr]
   (if (is-atom? expr)
     (let [tag (ast-tag expr)]
       (if (= tag 0) true (if (= tag 4) true (= tag 5))))
-    (let [head (get expr 0)
-          tag (ast-tag head)]
-      (if (if (is-atom? head) (= tag 1) false)
-        (let [name (ast-val head)]
-          (if (str-eq? name "+") true
-          (if (str-eq? name "-") true
-          (if (str-eq? name "*") true
-          (if (str-eq? name "/") true
-          (if (str-eq? name "%") true
-          (if (str-eq? name "=") true
-          (if (str-eq? name "!=") true
-          (if (str-eq? name "<") true
-          (if (str-eq? name ">") true
-          (if (str-eq? name "<=") true
-          (if (str-eq? name ">=") true
-          (if (str-eq? name "inc") true
-          (if (str-eq? name "dec") true
-          (if (str-eq? name "abs") true
-          (if (str-eq? name "max") true
-          (if (str-eq? name "min") true
-          (if (str-eq? name "not") true
-          (if (str-eq? name "even?") true
-          (if (str-eq? name "odd?") true
-          (if (str-eq? name "zero?") true
-          (if (str-eq? name "pos?") true
-          (if (str-eq? name "neg?") true
-          (if (str-eq? name "count") true
-          (if (str-eq? name "get") true
-          (if (str-eq? name "first") true
-          (if (str-eq? name "last") true
-          (if (str-eq? name "str-count") true
-          (if (str-eq? name "str-get") true
-          (if (str-eq? name "str-starts-with?") true
-          (if (str-eq? name "str-ends-with?") true
-          (if (str-eq? name "str-index-of") true
-          (if (str-eq? name "str-slice") true
-          (if (str-eq? name "int-str") true
-          (if (str-eq? name "vector") true
-          false
-          ))))))))))))))))))))))))))))))))))))
-        false)))
+    (let [head (get expr 0)]
+      (if (if (is-atom? head) (= (ast-tag head) 1) false)
+        (name-in-copy-ops? (ast-val head))
+        false))))
 
 ;; ---- Main expression checker ----
 ;; Walks AST; flags use of symbols currently marked Moved.
@@ -355,8 +339,8 @@
         (let [name (ast-val arg)
               state (env-lookup env name)]
           (if (is-moved? state)
-            (println (str-concat "ownership error: use after move: " name)))
-          0)
+            (do (println (str-concat "ownership error: use after move: " name)) 1)
+            0))
         0))
     (check-expr env arg)))
 

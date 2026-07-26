@@ -30,7 +30,8 @@ help:
 	@echo "  make test        - cargo test (bootstrap)"
 	@echo "  make clean       - remove build artifacts"
 	@echo ""
-	@echo "Env: BARS_SKIP_TYPECHECK BARS_SKIP_OWNERSHIP BARS_STRICT_TYPES"
+	@echo "Env: BARS_TYPECHECK=1 BARS_OWNERSHIP=1 BARS_STRICT_TYPES=1"
+	@echo "     BARS_SKIP_TYPECHECK BARS_SKIP_OWNERSHIP (force off)"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 
@@ -51,9 +52,6 @@ runtime $(RUNTIME): runtime/bars_runtime.c runtime/bars_runtime.h
 
 # ── Self-hosted compiler ───────────────────────────────────────────────────
 
-# Skip analysis when recompiling the compiler (heavy / incomplete for all forms)
-SELF_SKIP := BARS_SKIP_TYPECHECK=1 BARS_SKIP_OWNERSHIP=1
-
 # Gen1: host → bars-self
 bars-self self: $(HOST) $(RUNTIME)
 	BARS_SKIP_TYPECHECK=1 $(HOST) build --backend cranelift $(BUILD_BRS) -o $(SELF)
@@ -61,18 +59,18 @@ bars-self self: $(HOST) $(RUNTIME)
 
 # Gen2: bars-self → bars-self2
 gen2: bars-self
-	$(SELF_SKIP) $(SELF) $(BUILD_BRS) $(SELF2)
+	$(SELF) $(BUILD_BRS) $(SELF2)
 	@echo "→ $(SELF2) ready (Gen2)"
 
 # Gen3: bars-self2 → bars-self3
 gen3: gen2
-	$(SELF_SKIP) $(SELF2) $(BUILD_BRS) $(SELF3)
+	$(SELF2) $(BUILD_BRS) $(SELF3)
 	@echo "→ $(SELF3) ready (Gen3)"
 
 # Identity: Gen3 and Gen4 produce identical LLVM IR
 identity: gen3
 	@tmp=$$(mktemp -d) && \
-	  $(SELF_SKIP) $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
+	  $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
 	  if cmp -s $(SELF3).ll $$tmp/gen4.ll; then \
 	    echo "OK identity: Gen3.ll == Gen4.ll (fixed point)"; \
 	  else \
@@ -81,9 +79,12 @@ identity: gen3
 	    rm -rf $$tmp; exit 1; \
 	  fi && rm -rf $$tmp
 
-# Example suite against Gen1 bars-self (typecheck + ownership ON)
+# Example suite (types opt-in: BARS_TYPECHECK=1 make self-test)
 self-test: bars-self
 	@bash scripts/selfhost-test.sh $(SELF)
+
+self-test-gen2: gen2
+	@bash scripts/selfhost-test.sh $(SELF2)
 
 examples: bars-self
 	@bash scripts/selfhost-test.sh $(SELF)

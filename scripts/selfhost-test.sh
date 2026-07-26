@@ -67,6 +67,10 @@ EXAMPLES=(
 )
 
 echo "=== self-host test with $CC_BIN ==="
+# Optional typecheck pass (Gen1); set BARS_TYPECHECK=1 to enable
+if [[ "${BARS_TYPECHECK:-}" == "1" ]]; then
+  echo "(typecheck enabled)"
+fi
 for src in "${EXAMPLES[@]}"; do
   if [[ -f "$src" ]]; then
     run_one "$src"

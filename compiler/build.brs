@@ -20,11 +20,18 @@
 (defn die [msg code]
   (do (println msg) code))
 
+;; Types/ownership opt-in (Gen2 typecheck still WIP):
+;;   BARS_TYPECHECK=1 / BARS_OWNERSHIP=1 to enable
+;;   BARS_SKIP_* forces off; BARS_STRICT_TYPES=1 hard-fails types
 (defn skip-typecheck? []
-  (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
+  (if (= (bars_env_set "BARS_SKIP_TYPECHECK") 1) true
+    (if (= (bars_env_set "BARS_TYPECHECK") 1) false
+      true)))
 
 (defn skip-ownership? []
-  (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1))
+  (if (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1) true
+    (if (= (bars_env_set "BARS_OWNERSHIP") 1) false
+      true)))
 
 ;; Load a .brs file to AST. slurp returns 0 if file missing.
 (defn read-file [path]

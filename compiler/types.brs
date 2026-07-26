@@ -324,8 +324,12 @@
 )
 
 (defn ctx_add_constraint [ctx a b]
-  (let [c (vector)]
-    (do (push c a) (do (push c b) (do (push (get ctx 1) c) (get ctx 1)))))
+  (let [c (vector)
+        cs (get ctx 1)]
+    (do (push c a)
+        (push c b)
+        (push cs c)
+        ctx))
 )
 
 ;; ====== Builtin Environment ======
