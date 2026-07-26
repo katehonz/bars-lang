@@ -183,7 +183,11 @@ bars/
 
 - [x] **13.0** Bars-first entry: `make bars-self`, `scripts/selfhost-test.sh`, frozen bootstrap note
 - [x] **13.1** Компилаторът е в `compiler/` (не `lib/`) — reader/hir/macros/modules/llvm/build
-- [ ] **13.2** Подобряване на error messages (compiler написан на Bars → може да използва собствените си абстракции)
+- [x] **13.2** Подобряване на error messages (self-host)
+  - `error: <kind>: …` / `warning: type: …` / `note: …` prefixes
+  - Parse: unclosed list/vector, unexpected `)`/`]`, empty program, file path
+  - Type soft summary + strict fail with hint; ownership UAM + file path
+  - Usage lists stages, exit codes, env flags; link failures show clang command
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)
 - [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност

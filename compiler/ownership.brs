@@ -221,7 +221,7 @@
         (let [name (ast-val expr)
               state (env-lookup env name)]
           (if (is-moved? state)
-            (do (println (str-concat "ownership error: use after move: " name)) 1)
+            (do (println (str-concat "error: ownership: use after move: `" (str-concat name "`"))) 1)
             0))
         0))
     (let [head (get expr 0)]
@@ -372,7 +372,7 @@
         (let [name (ast-val arg)
               state (env-lookup env name)]
           (if (is-moved? state)
-            (do (println (str-concat "ownership error: use after move: " name)) 1)
+            (do (println (str-concat "error: ownership: use after move: `" (str-concat name "`"))) 1)
             0))
         0))
     (check-expr env arg)))

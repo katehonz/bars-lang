@@ -275,45 +275,54 @@
       (TEof)          [(t0 99) (+ pos 1)])))
 
 ;; --- parse-list: collect items, detect special forms ---
+;; Returns [items new-pos] or 0 on parse error.
 (defn parse-list [tokens pos]
-  (let [result (collect-items tokens pos (vector))
-        items (get result 0)
-        pos (get result 1)]
-    (if (> (count items) 0)
-      (let [head (get items 0)]
-        (if (= (count head) 2)
-          (let [tag (get head 0)]
-            (if (= tag 1)
-              (let [name (get head 1)
-                    stag (special-tag name)]
-                (if (special? stag)
-                  (let [new-head (t1 stag name)
-                        new-items (vector)]
-                    (do (push new-items new-head)
-                        (loop [i 1]
-                          (if (>= i (count items))
-                            [new-items pos]
-                            (do (push new-items (get items i))
-                                (recur (+ i 1)))))))
+  (let [result (collect-items tokens pos (vector))]
+    (if (= result 0) 0
+      (let [items (get result 0)
+            pos (get result 1)]
+        (if (> (count items) 0)
+          (let [head (get items 0)]
+            (if (= (count head) 2)
+              (let [tag (get head 0)]
+                (if (= tag 1)
+                  (let [name (get head 1)
+                        stag (special-tag name)]
+                    (if (special? stag)
+                      (let [new-head (t1 stag name)
+                            new-items (vector)]
+                        (do (push new-items new-head)
+                            (loop [i 1]
+                              (if (>= i (count items))
+                                [new-items pos]
+                                (do (push new-items (get items i))
+                                    (recur (+ i 1)))))))
+                      [items pos]))
                   [items pos]))
               [items pos]))
-          [items pos]))
-      [items pos])))
+          [items pos])))))
 
+;; Returns [items new-pos] or 0 on unclosed '('.
 (defn collect-items [tokens pos items]
   (loop [items items pos pos]
     (let [t (peek-t tokens pos)]
       (match t
         (TRParen) [items (+ pos 1)]
-        (TEof)    [items pos]
-        _ (let [res (parse-expr tokens pos)
-                expr (get res 0)
-                np (get res 1)]
-            (do (push items expr) (recur items np)))))))
+        (TEof)
+          (do (println "error: parse: unclosed list") 0)
+        _
+          (let [res (parse-expr tokens pos)]
+            (if (= res 0)
+              0
+              (let [expr (get res 0)
+                    np (get res 1)]
+                (do (push items expr)
+                    (recur items np)))))))))
 
 ;; --- parse-vector ---
 ;; Vectors are marked with head tag 28 so HIR can distinguish them from calls.
-;; AST: [[28 "vec"] elem0 elem1 ...]
+;; AST: [[28] elem0 elem1 ...]
+;; Returns [wrapped-vector new-pos] or 0 on unclosed '['.
 (defn parse-vector [tokens pos]
   (loop [items (vector) pos pos]
     (let [t (peek-t tokens pos)]
@@ -322,49 +331,70 @@
           (let [wrapped (vector)]
             (do (push wrapped (t0 28))
                 (loop [i 0]
-                  (if (>= i (count items)) 0
+                  (if (>= i (count items))
+                    0
                     (do (push wrapped (get items i))
                         (recur (+ i 1)))))
                 [wrapped (+ pos 1)]))
-        (TEof)    [items pos]
-        _ (let [res (parse-expr tokens pos)
-                expr (get res 0)
-                np (get res 1)]
-            (do (push items expr) (recur items np)))))))
+        (TEof)
+          (do (println "error: parse: unclosed vector") 0)
+        _
+          (let [res (parse-expr tokens pos)]
+            (if (= res 0)
+              0
+              (let [expr (get res 0)
+                    np (get res 1)]
+                (do (push items expr)
+                    (recur items np)))))))))
 
 ;; --- parse-macro: ' ` ~ ~@ ^ @ ---
+;; Returns [tagged-expr new-pos] or 0 on error.
 (defn parse-macro [tokens pos tag]
-  (let [res (parse-expr tokens pos)
-        expr (get res 0)
-        np (get res 1)]
-    [(t1 tag expr) np]))
+  (let [res (parse-expr tokens pos)]
+    (if (= res 0)
+      0
+      (let [expr (get res 0)
+            np (get res 1)]
+        [(t1 tag expr) np]))))
 
-;; --- parse-all: all top-level expressions ---
+;; --- parse-all: all top-level expressions; 0 on parse error ---
 (defn parse-all [tokens]
   (loop [exprs (vector) pos 0]
     (let [t (peek-t tokens pos)]
       (match t
         (TEof) exprs
-        _ (let [res (parse-expr tokens pos)
-                expr (get res 0)
-                np (get res 1)]
-            (do (push exprs expr) (recur exprs np)))))))
+        (TRParen)
+          (do (println "error: parse: unexpected ')'") 0)
+        (TRBrack)
+          (do (println "error: parse: unexpected ']'") 0)
+        _
+          (let [res (parse-expr tokens pos)]
+            (if (= res 0)
+              0
+              (let [expr (get res 0)
+                    np (get res 1)
+                    tag0 (if (> (count expr) 0) (get expr 0) -1)]
+                (if (= tag0 99)
+                  (do (println "error: parse: unexpected token") 0)
+                  (do (push exprs expr)
+                      (recur exprs np))))))))))
 
-;; --- Public: read ---
+;; --- Public: read. Returns AST vector or 0 on parse error. ---
 (defn bars-read [source]
-  (let [tokens (tokenize source)]
-    (parse-all tokens)))
+  (if (= source 0)
+    0
+    (parse-all (tokenize source))))
 
 ;; ===========================================================================
 ;; Demo
 ;; ===========================================================================
 
 (defn main []
-  (println "=== Reader ===")
-  (println (bars-read "(defn main [] 42)"))
-  (println (bars-read "(+ 1 2)"))
-  (println (bars-read "[1 2 3]"))
-  (println (bars-read ":hello"))
-  (println (bars-read "'sym"))
-  (println (bars-read "\"hi\""))
-  0)
+  (do (println "=== Reader ===")
+      (println (bars-read "(defn main [] 42)"))
+      (println (bars-read "(+ 1 2)"))
+      (println (bars-read "[1 2 3]"))
+      (println (bars-read ":hello"))
+      (println (bars-read "'sym"))
+      (println (bars-read "\"hi\""))
+      0))

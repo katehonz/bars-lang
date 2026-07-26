@@ -447,7 +447,7 @@
 
 ;; Soft error — do not abort the process (pipeline decides hard fail).
 (defn type_error [msg]
-  (do (println (str-concat "Type error: " msg)) (T_Void))
+  (do (println (str-concat "error: type: " msg)) (T_Void))
 )
 
 ;; Unwrap vector marker [[28] ...] and skip ^meta (tag 26) params.
@@ -651,7 +651,7 @@
           (if (get res 0)
             (recur (+ i 1) (get res 1) failed)
             (let [err (str-concat "type mismatch: " (str-concat (type_str a) (str-concat " vs " (type_str b))))]
-              (do (println (str-concat "Type warning: " err))
+              (do (println (str-concat "warning: type: " err))
                   (recur (+ i 1) subst 1))))))))
 )
 
@@ -678,7 +678,7 @@
   (let [result (infer_program ast-list)]
     (if (get result 0)
       0
-      (do (println "Type check: issues found") 1)))
+      (do (println "warning: type: check reported issues") 1)))
 )
 
 
