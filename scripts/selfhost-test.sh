@@ -496,6 +496,24 @@ run_lang_smoke() {
     fi
   fi
 
+  out="$TMP/trait_rich"
+  if ! "$CC_BIN" examples/trait_rich.brs "$out" >"$TMP/trait_rich.log" 2>&1; then
+    echo "FAIL compile  examples/trait_rich.brs"
+    tail -8 "$TMP/trait_rich.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    # 7 7 11 10 42 42
+    if echo "$stdout" | tr '\n' ' ' | grep -q '7 7 11 10 42 42'; then
+      echo "OK   examples/trait_rich.brs (defaults + Self + tcall)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      trait_rich"
+      echo "$stdout" | sed 's/^/     | /'
+      fail=$((fail + 1))
+    fi
+  fi
+
   out="$TMP/async_demo"
   if ! "$CC_BIN" examples/async_demo.brs "$out" >"$TMP/async.log" 2>&1; then
     echo "FAIL compile  examples/async_demo.brs"

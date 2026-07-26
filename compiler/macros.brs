@@ -168,12 +168,14 @@
                       (if (str-eq? name "deftrait")
                         (expand-deftrait expr)
                         (if (str-eq? name "impl")
-                          (expand-impl expr)
+                          (expand-impl expr (vector))
                           (if (str-eq? name "defconst")
                             (expand-defconst expr)
                             (if (str-eq? name "trait-call")
                               (expand-trait-call expr)
-                              (expand-children-from expr 0))))))))))
+                              (if (str-eq? name "tcall")
+                                (expand-trait-call expr)
+                                (expand-children-from expr 0)))))))))))
             ;; Special form tags (>=10) or vector marker (28)
             (if (if (>= tag 10) true (= tag 28))
               (expand-special expr tag)
@@ -292,13 +294,16 @@
                       (recur (+ i 1) new-expr)))))))))))
 
 ;; ===========================================================================
-;; Phase 14.4 — traits & const
+;; Phase 14.4+ — traits & const
 ;;
-;; (deftrait Show [show])                    ; declaration (erased at runtime)
+;; (deftrait Show [show]
+;;   (default display [x] (tcall Show show Self x)))
+;;
 ;; (impl Show for Point
-;;   (defn show [self] ...))                 ; → (defn Show_show_Point [self] ...)
-;; (trait-call Show show Point arg...)       ; → (Show_show_Point arg...)
-;; (defconst MAX 100)                        ; → (def MAX 100)
+;;   (defn show [self] ...))     ; display filled from default; Self → Point
+;;
+;; (trait-call Show show Point arg...)  or  (tcall Show show Point arg...)
+;; (defconst MAX 100) → (defn MAX [] 100)
 ;; ===========================================================================
 
 ;; Mangled method name: Trait_method_Type
@@ -307,41 +312,184 @@
     (str-concat "_"
       (str-concat method (str-concat "_" type-name)))))
 
-;; (deftrait Name [m1 m2 ...]) → (do 0)  [keeps a no-op form for tooling]
+(defn is-vec-form? [x]
+  (if (is-atom? x) false
+    (let [head (get x 0)]
+      (if (is-atom? head) (= (ast-tag head) 28) false))))
+
+(defn form-head-name [expr]
+  (if (is-atom? expr) ""
+    (let [h (get expr 0)]
+      (if (is-atom? h) (ast-val h) ""))))
+
+;; Replace symbol Self with type-name everywhere in an AST.
+(defn subst-self [expr type-name]
+  (if (is-atom? expr)
+    (if (if (= (ast-tag expr) 1) (str-eq? (ast-val expr) "Self") false)
+      (mk-sym type-name)
+      expr)
+    (let [n (count expr)
+          out (vector)]
+      (do (loop [i 0]
+            (if (>= i n) out
+              (do (push out (subst-self (get expr i) type-name))
+                  (recur (+ i 1)))))))))
+
+;; ---- deftrait registry ----
+;; Entry: [trait-name required-vec defaults-vec]
+;; required-vec: vector of method name strings
+;; defaults-vec: vector of [method-name params-ast body-exprs-vec]
+
+(defn parse-required-methods [vec-form]
+  (let [out (vector)]
+    (if (not (is-vec-form? vec-form)) out
+      (let [n (count vec-form)]
+        (do (loop [i 1]
+              (if (>= i n) 0
+                (let [el (get vec-form i)]
+                  (if (if (is-atom? el) (= (ast-tag el) 1) false)
+                    (do (push out (ast-val el))
+                        (recur (+ i 1)))
+                    (recur (+ i 1))))))
+            out)))))
+
+(defn is-default-form? [expr]
+  (if (is-atom? expr) false
+    (str-eq? (form-head-name expr) "default")))
+
+(defn parse-default-form [expr]
+  ;; (default name [params] body...) → [name params bodies] or 0
+  (let [n (count expr)]
+    (if (< n 3) 0
+      (let [name-a (get expr 1)
+            params (get expr 2)]
+        (if (not (is-atom? name-a)) 0
+          (let [method (ast-val name-a)
+                bodies (vector)
+                entry (vector)]
+            (do (loop [i 3]
+                  (if (>= i n) 0
+                    (do (push bodies (get expr i))
+                        (recur (+ i 1)))))
+                (push entry method)
+                (push entry params)
+                (push entry bodies)
+                entry)))))))
+
+;; Parse (deftrait Name [methods...] (default ...)...) → registry entry or 0
+(defn parse-deftrait-form [expr]
+  (let [n (count expr)]
+    (if (< n 2) 0
+      (let [name-a (get expr 1)]
+        (if (not (is-atom? name-a)) 0
+          (let [trait (ast-val name-a)
+                required (vector)
+                defaults (vector)
+                start (if (if (>= n 3) (is-vec-form? (get expr 2)) false)
+                        (do (let [r (parse-required-methods (get expr 2))]
+                              (loop [j 0]
+                                (if (>= j (count r)) 0
+                                  (do (push required (get r j))
+                                      (recur (+ j 1))))))
+                            3)
+                        2)
+                entry (vector)]
+            (do (loop [i start]
+                  (if (>= i n) 0
+                    (let [el (get expr i)]
+                      (if (is-default-form? el)
+                        (let [d (parse-default-form el)]
+                          (if (= d 0)
+                            (recur (+ i 1))
+                            (do (push defaults d)
+                                (recur (+ i 1)))))
+                        (recur (+ i 1))))))
+                (push entry trait)
+                (push entry required)
+                (push entry defaults)
+                entry)))))))
+
+(defn collect-traits [ast-list]
+  (let [n (count ast-list)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [expr (get ast-list i)]
+              (if (str-eq? (form-head-name expr) "deftrait")
+                (let [e (parse-deftrait-form expr)]
+                  (if (= e 0)
+                    (recur (+ i 1))
+                    (do (push out e)
+                        (recur (+ i 1)))))
+                (recur (+ i 1))))))
+        out)))
+
+(defn trait-lookup [traits name]
+  (let [n (count traits)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [e (get traits i)]
+          (if (str-eq? (get e 0) name) e
+            (recur (+ i 1))))))))
+
+(defn name-in-vec? [names name]
+  (let [n (count names)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get names i) name) true
+          (recur (+ i 1)))))))
+
+;; (deftrait ...) erased at runtime (registry used only during expand-program).
 (defn expand-deftrait [expr]
-  ;; Erase to a zero constant (valid top-level / expression).
   (mk-num 0))
 
-;; Rewrite a defn's name to Trait_method_Type; leave body expanded.
-;; form is a full (defn name [params] body...) list (tag 10 head or symbol).
-(defn mangle-impl-defn [defn-form trait type-name]
-  (if (is-atom? defn-form) defn-form
-    (let [head (get defn-form 0)
-          n (count defn-form)]
-      (if (not (is-atom? head)) defn-form
-        (let [is-defn (if (= (ast-tag head) 10) true
-                        (if (= (ast-tag head) 1)
-                          (str-eq? (ast-val head) "defn")
-                          false))]
-          (if (not is-defn) (expand-expr defn-form)
-            (if (< n 3) defn-form
-              (let [name-a (get defn-form 1)
-                    method (if (is-atom? name-a) (ast-val name-a) "m")
-                    mangled (trait-method-name trait method type-name)
-                    out (vector)]
-                (do (push out (mk-special 10 "defn"))
-                    (push out (mk-sym mangled))
-                    (push out (get defn-form 2))
-                    (loop [i 3]
-                      (if (>= i n) out
-                        (do (push out (expand-expr (get defn-form i)))
-                            (recur (+ i 1))))))))))))))
+(defn is-defn-form? [expr]
+  (if (is-atom? expr) false
+    (let [h (get expr 0)]
+      (if (not (is-atom? h)) false
+        (if (= (ast-tag h) 10) true
+          (if (= (ast-tag h) 1) (str-eq? (ast-val h) "defn") false))))))
 
-;; (impl Trait for Type method-defns...)
-;; → (do mangled-defn ...)
-(defn expand-impl [expr]
+(defn defn-method-name [defn-form]
+  (if (< (count defn-form) 2) ""
+    (let [name-a (get defn-form 1)]
+      (if (is-atom? name-a) (ast-val name-a) ""))))
+
+;; Rewrite a defn's name to Trait_method_Type; leave body expanded.
+(defn mangle-impl-defn [defn-form trait type-name]
+  (if (not (is-defn-form? defn-form)) (expand-expr defn-form)
+    (let [n (count defn-form)]
+      (if (< n 3) defn-form
+        (let [method (defn-method-name defn-form)
+              mangled (trait-method-name trait method type-name)
+              out (vector)]
+          (do (push out (mk-special 10 "defn"))
+              (push out (mk-sym mangled))
+              (push out (get defn-form 2))
+              (loop [i 3]
+                (if (>= i n) out
+                  (do (push out (expand-expr (get defn-form i)))
+                      (recur (+ i 1)))))))))))
+
+;; Instantiate a default method for Type: subst Self, mangle, expand body.
+(defn instantiate-default [default trait type-name]
+  (let [method (get default 0)
+        params (get default 1)
+        bodies (get default 2)
+        mangled (trait-method-name trait method type-name)
+        out (vector)
+        nb (count bodies)]
+    (do (push out (mk-special 10 "defn"))
+        (push out (mk-sym mangled))
+        (push out (subst-self params type-name))
+        (loop [i 0]
+          (if (>= i nb) out
+            (do (push out (expand-expr (subst-self (get bodies i) type-name)))
+                (recur (+ i 1))))))))
+
+;; (impl Trait for Type method-defns...) + fill defaults from registry
+(defn expand-impl [expr traits]
   (let [n (count expr)]
-    ;; (impl Trait for Type ...) → need at least 4 elements after head
     (if (< n 5)
       (mk-num 0)
       (let [trait-a (get expr 1)
@@ -349,26 +497,40 @@
             type-a (get expr 3)
             trait (if (is-atom? trait-a) (ast-val trait-a) "Trait")
             type-name (if (is-atom? type-a) (ast-val type-a) "T")
-            ok-for (if (is-atom? for-a)
-                     (str-eq? (ast-val for-a) "for")
-                     false)]
+            ok-for (if (is-atom? for-a) (str-eq? (ast-val for-a) "for") false)]
         (if (not ok-for)
           (mk-num 0)
-          (let [defs (vector)]
-            (do (loop [i 4]
+          (let [defs (vector)
+                provided (vector)
+                entry (trait-lookup traits trait)]
+            (do ;; user-provided methods
+                (loop [i 4]
                   (if (>= i n) 0
-                    (do (push defs (mangle-impl-defn (get expr i) trait type-name))
-                        (recur (+ i 1)))))
+                    (let [el (get expr i)]
+                      (if (is-defn-form? el)
+                        (do (push provided (defn-method-name el))
+                            (push defs (mangle-impl-defn el trait type-name))
+                            (recur (+ i 1)))
+                        (do (push defs (expand-expr el))
+                            (recur (+ i 1)))))))
+                ;; fill defaults not provided
+                (if (= entry 0) 0
+                  (let [defaults (get entry 2)
+                        nd (count defaults)]
+                    (loop [j 0]
+                      (if (>= j nd) 0
+                        (let [d (get defaults j)
+                              m (get d 0)]
+                          (if (name-in-vec? provided m)
+                            (recur (+ j 1))
+                            (do (push defs (instantiate-default d trait type-name))
+                                (recur (+ j 1)))))))))
                 (if (= (count defs) 0)
                   (mk-num 0)
                   (if (= (count defs) 1)
                     (get defs 0)
                     (mk-do defs))))))))))
 
-;; (defconst Name value) → (def Name value) as call (def is builtin/special-ish)
-;; Represented as plain call (def name value) so HIR/runtime can bind if supported;
-;; otherwise acts as a documented constant init via defn wrapper.
-;; We emit: (defn Name [] value) for zero-arg const accessors that HIR always handles.
 ;; Build empty vector AST [[28]] for params []
 (defn empty-params-vec []
   (let [marker (vector)
@@ -377,7 +539,7 @@
         (push v marker)
         v)))
 
-;; (defconst Name value) → (defn Name [] value)  zero-arg constant function
+;; (defconst Name value) → (defn Name [] value)
 (defn expand-defconst [expr]
   (let [n (count expr)]
     (if (< n 3)
@@ -392,7 +554,7 @@
             (push out val)
             out)))))
 
-;; (trait-call Trait method Type args...) → (Trait_method_Type args...)
+;; (trait-call Trait method Type args...) / (tcall ...) → (Trait_method_Type args...)
 (defn expand-trait-call [expr]
   (let [n (count expr)]
     (if (< n 4)
@@ -418,19 +580,29 @@
     (let [h (get expr 0)]
       (if (is-atom? h) (= (ast-tag h) 13) false))))
 
-;; Flatten top-level (do a b c) from multi-method impl expansions.
+(defn push-expanded [new-list e]
+  (if (is-do-form? e)
+    (do (loop [j 1]
+          (if (>= j (count e)) 0
+            (do (push new-list (get e j))
+                (recur (+ j 1)))))
+        new-list)
+    (do (push new-list e) new-list)))
+
+;; Two-pass: collect deftrait defaults, then expand (impl fills defaults).
 (defn expand-program [ast-list]
-  (let [new-list (vector)
+  (let [traits (collect-traits ast-list)
+        new-list (vector)
         n (count ast-list)]
     (loop [i 0]
       (if (>= i n)
         new-list
-        (let [e (expand-expr (get ast-list i))]
-          (if (is-do-form? e)
-            (do (loop [j 1]
-                  (if (>= j (count e)) 0
-                    (do (push new-list (get e j))
-                        (recur (+ j 1)))))
-                (recur (+ i 1)))
-            (do (push new-list e)
-                (recur (+ i 1)))))))))
+        (let [raw (get ast-list i)
+              head (form-head-name raw)
+              e (if (str-eq? head "impl")
+                  (expand-impl raw traits)
+                  (if (str-eq? head "deftrait")
+                    (expand-deftrait raw)
+                    (expand-expr raw)))]
+          (do (push-expanded new-list e)
+              (recur (+ i 1))))))))

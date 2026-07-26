@@ -53,18 +53,31 @@ Special characters are sanitized for the backends (`?` → `_Q`, `+` → `_plus`
   (+ a b))
 ```
 
-### Traits (Phase 14.4 v0)
+### Traits (Phase 14.4+)
 
-Static methods via naming convention (no dynamic dispatch yet):
+Static monomorphization — no dynamic dispatch. Methods become
+`Trait_method_Type` functions.
 
 ```clojure
-(deftrait Show [show])
+(deftrait Show [show]
+  ;; default method; Self is replaced by the impl type
+  (default display [x]
+    (tcall Show show Self x)))
 
 (impl Show for i64
   (defn show [x] x))
+  ;; display is synthesized → Show_display_i64
 
-(trait-call Show show i64 7)   ;; → (Show_show_i64 7)
+(tcall Show show i64 7)       ;; or (trait-call Show show i64 7)
+(tcall Show display i64 7)
 ```
+
+| Form | Meaning |
+|------|---------|
+| `(deftrait T [m1 m2] (default m …)*)` | Declare required methods + defaults |
+| `(impl T for Type (defn m …)*)` | Provide methods; missing defaults are filled |
+| `Self` | Placeholder type inside defaults |
+| `(tcall T m Type args…)` | Call `T_m_Type` (alias of `trait-call`) |
 
 ### `defconst`
 

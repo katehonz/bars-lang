@@ -273,11 +273,11 @@ bars/
 
 ### 14.4 Езикови Фичъри (еволюция)
 
-- [x] Trait system (v0) — macros in `compiler/macros.brs`
-  - `(deftrait Show [show])` — erased declaration
-  - `(impl Show for Type (defn show [x] …))` → `Show_show_Type`
-  - `(trait-call Show show Type args…)` → call mangled method
-  - Example: `examples/trait_demo.brs`
+- [x] Trait system — macros in `compiler/macros.brs`
+  - `(deftrait T [m…] (default m [args] body…)*)` — required + defaults
+  - `(impl T for Type …)` fills missing methods from defaults; `Self` → Type
+  - `(trait-call …)` / `(tcall …)` → `T_m_Type`
+  - Examples: `trait_demo.brs`, `trait_rich.brs` (defaults, override, Num/double)
 - [x] `defconst Name value` → zero-arg `(defn Name [] value)`
 - [ ] Const generics (deferred — needs richer type system)
 - [x] Async as package (not core) — `lib/async.brs` Future `[Pending|Ready]`
