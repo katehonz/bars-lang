@@ -28,6 +28,7 @@ void bars_print_string(const bars_string_t* s) {
 
 void bars_print_newline(void) {
     putchar('\n');
+    fflush(stdout);
 }
 
 void bars_print_value(const bars_value_t* v) {

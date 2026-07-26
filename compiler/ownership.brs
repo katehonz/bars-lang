@@ -71,17 +71,20 @@
 (defn env-new []
   (let [v (vector)] (do (push v (vector)) v)))
 
+;; Scan scopes top-down; within each scope reverse (newest first).
+;; idx sentinel -2 = "start at end of this scope" (NOT -1: after
+;; decrement past 0, -1 would re-arm start-at-end and infinite-loop).
 (defn env-lookup [env name]
-  (loop [si (- (count env) 1) i -1]
+  (loop [si (- (count env) 1) idx -2]
     (if (< si 0) (S_Owned)
       (let [scope (get env si)
-            idx (if (< i 0) (- (count scope) 1) i)]
-        (if (< idx 0)
-          (recur (- si 1) -1)
-          (let [pair (get scope idx)]
+            j (if (= idx -2) (- (count scope) 1) idx)]
+        (if (< j 0)
+          (recur (- si 1) -2)
+          (let [pair (get scope j)]
             (if (str-eq? (get pair 0) name)
               (get pair 1)
-              (recur si (- idx 1)))))))))
+              (recur si (- j 1)))))))))
 
 ;; Append entry to current scope. Shadows any existing entry for the same name.
 (defn env-insert [env name state]
@@ -207,22 +210,21 @@
 (defn check-defn [env expr]
   (let [params (normalize-params (get expr 2))
         n-params (count params)
-        n (count expr)
-        body-start 3]
-    (env-push-scope env)
-    (loop [i 0]
-      (if (>= i n-params) 0
-        (do (env-insert env (ast-val (get params i)) (S_Owned))
-            (recur (+ i 1)))))
-    (let [result (if (<= n 4)
-                   (check-expr env (get expr 3))
-                   (loop [j body-start err 0]
-                     (if (>= j n) err
-                       (let [e (check-expr env (get expr j))]
-                         (recur (+ j 1) (if (> e 0) e err))))))]
-      (do (env-release-borrows env)
-          (env-pop-scope env)
-          result))))
+        n (count expr)]
+    (do
+      (env-push-scope env)
+      (loop [i 0]
+        (if (>= i n-params) 0
+          (do (env-insert env (ast-val (get params i)) (S_Owned))
+              (recur (+ i 1)))))
+      (let [result
+            (loop [j 3 err 0]
+              (if (>= j n) err
+                (let [e (check-expr env (get expr j))]
+                  (recur (+ j 1) (if (> e 0) e err)))))]
+        (do (env-release-borrows env)
+            (env-pop-scope env)
+            result)))))
 
 ;; ---- let (flat binds: name1 val1 name2 val2 ...) ----
 (defn check-let [env expr]
@@ -273,11 +275,11 @@
 ;; ---- do ----
 (defn check-do [env expr]
   (let [n (count expr)]
-    (loop [i 1]
-      (if (>= i n) 0
-        (do (check-expr env (get expr i))
-            (env-release-borrows env)
-            (recur (+ i 1)))))))
+    (loop [i 1 err 0]
+      (if (>= i n) err
+        (let [e (check-expr env (get expr i))]
+          (do (env-release-borrows env)
+              (recur (+ i 1) (if (> e 0) e err))))))))
 
 ;; ---- loop/recur (flat binds) ----
 (defn check-loop [env expr]
@@ -354,8 +356,14 @@
 
 ;; ---- Top-level entry ----
 ;; Returns 0 if OK, >0 if any ownership error was reported.
+;; Light NLL: track moves from let-bindings; flag use-after-move.
+;; Branch isolation via env-copy is avoided (Gen1 LLVM / depth).
 
-;; Placeholder pass (wired into pipeline). Full NLL walk hangs on recursive
-;; if/call under Gen1 LLVM; keep API and enable via BARS_OWNERSHIP=1 later.
 (defn check_ownership [ast-list]
-  0)
+  (if (= ast-list 0) 0
+    (let [env (env-new)
+          n (count ast-list)]
+      (loop [i 0 err 0]
+        (if (>= i n) err
+          (let [e (check-expr env (get ast-list i))]
+            (recur (+ i 1) (if (> e 0) e err))))))))

@@ -20,17 +20,14 @@
 (defn die [msg code]
   (do (println msg) code))
 
-;; Types ON by default (soft warnings). Ownership opt-in (stub walk).
+;; Types ON by default (soft warnings). Ownership ON by default (light NLL).
 ;;   BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off
-;;   BARS_OWNERSHIP=1                               enable ownership
 ;;   BARS_STRICT_TYPES=1                            hard-fail type issues
 (defn skip-typecheck? []
   (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
 
 (defn skip-ownership? []
-  (if (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1) true
-    (if (= (bars_env_set "BARS_OWNERSHIP") 1) false
-      true)))
+  (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1))
 
 ;; Load a .brs file to AST. slurp returns 0 if file missing.
 (defn read-file [path]
