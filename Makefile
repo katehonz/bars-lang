@@ -57,20 +57,23 @@ bars-self self: $(HOST) $(RUNTIME)
 	BARS_SKIP_TYPECHECK=1 $(HOST) build --backend cranelift $(BUILD_BRS) -o $(SELF)
 	@echo "→ $(SELF) ready (Gen1)"
 
+# Skip types when recompiling the full compiler (large AST + soft warnings noise)
+SELF_SKIP := BARS_SKIP_TYPECHECK=1
+
 # Gen2: bars-self → bars-self2
 gen2: bars-self
-	$(SELF) $(BUILD_BRS) $(SELF2)
+	$(SELF_SKIP) $(SELF) $(BUILD_BRS) $(SELF2)
 	@echo "→ $(SELF2) ready (Gen2)"
 
 # Gen3: bars-self2 → bars-self3
 gen3: gen2
-	$(SELF2) $(BUILD_BRS) $(SELF3)
+	$(SELF_SKIP) $(SELF2) $(BUILD_BRS) $(SELF3)
 	@echo "→ $(SELF3) ready (Gen3)"
 
 # Identity: Gen3 and Gen4 produce identical LLVM IR
 identity: gen3
 	@tmp=$$(mktemp -d) && \
-	  $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
+	  $(SELF_SKIP) $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
 	  if cmp -s $(SELF3).ll $$tmp/gen4.ll; then \
 	    echo "OK identity: Gen3.ll == Gen4.ll (fixed point)"; \
 	  else \
@@ -79,7 +82,7 @@ identity: gen3
 	    rm -rf $$tmp; exit 1; \
 	  fi && rm -rf $$tmp
 
-# Example suite (types opt-in: BARS_TYPECHECK=1 make self-test)
+# Example suites (types ON by default for user programs)
 self-test: bars-self
 	@bash scripts/selfhost-test.sh $(SELF)
 
