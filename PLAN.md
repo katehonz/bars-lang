@@ -255,10 +255,21 @@ bars/
 
 ### 14.3 Екосистема
 
-- [ ] Central package registry (като crates.io)
-- [ ] `bars publish` команда
-- [ ] CI/CD integration
-- [ ] Editor support (VSCode, Neovim — tree-sitter граматика)
+- [x] Local package registry (filesystem; crates.io-style layout later)
+  - `BARS_REGISTRY` or `$HOME/.bars/registry`
+  - `<reg>/<name>/<version>/{Bars.toml,src/}` + `index.txt`
+  - Deps: `foo = { version = "0.1.0" }` → install into `target/bars-deps`
+- [x] Package CLI on `bars-self`
+  - `new <name> [--bin]` — scaffold Bars.toml + src/lib.brs|main.brs
+  - `publish [dir]` — copy package into local registry
+  - `install <name> [version]` — materialize from registry
+  - `search [query]` — list index
+- [x] CI — `.github/workflows/ci.yml` (host + runtime + bars-self + self-test)
+- [x] Editor support (syntax)
+  - `editors/vscode/` — TextMate grammar + language-configuration
+  - `editors/neovim/` — ftdetect + syntax
+  - (tree-sitter grammar deferred)
+- [ ] Hosted central registry (HTTP) — future
 
 ### 14.4 Езикови Фичъри (еволюция)
 

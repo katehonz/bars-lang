@@ -603,6 +603,12 @@ int64_t bars_env_set(bars_string_t* name) {
     return (v && v[0] != '\0') ? 1 : 0;
 }
 
+bars_string_t* bars_getenv(bars_string_t* name) {
+    if (!name || !name->data) return bars_string_new("");
+    const char* v = getenv(name->data);
+    return bars_string_new(v ? v : "");
+}
+
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>

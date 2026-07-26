@@ -25,6 +25,7 @@
 (extern "bars_env_set" [name i64] -> i64)
 (extern "bars_file_mtime" [path i64] -> i64)
 (extern "bars_sleep_ms" [ms i64] -> i64)
+(extern "bars_getenv" [name i64] -> i64)
 
 ;; ---- diagnostics (Phase 13.2) ----
 
@@ -43,12 +44,17 @@
       (println "       bars-self fmt  <input.brs> [--write]")
       (println "       bars-self lint <input.brs>")
       (println "       bars-self doc  <input.brs> [output.md]")
+      (println "       bars-self new  <name> [--bin]")
+      (println "       bars-self publish [package-dir]")
+      (println "       bars-self install <name> [version]")
+      (println "       bars-self search [query]")
       (println "  Stages: parse → modules → macros → types → ownership → HIR → backend → link")
       (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership | 5 lint")
       (println "  Env:    BARS_SKIP_TYPECHECK=1  BARS_SKIP_OWNERSHIP=1  BARS_STRICT_TYPES=1")
       (println "          BARS_BACKEND=llvm|c   (default llvm; c → .c + cc)")
       (println "          BARS_FORCE=1          rebuild even if up to date")
       (println "          BARS_NO_INCREMENTAL=1 always recompile")
+      (println "          BARS_REGISTRY=path    local package registry (default ~/.bars/registry)")
       1))
 
 ;; Types ON by default (soft warnings). Ownership ON by default (light NLL).
@@ -465,6 +471,45 @@
         (if (str-eq? (args-get i) flag) true
           (recur (+ i 1)))))))
 
+;; ---- ecosystem (Phase 14.3) ----
+
+(defn cmd-new [name]
+  (let [kind (if (has-flag-arg? "--bin") "bin" "lib")]
+    (pkg/new-package name kind)))
+
+(defn cmd-publish [dir]
+  (let [d (if (= (count dir) 0) "." dir)
+        reg (pkg/default-registry)
+        dest (pkg/publish-package d reg)]
+    (if (= (count dest) 0) 1 0)))
+
+(defn cmd-install [name version]
+  (let [reg (pkg/default-registry)
+        dest (pkg/install-from-registry "." reg name version)]
+    (if (= (count dest) 0) 1 0)))
+
+(defn cmd-search [query]
+  (let [reg (pkg/default-registry)
+        entries (pkg/index-list reg)
+        n (count entries)]
+    (do (println (str-concat "registry: " reg))
+        (if (= n 0)
+          (do (note "empty registry (publish a package first)") 0)
+          (loop [i 0 shown 0]
+            (if (>= i n)
+              (if (= shown 0)
+                (do (note "no matches") 0)
+                0)
+              (let [e (get entries i)
+                    nm (get e 0)
+                    ver (get e 1)
+                    ok (if (= (count query) 0) true
+                         (>= (str-index-of nm query) 0))]
+                (if ok
+                  (do (println (str-concat nm (str-concat " " ver)))
+                      (recur (+ i 1) (+ shown 1)))
+                  (recur (+ i 1) shown)))))))))
+
 (defn main []
   (let [n (args-count)]
     (if (< n 2)
@@ -481,6 +526,16 @@
                 (if (< n 3) (usage)
                   (cmd-doc (args-get 2)
                     (if (>= n 4) (args-get 3) "")))
-                (if (< n 3)
-                  (usage)
-                  (compile-file a1 (args-get 2)))))))))))
+                (if (str-eq? a1 "new")
+                  (if (< n 3) (usage) (cmd-new (args-get 2)))
+                  (if (str-eq? a1 "publish")
+                    (cmd-publish (if (>= n 3) (args-get 2) ""))
+                    (if (str-eq? a1 "install")
+                      (if (< n 3) (usage)
+                        (cmd-install (args-get 2)
+                          (if (>= n 4) (args-get 3) "")))
+                      (if (str-eq? a1 "search")
+                        (cmd-search (if (>= n 3) (args-get 2) ""))
+                        (if (< n 3)
+                          (usage)
+                          (compile-file a1 (args-get 2)))))))))))))))

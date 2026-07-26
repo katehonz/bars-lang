@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Bars",
+  "scopeName": "source.bars",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#special" },
+    { "include": "#number" },
+    { "include": "#bool-nil" },
+    { "include": "#keyword-lit" },
+    { "include": "#symbol" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-semicolon.bars",
+      "match": ";;.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.bars",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.bars",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.control.bars",
+      "match": "\\b(defn|defmacro|def|let|if|do|loop|recur|fn|match|when|unless|cond|require|extern|defstruct|deftype|load)\\b"
+    },
+    "special": {
+      "name": "keyword.operator.bars",
+      "match": "['`~@^]"
+    },
+    "number": {
+      "name": "constant.numeric.bars",
+      "match": "-?\\b\\d+\\b"
+    },
+    "bool-nil": {
+      "name": "constant.language.bars",
+      "match": "\\b(true|false|nil)\\b"
+    },
+    "keyword-lit": {
+      "name": "constant.other.keyword.bars",
+      "match": ":[A-Za-z0-9_\\-\\+\\*/!?]+"
+    },
+    "symbol": {
+      "name": "variable.other.bars",
+      "match": "[A-Za-z_\\-\\+\\*/%<>=!?][A-Za-z0-9_\\-\\+\\*/%<>=!?]*"
+    }
+  }
+}

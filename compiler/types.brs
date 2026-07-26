@@ -434,6 +434,7 @@
         (env_insert env "exit" void-fn)
         (env_insert env "bars_system" unary)
         (env_insert env "bars_env_set" unary)
+        (env_insert env "bars_getenv" unary)
         (env_insert env "bars_file_mtime" unary)
         (env_insert env "bars_sleep_ms" unary)
         (env_insert env "bars_file_exists" unary)

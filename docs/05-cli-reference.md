@@ -117,6 +117,30 @@ Built with `make bars-self`. Day-to-day self-host entry point (Bars-first pipeli
 | **fmt** | Pretty-print AST to stdout, or rewrite with `--write` |
 | **lint** | Style + defn shape checks; exit `5` if issues found |
 | **doc** | Markdown from `defn`/`defmacro` + leading `;;` comments |
+| **new** | Scaffold a package (`--bin` for `src/main.brs`) |
+| **publish** | Publish package dir into the local registry |
+| **install** | Install a registry package into `target/bars-deps` |
+| **search** | List / filter the local registry index |
+
+### Local registry
+
+```bash
+export BARS_REGISTRY=~/.bars/registry   # default if unset
+./bars-self new mylib
+./bars-self publish mylib
+./bars-self search my
+./bars-self install mylib 0.1.0
+```
+
+In `Bars.toml`:
+
+```toml
+[dependencies]
+mylib = { version = "0.1.0" }   # from local registry
+# still supported:
+# other = { path = "../other" }
+# remote = { git = "https://…", branch = "main" }
+```
 
 Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`, `BARS_BACKEND_C=1` (C backend).
 

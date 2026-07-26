@@ -1,0 +1,28 @@
+{
+  "name": "bars-lang",
+  "displayName": "Bars",
+  "description": "Language support for the Bars programming language (.brs)",
+  "version": "0.1.0",
+  "publisher": "bars-lang",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "bars",
+        "aliases": ["Bars", "bars"],
+        "extensions": [".brs"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bars",
+        "scopeName": "source.bars",
+        "path": "./syntaxes/bars.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -383,6 +383,98 @@ run_tooling_smoke() {
 echo "=== Phase 14.2 tooling ==="
 run_tooling_smoke
 
+# --- Phase 14.3 ecosystem (local registry) ---
+run_registry_smoke() {
+  local reg="$TMP/bars-reg"
+  local libdir="$TMP/reglib"
+  local appdir="$TMP/regapp"
+  export BARS_REGISTRY="$reg"
+
+  mkdir -p "$libdir/src" "$appdir/src"
+  cat >"$libdir/Bars.toml" <<'EOF'
+[package]
+name = "reglib"
+version = "0.1.0"
+
+[dependencies]
+EOF
+  cat >"$libdir/src/lib.brs" <<'EOF'
+(defn magic [] 55)
+EOF
+  if ! "$CC_BIN" publish "$libdir" >"$TMP/pub.log" 2>&1; then
+    echo "FAIL publish  registry smoke"
+    cat "$TMP/pub.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    unset BARS_REGISTRY
+    return
+  fi
+  if ! grep -q 'reglib 0.1.0' "$reg/index.txt" 2>/dev/null; then
+    echo "FAIL publish  index missing reglib"
+    fail=$((fail + 1))
+    unset BARS_REGISTRY
+    return
+  fi
+
+  cat >"$appdir/Bars.toml" <<'EOF'
+[package]
+name = "regapp"
+version = "0.1.0"
+
+[dependencies]
+reglib = { version = "0.1.0" }
+EOF
+  cat >"$appdir/src/main.brs" <<'EOF'
+(require "reglib" :as r)
+(defn main []
+  (println (r/magic)))
+EOF
+  local out="$TMP/regapp_bin"
+  if ! "$CC_BIN" "$appdir/src/main.brs" "$out" >"$TMP/regapp.compile.log" 2>&1; then
+    echo "FAIL compile  registry dep app"
+    tail -8 "$TMP/regapp.compile.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    unset BARS_REGISTRY
+    return
+  fi
+  local stdout
+  stdout="$("$out" 2>/dev/null || true)"
+  if [[ "$stdout" == *"55"* ]]; then
+    echo "OK   registry publish + version dep (55)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      registry dep (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+
+  # search
+  if "$CC_BIN" search reglib >"$TMP/search.out" 2>&1 && grep -q reglib "$TMP/search.out"; then
+    echo "OK   bars-self search"
+    pass=$((pass + 1))
+  else
+    echo "FAIL search"
+    fail=$((fail + 1))
+  fi
+
+  # new (absolute compiler path — we cd into a temp dir)
+  local newdir="$TMP/newpkg_home"
+  local abs_cc
+  abs_cc="$(cd "$(dirname "$CC_BIN")" && pwd)/$(basename "$CC_BIN")"
+  mkdir -p "$newdir"
+  if (cd "$newdir" && "$abs_cc" new coolpkg >"$TMP/new.log" 2>&1) && [[ -f "$newdir/coolpkg/Bars.toml" ]]; then
+    echo "OK   bars-self new coolpkg"
+    pass=$((pass + 1))
+  else
+    echo "FAIL new"
+    cat "$TMP/new.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  fi
+
+  unset BARS_REGISTRY
+}
+
+echo "=== Phase 14.3 ecosystem ==="
+run_registry_smoke
+
 # --- C backend suite (BARS_BACKEND_C=1 → .c + cc) ---
 # Same examples as LLVM; set BARS_SKIP_C_TEST=1 to skip.
 C_EXAMPLES=(
