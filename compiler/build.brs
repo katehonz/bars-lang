@@ -355,9 +355,12 @@
             (do (err "link" "wasm-tools parse failed") 2)
             (do (note (str-concat "wrote `" (str-concat wasm-out "`")))
                 0)))
-        (do (note (str-concat "wrote `" (str-concat wat "` (install wat2wasm to emit .wasm)")))
-            ;; Touch empty binary path so incremental sees an artifact
-            (spit output-path "#!/bin/sh\necho 'Bars WASM: run with wasmtime on .wat/.wasm'\n")
+        (do (note (str-concat "wrote `" (str-concat wat "` (install wasm-tools/wat2wasm for .wasm)")))
+            ;; Launcher stub: prefer wasmtime on .wat when no .wasm
+            (spit output-path
+              (str-concat "#!/bin/sh\n"
+                (str-concat "exec wasmtime --invoke main \""
+                  (str-concat wat "\" \"$@\"\n"))))
             (bars_system (str-concat "chmod +x " output-path))
             0)))))
 

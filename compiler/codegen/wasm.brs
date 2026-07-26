@@ -4,12 +4,15 @@
 ;; Control flow: PC dispatcher (loop + per-step if). Handles
 ;; assign / call / branch / jump / return / labels.
 ;;
+;; Host I/O: WASI preview1 fd_write → $bars_println_i64 (decimal + newline).
+;;
 ;; Limitations:
-;;   - i64 only (no strings/vectors at runtime)
-;;   - println → no-op (returns 0)
+;;   - i64 only (no Bars strings/vectors at runtime)
+;;   - println prints the i64 value (not pointer-typed strings)
 ;;
 ;; Opt-in: BARS_BACKEND_WASM=1
 ;; Optional: wat2wasm / wasm-tools to emit .wasm
+;; Run: wasmtime --invoke main out.wasm
 
 (defn str-eq? [a b]
   (if (!= (count a) (count b)) false
@@ -282,8 +285,11 @@
               (lines-push out (str-concat "      local.set $" (w-ident dest)))
               (emit-next-pc out i nsteps))
           (if (str-eq? fname "println")
-            ;; no host import yet
-            (do (lines-push out "      i64.const 0")
+            ;; WASI-backed i64 println (arg at words 3..4)
+            (do (if (<= nw 3)
+                  (lines-push out "      i64.const 0")
+                  (lines-push out (str-concat "      " (pair-op words 3))))
+                (lines-push out "      call $bars_println_i64")
                 (lines-push out (str-concat "      local.set $" (w-ident dest)))
                 (emit-next-pc out i nsteps))
             (do (loop [j 3]
@@ -343,12 +349,112 @@
                     (lines-push final "  )")
                     final)))))))
 
+;; WASI import + memory + decimal println helper (emitted once per module).
+(defn emit-wasi-runtime [mod]
+  (do
+    (lines-push mod "  ;; WASI preview1 — stdout via fd_write")
+    (lines-push mod "  (import \"wasi_snapshot_preview1\" \"fd_write\"")
+    (lines-push mod "    (func $fd_write (param i32 i32 i32 i32) (result i32)))")
+    (lines-push mod "  (memory (export \"memory\") 1)")
+    (lines-push mod "  ;; mem: 0..=7 iovec {ptr,len}, 8..=11 nwritten, 16..=48 digit buf")
+    (lines-push mod "  (func $bars_println_i64 (param $v i64) (result i64)")
+    (lines-push mod "    (local $x i64) (local $neg i32) (local $pos i32)")
+    (lines-push mod "    (local $start i32) (local $len i32)")
+    (lines-push mod "    local.get $v")
+    (lines-push mod "    local.set $x")
+    (lines-push mod "    i32.const 0")
+    (lines-push mod "    local.set $neg")
+    (lines-push mod "    i32.const 40")
+    (lines-push mod "    local.set $pos")
+    ;; zero
+    (lines-push mod "    local.get $x")
+    (lines-push mod "    i64.eqz")
+    (lines-push mod "    if")
+    (lines-push mod "      i32.const 39")
+    (lines-push mod "      local.set $pos")
+    (lines-push mod "      i32.const 39")
+    (lines-push mod "      i32.const 48")
+    (lines-push mod "      i32.store8")
+    (lines-push mod "    else")
+    (lines-push mod "      local.get $x")
+    (lines-push mod "      i64.const 0")
+    (lines-push mod "      i64.lt_s")
+    (lines-push mod "      if")
+    (lines-push mod "        i32.const 1")
+    (lines-push mod "        local.set $neg")
+    (lines-push mod "        i64.const 0")
+    (lines-push mod "        local.get $x")
+    (lines-push mod "        i64.sub")
+    (lines-push mod "        local.set $x")
+    (lines-push mod "      end")
+    (lines-push mod "      (loop $digits")
+    (lines-push mod "        local.get $pos")
+    (lines-push mod "        i32.const 1")
+    (lines-push mod "        i32.sub")
+    (lines-push mod "        local.set $pos")
+    (lines-push mod "        local.get $pos")
+    (lines-push mod "        local.get $x")
+    (lines-push mod "        i64.const 10")
+    (lines-push mod "        i64.rem_u")
+    (lines-push mod "        i32.wrap_i64")
+    (lines-push mod "        i32.const 48")
+    (lines-push mod "        i32.add")
+    (lines-push mod "        i32.store8")
+    (lines-push mod "        local.get $x")
+    (lines-push mod "        i64.const 10")
+    (lines-push mod "        i64.div_u")
+    (lines-push mod "        local.set $x")
+    (lines-push mod "        local.get $x")
+    (lines-push mod "        i64.const 0")
+    (lines-push mod "        i64.ne")
+    (lines-push mod "        br_if $digits")
+    (lines-push mod "      )")
+    (lines-push mod "      local.get $neg")
+    (lines-push mod "      if")
+    (lines-push mod "        local.get $pos")
+    (lines-push mod "        i32.const 1")
+    (lines-push mod "        i32.sub")
+    (lines-push mod "        local.set $pos")
+    (lines-push mod "        local.get $pos")
+    (lines-push mod "        i32.const 45")
+    (lines-push mod "        i32.store8")
+    (lines-push mod "      end")
+    (lines-push mod "    end")
+    ;; newline at 40
+    (lines-push mod "    i32.const 40")
+    (lines-push mod "    i32.const 10")
+    (lines-push mod "    i32.store8")
+    (lines-push mod "    local.get $pos")
+    (lines-push mod "    local.set $start")
+    (lines-push mod "    i32.const 41")
+    (lines-push mod "    local.get $pos")
+    (lines-push mod "    i32.sub")
+    (lines-push mod "    local.set $len")
+    ;; iovec at 0
+    (lines-push mod "    i32.const 0")
+    (lines-push mod "    local.get $start")
+    (lines-push mod "    i32.store")
+    (lines-push mod "    i32.const 4")
+    (lines-push mod "    local.get $len")
+    (lines-push mod "    i32.store")
+    ;; fd_write(stdout=1, iov=0, iovcnt=1, nwritten=8)
+    (lines-push mod "    i32.const 1")
+    (lines-push mod "    i32.const 0")
+    (lines-push mod "    i32.const 1")
+    (lines-push mod "    i32.const 8")
+    (lines-push mod "    call $fd_write")
+    (lines-push mod "    drop")
+    (lines-push mod "    i64.const 0")
+    (lines-push mod "  )")
+    mod))
+
 (defn hir-to-wat [hir-lines]
   (let [n (count hir-lines)
         funcs (vector)
         mod (vector)]
-    (do (lines-push mod ";; Generated by Bars WASM/WAT backend (PC dispatch CFG)")
+    (do (lines-push mod ";; Generated by Bars WASM/WAT backend (PC dispatch + WASI println)")
         (lines-push mod "(module")
+        (emit-wasi-runtime mod)
         (loop [i 0 cur-name "" cur-params (vector) cur-body (vector) in-func 0]
           (if (>= i n)
             (do (if (= in-func 1)

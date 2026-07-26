@@ -287,8 +287,8 @@ bars/
 - [x] WASM target (WAT emitter with full CFG)
   - `BARS_BACKEND_WASM=1` → `.wat` / `.wasm` via `compiler/codegen/wasm.brs`
   - **PC dispatcher**: labels + `branch` / `jump` / `return` (loop `$dispatch` + `$__pc`)
-  - i64-oriented; `println` is a no-op (no host imports yet)
-  - Verified: `wasm_fact` → 120, `wasm_loop` → 45 under `wasmtime`
+  - i64-oriented; **WASI `fd_write`** → `$bars_println_i64` (decimal + newline)
+  - Verified: `wasm_fact` → 120, `wasm_loop` → 45, `wasm_print` → `7\n120` under `wasmtime`
 
 ---
 

@@ -148,8 +148,13 @@ Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPE
 ```bash
 BARS_BACKEND_WASM=1 ./bars-self examples/wasm_fact.brs /tmp/f
 # → /tmp/f.wat (+ /tmp/f.wasm if wasm-tools/wat2wasm available)
-wasmtime --invoke main /tmp/f.wasm   # → 120
+wasmtime --invoke main /tmp/f.wasm        # → 120
+
+BARS_BACKEND_WASM=1 ./bars-self examples/wasm_print.brs /tmp/p
+wasmtime --invoke main /tmp/p.wasm        # → 7\n120  (WASI fd_write)
 ```
+
+WASM `println` prints i64 decimals via WASI preview1 `fd_write` (no Boehm GC / full runtime).
 
 ## Options
 

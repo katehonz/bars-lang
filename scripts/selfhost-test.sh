@@ -530,7 +530,7 @@ run_lang_smoke() {
     pass=$((pass + 1))
   fi
 
-  # Executable CFG smoke (if wasm-tools + wasmtime available)
+  # Executable CFG + WASI println (if wasm-tools + wasmtime available)
   if command -v wasm-tools >/dev/null 2>&1 && command -v wasmtime >/dev/null 2>&1; then
     out="$TMP/wasm_fact"
     if BARS_FORCE=1 BARS_BACKEND_WASM=1 "$CC_BIN" examples/wasm_fact.brs "$out" >"$TMP/wasm_fact.log" 2>&1 \
@@ -563,8 +563,25 @@ run_lang_smoke() {
       echo "FAIL wasm_loop compile/validate"
       fail=$((fail + 1))
     fi
+    # WASI fd_write println
+    out="$TMP/wasm_print"
+    if BARS_FORCE=1 BARS_BACKEND_WASM=1 "$CC_BIN" examples/wasm_print.brs "$out" >"$TMP/wasm_print.log" 2>&1 \
+       && wasm-tools validate "$out.wasm" >/dev/null 2>&1; then
+      # stdout lines before wasmtime warnings
+      got="$(wasmtime --invoke main "$out.wasm" 2>/dev/null | grep -E '^[0-9-]+$' | tr '\n' ' ' | sed 's/ *$//')"
+      if [[ "$got" == "7 120 0" ]]; then
+        echo "OK   wasm_print → WASI println 7 / 120"
+        pass=$((pass + 1))
+      else
+        echo "FAIL wasm_print (got: '$got')"
+        fail=$((fail + 1))
+      fi
+    else
+      echo "FAIL wasm_print compile/validate"
+      fail=$((fail + 1))
+    fi
   else
-    echo "SKIP wasmtime CFG run (install wasm-tools + wasmtime)"
+    echo "SKIP wasmtime CFG/WASI run (install wasm-tools + wasmtime)"
   fi
 }
 
