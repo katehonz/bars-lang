@@ -188,6 +188,22 @@ int64_t bars_vector_count_i64(bars_vector_t* vec) {
     return vec ? (int64_t)vec->len : 0;
 }
 
+int64_t bars_count_any_i64(int64_t val) {
+    if (val == 0) return 0;
+    if (val < 0x10000000L || val < 0) return 0;
+    if ((val & 0x7) != 0) return 0;
+    uint32_t* magic_ptr = (uint32_t*)(uintptr_t)val;
+    uint32_t magic = *magic_ptr;
+    if (magic == BARS_MAGIC_VECTOR) {
+        return (int64_t)((const bars_vector_t*)magic_ptr)->len;
+    } else if (magic == BARS_MAGIC_STRING) {
+        return (int64_t)((const bars_string_t*)magic_ptr)->len;
+    } else if (magic == BARS_MAGIC_MAP) {
+        return bars_map_len((const bars_map_t*)magic_ptr);
+    }
+    return 0;
+}
+
 /* Simple i64 vector helpers */
 
 bars_vector_t* bars_vector_new_i64(void) {

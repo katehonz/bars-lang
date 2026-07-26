@@ -566,6 +566,34 @@
           _ (put lines (str-concat "  " (str-concat nxt ":")))]
       [(get tl 0) (get tl 1) 0]))))
 
+;; Collect unique binding names from all match patterns (for pre-alloca)
+(defn name-in-vec? [names name]
+  (let [n (count names)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get names i) name) true
+          (recur (+ i 1)))))))
+
+(defn collect-match-binds [ast]
+  (let [n (count ast)
+        names (vector)]
+    (loop [i 2]
+      (if (>= i n) names
+        (let [pat (get ast i)]
+          (if (is-binding-pat? pat)
+            (do (if (name-in-vec? names (val-of pat)) 0
+                  (push names (val-of pat)))
+                (recur (+ i 2)))
+            (if (is-wildcard-pat? pat)
+              (recur (+ i 2))
+              (let [fields (pattern-fields pat)]
+                (do (loop [fi 0]
+                      (if (>= fi (count fields)) 0
+                        (do (if (name-in-vec? names (get fields fi)) 0
+                              (push names (get fields fi)))
+                            (recur (+ fi 1)))))
+                    (recur (+ i 2)))))))))))
+
 (defn lower-match [ast t l lines loops adt]
   (let [scrut (get ast 1)
         n (count ast)
@@ -577,10 +605,16 @@
         t2 (+ t1 1)
         join (fresh-label l1 "match_join_")
         l2 (+ l1 1)
-        _ (put lines (str-concat "    assign " (str-concat result " const 0")))]
+        ;; Pre-allocate result + all pattern bindings before any branch
+        ;; so LLVM allocas dominate all match arms
+        _ (put lines (str-concat "    assign " (str-concat result " const 0")))
+        binds (collect-match-binds ast)
+        _ (loop [bi 0]
+            (if (>= bi (count binds)) 0
+              (do (put lines (str-concat "    assign " (str-concat (get binds bi) " const 0")))
+                  (recur (+ bi 1)))))]
     (loop [i 2 tcur t2 lcur l2]
       (if (>= i n)
-        ;; No catch-all: fallthrough after last next → join
         (do (put lines (str-concat "    jump " join))
             (put lines (str-concat "  " (str-concat join ":")))
             (mk-ret result tcur lcur))

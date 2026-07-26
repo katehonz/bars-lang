@@ -68,12 +68,20 @@
 (defn addr-name [name]
   (str-concat name ".addr"))
 
-;; Ensure alloca for name; returns [output env]
+;; Record that name needs an alloca (emitted later at function entry).
+;; Returns [output env] — does not emit yet (avoids non-dominating allocas).
 (defn ensure-alloca [output env name]
   (if (env-has? env name) [output env]
-    (do (lines-push output
-          (str-concat "  " (str-concat (llvm-local (addr-name name)) " = alloca i64")))
-        [output (env-add env name)])))
+    [output (env-add env name)]))
+
+;; Emit all pending allocas (call after entry label / at start of body)
+(defn emit-allocas [output env]
+  (let [n (count env)]
+    (loop [i 0]
+      (if (>= i n) output
+        (do (lines-push output
+              (str-concat "  " (str-concat (llvm-local (addr-name (get env i))) " = alloca i64")))
+            (recur (+ i 1)))))))
 
 ;; Resolve operand: returns [llvm-str output reg]
 ;; For slotted vars, emits a load.
@@ -143,6 +151,7 @@
         (lines-push lines "declare i64 @bars_vector_push_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_get_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_count_i64(i64)")
+        (lines-push lines "declare i64 @bars_count_any_i64(i64)")
         (lines-push lines "declare i64 @bars_slurp(i64)")
         (lines-push lines "declare i64 @bars_spit(i64, i64)")
         (lines-push lines "declare i64 @bars_system(i64)")
@@ -170,7 +179,7 @@
               "")))))))
 
 (defn map-vec-ops [fname]
-  (if (str-eq? fname "count") "bars_vector_count_i64"
+  (if (str-eq? fname "count") "bars_count_any_i64"
     (if (str-eq? fname "push") "bars_vector_push_i64"
       (if (str-eq? fname "get") "bars_vector_get_i64"
         (if (str-eq? fname "vector") "bars_vector_new_i64"
@@ -491,12 +500,41 @@
         (lines-push lines "}")
         lines)))
 
+;; Inject allocas right after the first basic-block label (entry_N:)
+;; Labels in body are stored without leading spaces (stripped by process-line).
+(defn is-label-line? [line]
+  (if (< (count line) 2) false
+    (if (str-starts-with? line " ") false
+      (if (str-starts-with? line "define ") false
+        (if (str-starts-with? line "}") false
+          (str-eq? (str-slice line (- (count line) 1) (count line)) ":"))))))
+
+(defn inject-allocas-after-define [body env]
+  (if (<= (count env) 0) body
+    (let [n (count body)
+          out (vector)]
+      (loop [i 0 done 0]
+        (if (>= i n) out
+          (let [line (get body i)]
+            (do (push out line)
+                (if (if (= done 0) (is-label-line? line) false)
+                  (do (loop [j 0]
+                        (if (>= j (count env)) 0
+                          (do (push out (str-concat "  " (str-concat (llvm-local (addr-name (get env j))) " = alloca i64")))
+                              (recur (+ j 1)))))
+                      (recur (+ i 1) 1))
+                  (recur (+ i 1) done)))))))))
+
 (defn hir-to-llvm [hir-lines]
-  (let [n (count hir-lines)
-        empty (vector)]
-    (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env empty reg 0]
+  (let [n (count hir-lines)]
+    (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env (vector) reg 0
+           all-body (vector)]
       (if (>= i n)
-        (let [body2 (if (= in-func 1) (lines-push body "}") body)
+        (let [body2 (if (= in-func 1)
+                      (let [closed (lines-push body "}")
+                            inj (inject-allocas-after-define closed env)]
+                        (do (append-vec all-body inj) all-body))
+                      all-body)
               out (llvm-header)
               wrap (c-main-wrapper)]
           (do (append-vec out strs)
@@ -504,9 +542,17 @@
               (append-vec out body2)
               (append-vec out wrap)
               out))
-        (let [line (get hir-lines i)
-              res (process-line body line in-func strs str-cnt env reg)]
-          (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5)))))))
+        (let [line (get hir-lines i)]
+          (if (str-starts-with? line "func ")
+            (let [flushed (if (= in-func 1)
+                            (let [closed (lines-push body "}")
+                                  inj (inject-allocas-after-define closed env)]
+                              (do (append-vec all-body inj) all-body))
+                            all-body)
+                  res (process-line (vector) line 0 strs str-cnt (vector) 0)]
+              (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) flushed))
+            (let [res (process-line body line in-func strs str-cnt env reg)]
+              (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) all-body))))))))
 
 (defn join-lines [ll-lines]
   (let [n (count ll-lines)]

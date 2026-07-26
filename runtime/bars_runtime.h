@@ -100,6 +100,8 @@ bars_vector_t* bars_vector_new_i64(void);
 void bars_vector_push_i64(bars_vector_t* vec, int64_t val);
 int64_t bars_vector_get_i64(bars_vector_t* vec, int64_t idx);
 int64_t bars_vector_count_i64(bars_vector_t* vec);
+/* Polymorphic count: string length or vector length by magic */
+int64_t bars_count_any_i64(int64_t val);
 
 /* Map operations */
 bars_map_t* bars_map_new(void);
