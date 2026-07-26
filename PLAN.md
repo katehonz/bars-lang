@@ -209,7 +209,9 @@ bars/
 - [x] **13.5** C code generation backend (`compiler/codegen/c.brs`)
   - HIR → `.c` (int64_t temps, goto labels, runtime via bars_runtime.h)
   - Opt-in: `BARS_BACKEND_C=1 ./bars-self in.brs out` → `out.c` + `cc -I. … -lgc -lm`
+  - Pointer APIs cast via `(void*)(uintptr_t)` / `(int64_t)(uintptr_t)`; void map-set/spit
   - Default remains LLVM (`.ll` + clang)
+  - self-test runs full C suite (14 examples); `make self-test-c`; skip with `BARS_SKIP_C_TEST=1`
 
 ---
 

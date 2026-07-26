@@ -193,13 +193,15 @@
         (do (lines-push o1 (str-concat "  " (str-concat dest (str-concat " = " (str-concat val ";")))))
             [o1 e1])))))
 
+;; Emit args; cast each through (void*)(uintptr_t) so pointer APIs accept i64.
 (defn emit-call-args [words n]
   (loop [i 3 acc ""]
     (if (>= i n) acc
-      (let [a (pair-op words i)]
+      (let [a (pair-op words i)
+            cast (str-concat "(void*)(uintptr_t)(" (str-concat a ")"))]
         (if (= i 3)
-          (recur (+ i 2) a)
-          (recur (+ i 2) (str-concat acc (str-concat ", " a))))))))
+          (recur (+ i 2) cast)
+          (recur (+ i 2) (str-concat acc (str-concat ", " cast))))))))
 
 (defn emit-binop-c [output dest op words env]
   (let [l (pair-op words 3)
@@ -251,9 +253,18 @@
                   args (if (<= n 3) "" (emit-call-args words n))
                   er (ensure-decl output env dest)
                   o1 (get er 0)
-                  e1 (get er 1)]
-              (do (lines-push o1 (str-concat "  " (str-concat dest (str-concat " = " (str-concat mapped (str-concat "(" (str-concat args ");")))))))
-                  [o1 e1]))))))))
+                  e1 (get er 1)
+                  is-void (if (str-eq? fname "map-set") true
+                            (if (str-eq? fname "spit") true false))]
+              (if is-void
+                (do (lines-push o1 (str-concat "  " (str-concat mapped (str-concat "(" (str-concat args ");")))))
+                    (lines-push o1 (str-concat "  " (str-concat dest " = 0;")))
+                    [o1 e1])
+                (do (lines-push o1
+                      (str-concat "  " (str-concat dest
+                        (str-concat " = (int64_t)(uintptr_t)"
+                          (str-concat mapped (str-concat "(" (str-concat args ");")))))))
+                    [o1 e1])))))))))
 
 (defn emit-branch [output words]
   (let [c (pair-op words 1)

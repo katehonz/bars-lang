@@ -7,7 +7,7 @@
 # bootstrap/ is frozen like Nim csources — only rebuild for bring-up.
 
 .PHONY: all build host runtime bars-self self gen2 gen3 identity \
-        self-test test clean install examples help
+        self-test self-test-c test clean install examples help
 
 HOST     := ./target/release/bars
 SELF     := ./bars-self
@@ -26,7 +26,8 @@ help:
 	@echo "  make gen2        - Gen2: bars-self recompiles itself → ./bars-self2"
 	@echo "  make gen3        - Gen3: bars-self2 recompiles → ./bars-self3"
 	@echo "  make identity    - Gen3.ll == Gen4.ll fixed-point check"
-	@echo "  make self-test   - run example suite with ./bars-self (types ON)"
+	@echo "  make self-test   - example suite (LLVM + git smoke + C backend)"
+	@echo "  make self-test-c - C-backend examples only (BARS_BACKEND_C=1)"
 	@echo "  make test        - cargo test (bootstrap)"
 	@echo "  make clean       - remove build artifacts"
 	@echo ""
@@ -34,6 +35,7 @@ help:
 	@echo "     BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off"
 	@echo "     BARS_STRICT_TYPES=1                            hard-fail types"
 	@echo "     BARS_BACKEND_C=1     use C backend (.c + cc) instead of LLVM"
+	@echo "     BARS_SKIP_C_TEST=1   skip C suite inside self-test"
 	@echo "     (self-host skips types only; ownership is light NLL)"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
@@ -89,6 +91,18 @@ identity: gen3
 # Example suites (types ON by default for user programs)
 self-test: bars-self
 	@bash scripts/selfhost-test.sh $(SELF)
+
+# C backend only (same examples, BARS_BACKEND_C=1)
+self-test-c: bars-self
+	@BARS_BACKEND_C=1 bash -c 'pass=0; fail=0; \
+	  for s in examples/math.brs examples/loop_demo.brs examples/match_demo.brs \
+	    examples/vector.brs examples/string.brs examples/cond_demo.brs \
+	    examples/module_demo.brs examples/map.brs examples/nested_demo.brs; do \
+	    out=/tmp/bars-c-$$$$-$$(basename $$s .brs); \
+	    if BARS_BACKEND_C=1 $(SELF) $$s $$out >/tmp/bars-c-$$$$.log 2>&1 && $$out >/dev/null 2>&1; then \
+	      echo "OK   $$s (c)"; pass=$$((pass+1)); \
+	    else echo "FAIL $$s (c)"; fail=$$((fail+1)); fi; \
+	  done; echo "=== $$pass passed, $$fail failed (c) ==="; test $$fail -eq 0'
 
 self-test-gen2: gen2
 	@bash scripts/selfhost-test.sh $(SELF2)
