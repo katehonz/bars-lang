@@ -30,8 +30,8 @@ help:
 	@echo "  make test        - cargo test (bootstrap)"
 	@echo "  make clean       - remove build artifacts"
 	@echo ""
-	@echo "Env: BARS_TYPECHECK=1 BARS_OWNERSHIP=1 BARS_STRICT_TYPES=1"
-	@echo "     BARS_SKIP_TYPECHECK BARS_SKIP_OWNERSHIP (force off)"
+	@echo "Env: types ON by default; BARS_SKIP_TYPECHECK=1 to disable"
+	@echo "     BARS_OWNERSHIP=1  BARS_STRICT_TYPES=1  BARS_SKIP_OWNERSHIP=1"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 

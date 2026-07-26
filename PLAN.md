@@ -109,7 +109,7 @@ compiler/
 - [x] **12.23c** Gen2 correctness: fixed `special-tag` hash collision (`mk-if`/`mk-do` ≡ `match`); const match patterns; polymorphic count; dominate allocas
 - [x] **12.24** Identity test (IR): Gen3.ll == Gen4.ll fixed point; Gen3 compiles math/match/loop/cond
 - [x] **12.25** Rust = bootstrap only (Nim `csources`): `bootstrap/FROZEN.md`, `make bars-self|identity|self-test`
-- [x] **12.26** types + ownership in pipeline (opt-in `BARS_TYPECHECK=1`); ownership if/copy-ops fixes; Gen2/3/4 identity restored
+- [x] **12.26** types in pipeline (default ON; soft); Gen2-safe infer (no ctx loop rebind); Gen2 suite 12/12 + identity
 
 **HIR Stage 10+ features (2026-07-26):**
 - deftype → constructors as vectors `[disc, fields…]`

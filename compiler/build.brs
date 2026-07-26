@@ -20,13 +20,12 @@
 (defn die [msg code]
   (do (println msg) code))
 
-;; Types/ownership opt-in (Gen2 typecheck still WIP):
-;;   BARS_TYPECHECK=1 / BARS_OWNERSHIP=1 to enable
-;;   BARS_SKIP_* forces off; BARS_STRICT_TYPES=1 hard-fails types
+;; Types ON by default (soft warnings). Ownership opt-in (stub walk).
+;;   BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off
+;;   BARS_OWNERSHIP=1                               enable ownership
+;;   BARS_STRICT_TYPES=1                            hard-fail type issues
 (defn skip-typecheck? []
-  (if (= (bars_env_set "BARS_SKIP_TYPECHECK") 1) true
-    (if (= (bars_env_set "BARS_TYPECHECK") 1) false
-      true)))
+  (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
 
 (defn skip-ownership? []
   (if (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1) true

@@ -172,12 +172,16 @@ void bars_vector_push(bars_vector_t* vec, bars_value_t val) {
     vec->data[vec->len++] = val;
 }
 
-void bars_vector_push_i64(bars_vector_t* vec, int64_t val) {
+/* Returns vec so call sites may use the result; mutates in place. */
+int64_t bars_vector_push_i64(bars_vector_t* vec, int64_t val) {
+    if (!vec) return 0;
     bars_value_t v = { .tag = BARS_I64, .data = { .i64 = val } };
     bars_vector_push(vec, v);
+    return (int64_t)(uintptr_t)vec;
 }
 
 int64_t bars_vector_get_i64(bars_vector_t* vec, int64_t idx) {
+    if (!vec) return 0;
     if (idx < 0 || idx >= (int64_t)vec->len) return 0;
     bars_value_t v = vec->data[idx];
     if (v.tag == BARS_I64) return v.data.i64;

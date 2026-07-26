@@ -5,42 +5,42 @@
 ;; ====== Type Representation ======
 ;; Type tags (internal): 0=I64, 1=F64, 2=Bool, 3=Void, 4=Str, 5=Var, 6=Fun, 7=Named
 
+;; Flat push sequences (nested do/push miscompiles under Gen1→Gen2 LLVM).
 (defn t0 [tag]
-  (let [v (vector)] (do (push v tag) v))
-)
-
+  (let [v (vector)]
+    (do (push v tag) v)))
 
 (defn T_I64 []
-  (let [v (vector)] (do (push v 0) v))
-)
+  (let [v (vector)]
+    (do (push v 0) v)))
 
 (defn T_F64 []
-  (let [v (vector)] (do (push v 1) v))
-)
+  (let [v (vector)]
+    (do (push v 1) v)))
 
 (defn T_Bool []
-  (let [v (vector)] (do (push v 2) v))
-)
+  (let [v (vector)]
+    (do (push v 2) v)))
 
 (defn T_Void []
-  (let [v (vector)] (do (push v 3) v))
-)
+  (let [v (vector)]
+    (do (push v 3) v)))
 
 (defn T_Str []
-  (let [v (vector)] (do (push v 4) v))
-)
+  (let [v (vector)]
+    (do (push v 4) v)))
 
 (defn T_Var [id]
-  (let [v (vector)] (do (push v 5) (do (push v id) v)))
-)
+  (let [v (vector)]
+    (do (push v 5) (push v id) v)))
 
 (defn T_Fun [params ret]
-  (let [v (vector)] (do (push v 6) (do (push v params) (do (push v ret) v))))
-)
+  (let [v (vector)]
+    (do (push v 6) (push v params) (push v ret) v)))
 
 (defn T_Named [name]
-  (let [v (vector)] (do (push v 7) (do (push v name) v)))
-)
+  (let [v (vector)]
+    (do (push v 7) (push v name) v)))
 
 (defn type_tag [t]
   (get t 0)
@@ -76,14 +76,16 @@
     (if (is_var? a)
       (= (var_id a) (var_id b))
       (if (is_fun? a)
-        (if (= (count (fun_params a)) (count (fun_params b)))
-          (loop [i 0]
-            (if (>= i (count (fun_params a)))
-              true
-              (if true
-                (recur (+ i 1))
-                false)))
-          false)
+        (if (not (= (count (fun_params a)) (count (fun_params b))))
+          false
+          (if (not (type_eq? (fun_ret a) (fun_ret b)))
+            false
+            (loop [i 0]
+              (if (>= i (count (fun_params a)))
+                true
+                (if (type_eq? (get (fun_params a) i) (get (fun_params b) i))
+                  (recur (+ i 1))
+                  false)))))
         true)))
 )
 
@@ -120,8 +122,10 @@
 
 (defn env_insert [env name scheme]
   (let [pair (vector)]
-    (do (push pair name) (do (push pair scheme) (do (push env pair) env))))
-)
+    (do (push pair name)
+        (push pair scheme)
+        (push env pair)
+        env)))
 
 ;; ====== Substitution ======
 
@@ -136,8 +140,10 @@
 
 (defn subst_insert [subst id ty]
   (let [pair (vector)]
-    (do (push pair id) (do (push pair ty) (do (push subst pair) subst))))
-)
+    (do (push pair id)
+        (push pair ty)
+        (push subst pair)
+        subst)))
 
 (defn apply_subst [subst ty]
   (loop [ty ty]
@@ -201,18 +207,16 @@
           (if (occurs? (var_id b) a subst)
             [false subst]
             [true (subst_insert subst (var_id b) a)])
-          (if (is_fun? a)
-            (if (is_fun? b)
-              (if (not (= (count (fun_params a)) (count (fun_params b))))
-                [false subst]
-                (loop [i 0 s subst]
-                  (if (>= i (count (fun_params a)))
-                    [true s]
-                    (let [res [true s]]
-                      (if (get res 0)
-                        (recur (+ i 1) (get res 1))
-                        [false subst])))))
-              [false subst])
+          (if (if (is_fun? a) (is_fun? b) false)
+            (if (not (= (count (fun_params a)) (count (fun_params b))))
+              [false subst]
+              (loop [i 0 s subst]
+                (if (>= i (count (fun_params a)))
+                  (unify (fun_ret a) (fun_ret b) s)
+                  (let [res (unify (get (fun_params a) i) (get (fun_params b) i) s)]
+                    (if (get res 0)
+                      (recur (+ i 1) (get res 1))
+                      [false subst])))))
             [false subst])))))
 )
 
@@ -276,13 +280,13 @@
 (defn generalize [env ty]
   (let [ty-vars (ty_free_vars ty)
         env-vars (env_free_vars env)
-        gen-vars (vec_diff ty-vars env-vars)]
-    (let [v (vector)] (do (push v gen-vars) (do (push v ty) v))))
-)
+        gen-vars (vec_diff ty-vars env-vars)
+        v (vector)]
+    (do (push v gen-vars) (push v ty) v)))
 
 (defn mono_scheme [ty]
-  (let [v (vector)] (do (push v (vector)) (do (push v ty) v)))
-)
+  (let [v (vector)]
+    (do (push v (vector)) (push v ty) v)))
 
 (defn instantiate [scheme counter]
   (let [vars (get scheme 0)
@@ -334,10 +338,22 @@
 
 ;; ====== Builtin Environment ======
 
-(defn i64_vec [] (let [v (vector)] (do (push v (T_I64)) v)))
-(defn i64_i64 [] (let [v (vector)] (do (push v (T_I64)) (do (push v (T_I64)) v))))
-(defn i64_i64-i64 [] (let [v (vector)] (do (push v (T_I64)) (do (push v (T_I64)) (do (push v (T_I64)) v)))))
-(defn bool_vec [] (let [v (vector)] (do (push v (T_Bool)) v)))
+(defn i64_vec []
+  (let [v (vector)]
+    (do (push v (T_I64)) v)))
+
+(defn i64_i64 []
+  (let [v (vector)]
+    (do (push v (T_I64)) (push v (T_I64)) v)))
+
+(defn i64_i64-i64 []
+  (let [v (vector)]
+    (do (push v (T_I64)) (push v (T_I64)) (push v (T_I64)) v)))
+
+(defn bool_vec []
+  (let [v (vector)]
+    (do (push v (T_Bool)) v)))
+
 (defn empty_vec [] (vector))
 
 (defn builtin_env [ctx]
@@ -461,175 +477,140 @@
                     (recur (+ i 1)))))))
         out)))
 
-;; ====== INFER-EXPR (core recursive function) ======
+;; ====== INFER-EXPR ======
+;; Returns [type, ctx]. ctx is mutated in place (constraints/counter);
+;; always pass the same ctx — never rebind from (get res 1) in loops
+;; (Gen1 LLVM leaves uninit allocas on sibling branches for loop rebinds).
 
-;; infer_expr returns [type, ctx]
-;; Handles: atoms (0=num, 1=sym, 2=str, 3=kw, 4=nil, 5=bool)
-;;          special forms: 10=defn, 11=let, 12=if, 13=do, 14=loop, 15=recur
-;;          regular lists: function calls
+(defn ret2 [ty ctx]
+  (let [v (vector)]
+    (do (push v ty) (push v ctx) v)))
+
+(defn res-ty [r] (get r 0))
+
 (defn infer_expr [env ctx expr]
   (if (is_atom? expr)
     (let [tag (ast_tag expr)]
-      (cond
-        (= tag 0) [(T_I64) ctx]
-        (= tag 1) (let [name (ast_val expr)
-                        found (env_lookup env name)]
-                    (if (> (count found) 0)
-                      [(apply_subst (vector) (get found 1)) ctx]
-                      ;; Unknown free var — fresh (modules / forward refs)
-                      [(fresh_var ctx) ctx]))
-        (= tag 2) [(T_Str) ctx]
-        (= tag 3) [(T_Str) ctx]
-        (= tag 4) [(T_Void) ctx]
-        (= tag 5) [(T_Bool) ctx]
-        :else     [(fresh_var ctx) ctx]))
+      (if (= tag 0) (ret2 (T_I64) ctx)
+        (if (= tag 1)
+          (let [name (ast_val expr)
+                found (env_lookup env name)]
+            (if (> (count found) 0)
+              (ret2 (apply_subst (vector) (get found 1)) ctx)
+              (ret2 (fresh_var ctx) ctx)))
+          (if (= tag 2) (ret2 (T_Str) ctx)
+            (if (= tag 3) (ret2 (T_Str) ctx)
+              (if (= tag 4) (ret2 (T_Void) ctx)
+                (if (= tag 5) (ret2 (T_Bool) ctx)
+                  (ret2 (fresh_var ctx) ctx))))))))
     (let [tag (ast_tag (get expr 0))]
-      (cond
-        (= tag 10) (let [name-sym (get expr 1)
-                              name (ast_val name-sym)
-                              params (normalize_params (get expr 2))
-                              body (get expr 3)]
-                          (do (loop [i 0]
-                                (if (>= i (count params)) 0
-                                  (let [p (get params i)
-                                        pname (ast_val p)]
-                                    (do (env_insert env pname (mono_scheme (fresh_var ctx)))
-                                        (recur (+ i 1))))))
-                              (let [param-tys (loop [i 0 acc (vector)]
-                                                (if (>= i (count params)) acc
-                                                  (let [found (env_lookup env (ast_val (get params i)))]
-                                                    (if (> (count found) 0)
-                                                      (do (push acc (get found 1)) (recur (+ i 1) acc))
-                                                      (recur (+ i 1) acc)))))
-                                    res (infer_expr env ctx body)
-                                    body-ty (get res 0)
-                                    ctx (get res 1)]
-                                (let [fn-ty (T_Fun param-tys body-ty)]
-                                  (do (env_insert env name (mono_scheme fn-ty))
-                                      [(T_Void) ctx])))))
-        (= tag 11) (infer_let env ctx expr)
-        (= tag 12) (infer_if env ctx expr)
-        (= tag 13) (infer_do env ctx expr)
-        (= tag 14) (infer_loop env ctx expr)
-        (= tag 15) (infer_recur env ctx expr)
-        (= tag 17) (infer_match env ctx expr)
-        (= tag 22) (infer_quote env ctx expr)
-        :else      (infer_call env ctx expr))))
-)
+      (if (= tag 10)
+        (let [name (ast_val (get expr 1))
+              params (normalize_params (get expr 2))
+              body (get expr 3)]
+          (do (loop [i 0]
+                (if (>= i (count params)) 0
+                  (do (env_insert env (ast_val (get params i)) (mono_scheme (fresh_var ctx)))
+                      (recur (+ i 1)))))
+              (let [param-tys (vector)
+                    _ (loop [i 0]
+                        (if (>= i (count params)) 0
+                          (let [found (env_lookup env (ast_val (get params i)))]
+                            (do (if (> (count found) 0)
+                                  (push param-tys (get found 1))
+                                  0)
+                                (recur (+ i 1))))))
+                    body-ty (res-ty (infer_expr env ctx body))
+                    fn-ty (T_Fun param-tys body-ty)]
+                (do (env_insert env name (mono_scheme fn-ty))
+                    (ret2 (T_Void) ctx)))))
+        (if (= tag 11) (infer_let env ctx expr)
+          (if (= tag 12) (infer_if env ctx expr)
+            (if (= tag 13) (infer_do env ctx expr)
+              (if (= tag 14) (infer_loop env ctx expr)
+                (if (= tag 15) (infer_recur env ctx expr)
+                  (if (= tag 17) (infer_match env ctx expr)
+                    (if (= tag 22) (infer_quote env ctx expr)
+                      (infer_call env ctx expr))))))))))))
 
 ;; ====== Special Form Handlers ======
 
-;; Bindings are flat: [name1 val1 name2 val2 ...] (after unwrap_vec)
 (defn infer_flat_binds [env ctx binds body-start body-ast]
   (let [plain (unwrap_vec binds)
         n (count plain)
         nbody (count body-ast)]
-    (loop [i 0 env env ctx ctx]
+    (loop [i 0]
       (if (>= i n)
         (if (<= nbody (+ body-start 1))
           (infer_expr env ctx (get body-ast body-start))
-          (loop [j body-start last-ty (T_Void) ctx ctx]
-            (if (>= j nbody) [last-ty ctx]
-              (let [res (infer_expr env ctx (get body-ast j))
-                    ty (get res 0)
-                    ctx (get res 1)]
-                (recur (+ j 1) ty ctx)))))
-        (let [name-atom (get plain i)
-              val-expr (get plain (+ i 1))
-              name (ast_val name-atom)
-              res (infer_expr env ctx val-expr)
-              val-ty (get res 0)
-              ctx (get res 1)]
+          (loop [j body-start last-ty (T_Void)]
+            (if (>= j nbody) (ret2 last-ty ctx)
+              (let [ty (res-ty (infer_expr env ctx (get body-ast j)))]
+                (recur (+ j 1) ty)))))
+        (let [name (ast_val (get plain i))
+              val-ty (res-ty (infer_expr env ctx (get plain (+ i 1))))]
           (do (env_insert env name (mono_scheme val-ty))
-              (recur (+ i 2) env ctx)))))))
+              (recur (+ i 2))))))))
 
 (defn infer_let [env ctx expr]
-  (infer_flat_binds env ctx (get expr 1) 2 expr)
-)
+  (infer_flat_binds env ctx (get expr 1) 2 expr))
 
 (defn infer_if [env ctx expr]
-  (let [cond-expr (get expr 1)
-        then-expr (get expr 2)
-        else-expr (get expr 3)
-        res-cond (infer_expr env ctx cond-expr)
-        cond-ty (get res-cond 0)
-        ctx (get res-cond 1)
-        res-then (infer_expr env ctx then-expr)
-        then-ty (get res-then 0)
-        ctx (get res-then 1)
-        res-else (infer_expr env ctx else-expr)
-        else-ty (get res-else 0)
-        ctx (get res-else 1)]
+  (let [cond-ty (res-ty (infer_expr env ctx (get expr 1)))
+        then-ty (res-ty (infer_expr env ctx (get expr 2)))
+        else-ty (res-ty (infer_expr env ctx (get expr 3)))]
     (do (ctx_add_constraint ctx cond-ty (T_Bool))
         (ctx_add_constraint ctx then-ty else-ty)
-        [then-ty ctx]))
-)
+        (ret2 then-ty ctx))))
 
 (defn infer_do [env ctx expr]
   (let [n (count expr)]
-    (loop [i 1 last-ty (T_Void) ctx ctx]
-      (if (>= i n) [last-ty ctx]
-        (let [res (infer_expr env ctx (get expr i))
-              ty (get res 0)
-              ctx (get res 1)]
-          (recur (+ i 1) ty ctx)))))
-)
+    (loop [i 1 last-ty (T_Void)]
+      (if (>= i n) (ret2 last-ty ctx)
+        (recur (+ i 1) (res-ty (infer_expr env ctx (get expr i))))))))
 
 (defn infer_loop [env ctx expr]
-  (infer_flat_binds env ctx (get expr 1) 2 expr)
-)
+  (infer_flat_binds env ctx (get expr 1) 2 expr))
 
 (defn infer_recur [env ctx expr]
   (let [n (count expr)]
-    (loop [i 1 ctx ctx]
-      (if (>= i n) [(fresh_var ctx) ctx]
-        (let [res (infer_expr env ctx (get expr i))
-              ctx (get res 1)]
-          (recur (+ i 1) ctx)))))
-)
+    (do (loop [i 1]
+          (if (>= i n) 0
+            (do (infer_expr env ctx (get expr i))
+                (recur (+ i 1)))))
+        (ret2 (fresh_var ctx) ctx))))
 
-;; Match AST: [[17] scrut pat1 body1 pat2 body2 ...]
 (defn infer_match [env ctx expr]
-  (let [matched (get expr 1)
-        n (count expr)
-        res-mat (infer_expr env ctx matched)
-        mat-ty (get res-mat 0)
-        ctx (get res-mat 1)
+  (let [n (count expr)
+        _ (infer_expr env ctx (get expr 1))
         result-ty (fresh_var ctx)]
-    (loop [i 2 ctx ctx]
-      (if (>= i n) [result-ty ctx]
-        (let [pattern (get expr i)
-              body (get expr (+ i 1))]
-          (do (infer_pattern pattern env ctx)
-              (let [res (infer_expr env ctx body)
-                    arm-ty (get res 0)
-                    ctx (get res 1)]
-                (do (ctx_add_constraint ctx result-ty arm-ty)
-                    (recur (+ i 2) ctx))))))))
-)
+    (do (loop [i 2]
+          (if (>= i n) 0
+            (do (infer_pattern (get expr i) env ctx)
+                (let [arm-ty (res-ty (infer_expr env ctx (get expr (+ i 1))))]
+                  (do (ctx_add_constraint ctx result-ty arm-ty)
+                      (recur (+ i 2)))))))
+        (ret2 result-ty ctx))))
 
 (defn infer_pattern [pattern env ctx]
   (if (is_atom? pattern)
-    (let [tag (ast_tag pattern)]
-      (if (= tag 1)
-        (env_insert env (ast_val pattern) (mono_scheme (fresh_var ctx)))
-        0))
-    0)
-)
+    (if (= (ast_tag pattern) 1)
+      (env_insert env (ast_val pattern) (mono_scheme (fresh_var ctx)))
+      0)
+    0))
 
 (defn infer_quote [env ctx expr]
-  [(T_Void) ctx]
-)
+  (ret2 (T_Void) ctx))
 
 ;; ====== Function Call Inference ======
 
 (defn infer_args [env ctx expr start ret-ty]
   (let [n (count expr)]
-    (loop [i start ctx ctx]
-      (if (>= i n) [ret-ty ctx]
-        (let [res (infer_expr env ctx (get expr i))
-              ctx (get res 1)]
-          (recur (+ i 1) ctx))))))
+    (do (loop [i start]
+          (if (>= i n) 0
+            (do (infer_expr env ctx (get expr i))
+                (recur (+ i 1)))))
+        (ret2 ret-ty ctx))))
 
 (defn infer_call [env ctx expr]
   (let [head (get expr 0)
@@ -642,22 +623,19 @@
             (if (is_fun? fn-ty)
               (let [param-tys (fun_params fn-ty)
                     ret-ty (fun_ret fn-ty)]
-                (loop [i 1 ctx ctx]
-                  (if (>= i n) [ret-ty ctx]
-                    (let [res (infer_expr env ctx (get expr i))
-                          arg-ty (get res 0)
-                          ctx (get res 1)
-                          param-idx (- i 1)]
-                      (do (if (< param-idx (count param-tys))
-                            (ctx_add_constraint ctx arg-ty (get param-tys param-idx))
-                            0)
-                          (recur (+ i 1) ctx))))))
+                (do (loop [i 1]
+                      (if (>= i n) 0
+                        (let [arg-ty (res-ty (infer_expr env ctx (get expr i)))
+                              param-idx (- i 1)]
+                          (do (if (< param-idx (count param-tys))
+                                (ctx_add_constraint ctx arg-ty (get param-tys param-idx))
+                                0)
+                              (recur (+ i 1))))))
+                    (ret2 ret-ty ctx)))
               (infer_args env ctx expr 1 (fresh_var ctx))))
           (infer_args env ctx expr 1 (fresh_var ctx))))
-      (let [res (infer_expr env ctx head)
-            ctx (get res 1)]
-        (infer_args env ctx expr 1 (fresh_var ctx))))))
-
+      (do (infer_expr env ctx head)
+          (infer_args env ctx expr 1 (fresh_var ctx))))))
 ;; ====== Solving Constraints ======
 
 (defn solve [ctx]
