@@ -65,8 +65,10 @@
                     (recur (+ i 1)))))))
         out)))
 
-;; ---- Environment (stack of scopes, append-only) ----
-;; Lookup scans scopes top-down, then each scope in reverse (newest first)
+;; ---- Environment (stack of scopes) ----
+;; insert → current scope only.
+;; update → shadow in the scope that owns the name (host semantics).
+;; pop    → real vector pop so inner moves of outer names don't leak.
 
 (defn env-new []
   (let [v (vector)] (do (push v (vector)) v)))
@@ -86,20 +88,38 @@
               (get pair 1)
               (recur si (- j 1)))))))))
 
-;; Append entry to current scope. Shadows any existing entry for the same name.
+(defn scope-has? [scope name]
+  (loop [j (- (count scope) 1)]
+    (if (< j 0) false
+      (if (str-eq? (get (get scope j) 0) name) true
+        (recur (- j 1))))))
+
 (defn env-insert [env name state]
   (let [scope (get env (- (count env) 1))
         pair (vector)]
-    (do (push pair name) (do (push pair state) (do (push scope pair) env)))))
+    (do (push pair name)
+        (push pair state)
+        (push scope pair)
+        env)))
 
-;; Update = insert with shadowing (same as env-insert, kept for clarity)
 (defn env-update [env name state]
-  (env-insert env name state))
+  (loop [si (- (count env) 1)]
+    (if (< si 0)
+      (env-insert env name state)
+      (let [scope (get env si)]
+        (if (scope-has? scope name)
+          (let [pair (vector)]
+            (do (push pair name)
+                (push pair state)
+                (push scope pair)
+                env))
+          (recur (- si 1)))))))
 
 (defn env-push-scope [env]
   (do (push env (vector)) env))
 
-(defn env-pop-scope [env] env)
+(defn env-pop-scope [env]
+  (do (pop env) env))
 
 (defn env-release-borrows [env] env)
 
@@ -162,11 +182,33 @@
 (defn is-copy-expr? [expr]
   (if (is-atom? expr)
     (let [tag (ast-tag expr)]
-      (if (= tag 0) true (if (= tag 4) true (= tag 5))))
+      ;; 0=number 2=string-lit 4=nil 5=bool — match host (literals are Copy)
+      (if (= tag 0) true
+        (if (= tag 2) true
+          (if (= tag 4) true
+            (= tag 5)))))
     (let [head (get expr 0)]
       (if (if (is-atom? head) (= (ast-tag head) 1) false)
         (name-in-copy-ops? (ast-val head))
         false))))
+
+;; Mark source symbol moved only if it is not Copy (host NLL).
+(defn maybe-move-symbol [env val-expr]
+  (if (if (is-atom? val-expr) (= (ast-tag val-expr) 1) false)
+    (let [vname (ast-val val-expr)
+          st (env-lookup env vname)]
+      (if (is-copy? st) 0
+        (env-update env vname (S_Moved))))
+    0))
+
+;; State for a new binding from val-expr.
+(defn binding-state [env val-expr]
+  (if (is-copy-expr? val-expr)
+    (S_Copy)
+    (if (if (is-atom? val-expr) (= (ast-tag val-expr) 1) false)
+      (let [st (env-lookup env (ast-val val-expr))]
+        (if (is-copy? st) (S_Copy) (S_Owned)))
+      (S_Owned))))
 
 ;; ---- Main expression checker ----
 ;; Walks AST; flags use of symbols currently marked Moved.
@@ -191,6 +233,9 @@
               (let [e (check-expr env (get expr i))]
                 (recur (+ i 1) (if (> e 0) e err))))))
         (let [tag (ast-tag head)]
+          (if (= tag 28)
+            ;; vector literal [28 a b …] — host ignores element ownership
+            0
           (if (= tag 10) (check-defn env expr)
           (if (= tag 11) (check-let env expr)
           (if (= tag 12) (check-if env expr)
@@ -198,13 +243,13 @@
           (if (= tag 14) (check-loop env expr)
           (if (= tag 16) (check-lambda env expr)
           (if (= tag 17)
-            ;; match: scrut + flat arms
+            ;; match: scrut + flat arms (shared env; light pass)
             (let [n (count expr)]
               (loop [i 1 err 0]
                 (if (>= i n) err
                   (let [e (check-expr env (get expr i))]
                     (recur (+ i 1) (if (> e 0) e err))))))
-          (check-call env expr))))))))))))))
+          (check-call env expr)))))))))))))))
 
 ;; ---- defn ----
 (defn check-defn [env expr]
@@ -247,20 +292,14 @@
               val-expr (get bindings (+ i 1))]
           (do (check-expr env val-expr)
               (env-release-borrows env)
-              (if (is-atom? val-expr)
-                (if (= (ast-tag val-expr) 1)
-                  (let [vname (ast-val val-expr)]
-                    (if (not (is-copy-expr? val-expr))
-                      (env-update env vname (S_Moved))
-                      0))
-                  0)
-                0)
-              (if (is-copy-expr? val-expr)
-                (env-insert env bname (S_Copy))
-                (env-insert env bname (S_Owned)))
+              (let [st (binding-state env val-expr)]
+                (do (maybe-move-symbol env val-expr)
+                    (env-insert env bname st)))
               (recur (+ i 2))))))))
 
-;; ---- if (shared env; no branch isolation — avoids heavy env-copy) ----
+;; ---- if (shared env; branch isolation via env-copy is too heavy
+;;      for Gen1 on the full compiler AST — false moves across arms
+;;      are reduced by not moving on loop rebinds instead) ----
 (defn check-if [env expr]
   (let [cond (get expr 1)
         then-branch (get expr 2)
@@ -302,17 +341,9 @@
               val-expr (get bindings (+ i 1))]
           (do (check-expr env val-expr)
               (env-release-borrows env)
-              (if (is-atom? val-expr)
-                (if (= (ast-tag val-expr) 1)
-                  (let [vname (ast-val val-expr)]
-                    (if (not (is-copy-expr? val-expr))
-                      (env-update env vname (S_Moved))
-                      0))
-                  0)
-                0)
-              (if (is-copy-expr? val-expr)
-                (env-insert env bname (S_Copy))
-                (env-insert env bname (S_Owned)))
+              ;; Loop rebinds (counters/accumulators) are not moves —
+              ;; unlike let alias, recur updates the same slots.
+              (env-insert env bname (binding-state env val-expr))
               (recur (+ i 2))))))))
 
 ;; ---- lambda (fn) ----
@@ -356,7 +387,8 @@
 
 ;; ---- Top-level entry ----
 ;; Returns 0 if OK, >0 if any ownership error was reported.
-;; Light NLL: track moves from let-bindings; flag use-after-move.
+;; Light NLL (aligned with host): Copy literals/ops don't move;
+;; bare-symbol alias of Owned marks source Moved; real scope pop.
 ;; Branch isolation via env-copy is avoided (Gen1 LLVM / depth).
 
 (defn check_ownership [ast-list]

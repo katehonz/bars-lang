@@ -77,7 +77,9 @@ compiler/
 - [x] **12.11** Интегриране в `build.brs` pipeline — light NLL ON by default
   - Detects use-after-move on let-bindings (exit 4)
   - Fixed `env-lookup` infinite loop (sentinel `-1` re-armed after index exhaust)
-  - Bootstrap of compiler uses `BARS_SKIP_OWNERSHIP=1` (false positives on temps)
+  - Real `env-pop-scope` via `pop` + update-in-parent-scope (no leak across scopes)
+  - Copy inherit; string/number/bool/copy-ops; vector literals ignored (host-like)
+  - Loop rebinds are not moves (counters/accumulators); self-host ownership clean
 
 ### Stage 7: Self-Hosted LLVM Backend ✅
 
@@ -114,6 +116,7 @@ compiler/
 - [x] **12.25** Rust = bootstrap only (Nim `csources`): `bootstrap/FROZEN.md`, `make bars-self|identity|self-test`
 - [x] **12.26** types in pipeline (default ON; soft); Gen2-safe infer (no ctx loop rebind); Gen2 suite 12/12 + identity
 - [x] **12.27** ownership walk in pipeline (default ON; hard-fail); env-lookup fix; Gen1+Gen2 suite 12/12
+- [x] **12.28** ownership FP reduction: scope pop, Copy inherit, no loop-moves, vector skip; self-host with ownership ON
 
 **HIR Stage 10+ features (2026-07-26):**
 - deftype → constructors as vectors `[disc, fields…]`

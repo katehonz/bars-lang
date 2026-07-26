@@ -18,6 +18,7 @@ unsafe extern "C" {
     fn bars_print_string(s: *const u8);
     fn bars_vector_new_i64() -> *mut u8;
     fn bars_vector_push_i64(vec: *mut u8, val: i64);
+    fn bars_vector_pop_i64(vec: *mut u8) -> i64;
     fn bars_vector_get_i64(vec: *mut u8, idx: i64) -> i64;
     fn bars_vector_count_i64(vec: *mut u8) -> i64;
     fn bars_map_new_i64() -> *mut u8;
@@ -83,6 +84,7 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_print_string", bars_print_string as *const u8);
         jit_builder.symbol("bars_vector_new_i64", bars_vector_new_i64 as *const u8);
         jit_builder.symbol("bars_vector_push_i64", bars_vector_push_i64 as *const u8);
+        jit_builder.symbol("bars_vector_pop_i64", bars_vector_pop_i64 as *const u8);
         jit_builder.symbol("bars_vector_get_i64", bars_vector_get_i64 as *const u8);
         jit_builder.symbol("bars_vector_count_i64", bars_vector_count_i64 as *const u8);
         jit_builder.symbol("bars_map_new_i64", bars_map_new_i64 as *const u8);
@@ -471,6 +473,9 @@ fn compile_instr<M: Module>(
                 "push" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_vector_push_i64", &arg_vals)?;
                     builder.ins().iconst(types::I64, 0)
+                }
+                "pop" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_vector_pop_i64", &arg_vals)?
                 }
                 "get" if arg_vals.len() == 2 => {
                     call_runtime(builder, module, "bars_vector_get_i64", &arg_vals)?

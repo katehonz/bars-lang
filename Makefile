@@ -30,9 +30,10 @@ help:
 	@echo "  make test        - cargo test (bootstrap)"
 	@echo "  make clean       - remove build artifacts"
 	@echo ""
-	@echo "Env: types + ownership ON by default for user programs"
+	@echo "Env: types + ownership ON by default"
 	@echo "     BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off"
 	@echo "     BARS_STRICT_TYPES=1                            hard-fail types"
+	@echo "     (self-host skips types only; ownership is light NLL)"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 
@@ -58,9 +59,9 @@ bars-self self: $(HOST) $(RUNTIME)
 	BARS_SKIP_TYPECHECK=1 $(HOST) build --backend cranelift $(BUILD_BRS) -o $(SELF)
 	@echo "→ $(SELF) ready (Gen1)"
 
-# Skip types/ownership when recompiling the full compiler (large AST; own
-# flags intentional moves in HIR/temp counters that are false positives today)
-SELF_SKIP := BARS_SKIP_TYPECHECK=1 BARS_SKIP_OWNERSHIP=1
+# Skip types when recompiling the full compiler (large AST soft-noise).
+# Ownership is light NLL and clean on compiler sources (loop rebinds ≠ moves).
+SELF_SKIP := BARS_SKIP_TYPECHECK=1
 
 # Gen2: bars-self → bars-self2
 gen2: bars-self

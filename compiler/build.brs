@@ -23,6 +23,8 @@
 ;; Types ON by default (soft warnings). Ownership ON by default (light NLL).
 ;;   BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off
 ;;   BARS_STRICT_TYPES=1                            hard-fail type issues
+;; Ownership: let-alias of Owned → move; loop rebinds are not moves;
+;; Copy ops/lits don't move; real scope pop (vector pop runtime).
 (defn skip-typecheck? []
   (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
 

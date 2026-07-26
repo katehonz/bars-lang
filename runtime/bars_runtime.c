@@ -181,6 +181,13 @@ int64_t bars_vector_push_i64(bars_vector_t* vec, int64_t val) {
     return (int64_t)(uintptr_t)vec;
 }
 
+/* Shrink vector by one element. Returns vec (or 0 if empty/null). */
+int64_t bars_vector_pop_i64(bars_vector_t* vec) {
+    if (!vec || vec->len == 0) return 0;
+    vec->len -= 1;
+    return (int64_t)(uintptr_t)vec;
+}
+
 int64_t bars_vector_get_i64(bars_vector_t* vec, int64_t idx) {
     if (!vec) return 0;
     if (idx < 0 || idx >= (int64_t)vec->len) return 0;

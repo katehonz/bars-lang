@@ -149,6 +149,7 @@
         (lines-push lines "declare i64 @bars_string_index_of(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_new_i64()")
         (lines-push lines "declare i64 @bars_vector_push_i64(i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_pop_i64(i64)")
         (lines-push lines "declare i64 @bars_vector_get_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_count_i64(i64)")
         (lines-push lines "declare i64 @bars_count_any_i64(i64)")
@@ -186,9 +187,10 @@
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"
     (if (str-eq? fname "push") "bars_vector_push_i64"
-      (if (str-eq? fname "get") "bars_vector_get_i64"
-        (if (str-eq? fname "vector") "bars_vector_new_i64"
-          "")))))
+      (if (str-eq? fname "pop") "bars_vector_pop_i64"
+        (if (str-eq? fname "get") "bars_vector_get_i64"
+          (if (str-eq? fname "vector") "bars_vector_new_i64"
+            ""))))))
 
 (defn map-map-ops [fname]
   (if (str-eq? fname "map") "bars_map_new_i64"
