@@ -107,7 +107,41 @@
           (recur (+ i 1) (+ line 1) 1)
           (recur (+ i 1) line (+ col 1)))))))
 
-;; Print parse error with line:col (+ optional path arrow).
+;; 1-based line number → line text (without trailing newline).
+(defn line-content [text line-num]
+  (let [n (count text)]
+    (loop [i 0 cur 1 start 0]
+      (if (>= i n)
+        (if (= cur line-num) (str-slice text start n) "")
+        (if (= (str-get text i) 10)
+          (if (= cur line-num)
+            (str-slice text start i)
+            (recur (+ i 1) (+ cur 1) (+ i 1)))
+          (recur (+ i 1) cur start))))))
+
+(defn n-spaces [n]
+  (loop [i 0 acc ""]
+    (if (>= i n) acc
+      (recur (+ i 1) (str-concat acc " ")))))
+
+;; Host-style snippet:
+;;   3 |   (+ 1 2
+;;     |   ^
+(defn print-snippet [text line col]
+  (if (if (<= line 0) true (= (count text) 0))
+    0
+    (let [src (line-content text line)
+          gutter (int-str line)
+          pad (n-spaces (count gutter))
+          c0 (if (< col 1) 0 (- col 1))
+          c1 (if (> c0 (count src)) (count src) c0)
+          indent (n-spaces c1)]
+      (do (println "")
+          (println (str-concat "  " (str-concat gutter (str-concat " | " src))))
+          (println (str-concat "  " (str-concat pad (str-concat " | " (str-concat indent "^")))))
+          0))))
+
+;; Print parse error with line:col, path arrow, and source snippet.
 (defn parse-err [text path off msg]
   (let [lc (offset-to-span text off)
         line (get lc 0)
@@ -117,6 +151,7 @@
         (if (> (count path) 0)
           (println (str-concat "  --> " (str-concat path (str-concat ":" where))))
           0)
+        (print-snippet text line col)
         0)))
 
 ;; ===========================================================================

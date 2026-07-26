@@ -192,6 +192,7 @@ bars/
     (`bars-read-at`, `offset-to-span`, open-paren location for unclosed forms)
   - **AST offsets:** atoms `[tag val off]`; ownership UAM reports `at line:col` + arrow
   - **Types:** warnings tagged with `[path]`; `type_check_at` / `check_ownership_at`
+  - **Snippets:** host-style source line + caret under column for parse/ownership
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)
 - [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност

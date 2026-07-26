@@ -178,6 +178,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Phase 13.2: self-host error messages (`error: kind:`, parse unclosed, usage/exit codes)
 - [x] Phase 13.2b: parse spans — `line:col` + `--> file:line:col` on reader errors
 - [x] Phase 13.2c: ownership UAM + type warnings with file/line:col (AST offsets)
+- [x] Phase 13.2d: source snippets under `-->` (line + caret) for parse/ownership
 
 **Bars-first workflow:**  
 ```

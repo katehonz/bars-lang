@@ -67,6 +67,36 @@
           (recur (+ i 1) (+ line 1) 1)
           (recur (+ i 1) line (+ col 1)))))))
 
+(defn line-content [text line-num]
+  (let [n (count text)]
+    (loop [i 0 cur 1 start 0]
+      (if (>= i n)
+        (if (= cur line-num) (str-slice text start n) "")
+        (if (= (str-get text i) 10)
+          (if (= cur line-num)
+            (str-slice text start i)
+            (recur (+ i 1) (+ cur 1) (+ i 1)))
+          (recur (+ i 1) cur start))))))
+
+(defn n-spaces [n]
+  (loop [i 0 acc ""]
+    (if (>= i n) acc
+      (recur (+ i 1) (str-concat acc " ")))))
+
+(defn print-snippet [text line col]
+  (if (if (<= line 0) true (= (count text) 0))
+    0
+    (let [src (line-content text line)
+          gutter (int-str line)
+          pad (n-spaces (count gutter))
+          c0 (if (< col 1) 0 (- col 1))
+          c1 (if (> c0 (count src)) (count src) c0)
+          indent (n-spaces c1)]
+      (do (println "")
+          (println (str-concat "  " (str-concat gutter (str-concat " | " src))))
+          (println (str-concat "  " (str-concat pad (str-concat " | " (str-concat indent "^")))))
+          0))))
+
 (defn report-uam [diag name off]
   (let [msg (str-concat "error: ownership: use after move: `" (str-concat name "`"))
         text (diag-text diag)
@@ -83,6 +113,7 @@
             (if (> (count path) 0)
               (println (str-concat "  --> " (str-concat path (str-concat ":" where))))
               0)
+            (print-snippet text line col)
             1))
       (do (println msg) 1))))
 
