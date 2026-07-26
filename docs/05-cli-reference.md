@@ -143,7 +143,13 @@ mylib = { version = "0.1.0" }   # from local registry
 ```
 
 Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`,
-`BARS_BACKEND_C=1` (C backend), `BARS_BACKEND_WASM=1` (experimental `.wat` emit).
+`BARS_BACKEND_C=1` (C backend), `BARS_BACKEND_WASM=1` (WAT/WASM with PC control-flow).
+
+```bash
+BARS_BACKEND_WASM=1 ./bars-self examples/wasm_fact.brs /tmp/f
+# → /tmp/f.wat (+ /tmp/f.wasm if wasm-tools/wat2wasm available)
+wasmtime --invoke main /tmp/f.wasm   # → 120
+```
 
 ## Options
 

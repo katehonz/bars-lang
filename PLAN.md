@@ -284,10 +284,11 @@ bars/
   - Example: `examples/async_demo.brs`
   - No HOF poll runtime yet (self-host safe)
 - [ ] Compile-time VM / `const fn` (deferred)
-- [x] WASM target (experimental WAT emitter)
-  - `BARS_BACKEND_WASM=1` → `.wat` via `compiler/codegen/wasm.brs`
-  - i64-oriented; control-flow incomplete (no full branch/jump yet)
-  - Optional `wat2wasm` / `wasm-tools` for `.wasm`
+- [x] WASM target (WAT emitter with full CFG)
+  - `BARS_BACKEND_WASM=1` → `.wat` / `.wasm` via `compiler/codegen/wasm.brs`
+  - **PC dispatcher**: labels + `branch` / `jump` / `return` (loop `$dispatch` + `$__pc`)
+  - i64-oriented; `println` is a no-op (no host imports yet)
+  - Verified: `wasm_fact` → 120, `wasm_loop` → 45 under `wasmtime`
 
 ---
 

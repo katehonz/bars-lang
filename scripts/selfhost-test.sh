@@ -522,9 +522,49 @@ run_lang_smoke() {
     echo "FAIL wasm     missing .wat / i64.add"
     cat "$TMP/wasm.log" | sed 's/^/  /'
     fail=$((fail + 1))
+  elif ! grep -q 'loop \$dispatch' "$out.wat" || ! grep -q 'local.set \$__pc' "$out.wat"; then
+    echo "FAIL wasm     missing PC dispatch control flow"
+    fail=$((fail + 1))
   else
-    echo "OK   BARS_BACKEND_WASM=1 → .wat (experimental)"
+    echo "OK   BARS_BACKEND_WASM=1 → .wat (PC dispatch CFG)"
     pass=$((pass + 1))
+  fi
+
+  # Executable CFG smoke (if wasm-tools + wasmtime available)
+  if command -v wasm-tools >/dev/null 2>&1 && command -v wasmtime >/dev/null 2>&1; then
+    out="$TMP/wasm_fact"
+    if BARS_FORCE=1 BARS_BACKEND_WASM=1 "$CC_BIN" examples/wasm_fact.brs "$out" >"$TMP/wasm_fact.log" 2>&1 \
+       && wasm-tools validate "$out.wasm" >/dev/null 2>&1; then
+      got="$(wasmtime --invoke main "$out.wasm" 2>/dev/null | tr -d '\r')"
+      if [[ "$got" == "120" ]]; then
+        echo "OK   wasm_fact → wasmtime main = 120"
+        pass=$((pass + 1))
+      else
+        echo "FAIL wasm_fact run (got: $got)"
+        fail=$((fail + 1))
+      fi
+    else
+      echo "FAIL wasm_fact compile/validate"
+      tail -5 "$TMP/wasm_fact.log" | sed 's/^/  /'
+      fail=$((fail + 1))
+    fi
+    out="$TMP/wasm_loop"
+    if BARS_FORCE=1 BARS_BACKEND_WASM=1 "$CC_BIN" examples/wasm_loop.brs "$out" >"$TMP/wasm_loop.log" 2>&1 \
+       && wasm-tools validate "$out.wasm" >/dev/null 2>&1; then
+      got="$(wasmtime --invoke main "$out.wasm" 2>/dev/null | tr -d '\r')"
+      if [[ "$got" == "45" ]]; then
+        echo "OK   wasm_loop → wasmtime main = 45"
+        pass=$((pass + 1))
+      else
+        echo "FAIL wasm_loop run (got: $got)"
+        fail=$((fail + 1))
+      fi
+    else
+      echo "FAIL wasm_loop compile/validate"
+      fail=$((fail + 1))
+    fi
+  else
+    echo "SKIP wasmtime CFG run (install wasm-tools + wasmtime)"
   fi
 }
 
