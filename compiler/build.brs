@@ -83,9 +83,61 @@
         path
         (str-concat path ".brs")))))
 
+(defn str-eq? [a b]
+  (if (!= (count a) (count b)) false
+    (= (str-starts-with? a b) 1)))
+
+;; Parent directory of a path ("a/b/c.brs" → "a/b", "c.brs" → ".").
+(defn dirname [path]
+  (let [n (count path)]
+    (loop [i (- n 1)]
+      (if (< i 0) "."
+        (if (= (str-get path i) 47)
+          (if (= i 0) "/" (str-slice path 0 i))
+          (recur (- i 1)))))))
+
+(defn join-path [base rel]
+  (if (if (= (count base) 0) true (str-eq? base "."))
+    rel
+    (if (= (str-get base (- (count base) 1)) 47)
+      (str-concat base rel)
+      (str-concat base (str-concat "/" rel)))))
+
+;; Try opening path; return AST or 0 (silent — caller reports).
+(defn try-read [path]
+  (let [src (slurp path)]
+    (if (= src 0) 0
+      (let [ast (reader/bars-read-at src path)]
+        (if (= ast 0) 0 ast)))))
+
+;; Search order (host-like): exact, relative to base, lib/<path>.
+(defn find-module [base path-raw]
+  (let [path (ensure-brs-path path-raw)
+        a (try-read path)]
+    (if (!= a 0)
+      (let [out (vector)] (do (push out a) (push out path) out))
+      (let [rel (join-path base path)
+            b (try-read rel)]
+        (if (!= b 0)
+          (let [out (vector)] (do (push out b) (push out rel) out))
+          (let [libp (join-path "lib" path)
+                c (try-read libp)]
+            (if (!= c 0)
+              (let [out (vector)] (do (push out c) (push out libp) out))
+              0)))))))
+
+(defn path-in? [visited path]
+  (let [n (count visited)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get visited i) path) true
+          (recur (+ i 1)))))))
+
 ;; Resolve all requires in an AST (recursive).
-;; Returns [flat-ast alias-pairs] or 0 on read error.
-(defn resolve-requires [ast]
+;; base = directory of the current file (for relative requires).
+;; visited = paths currently/already loading (cycle + single-load).
+;; Returns [flat-ast alias-pairs] or 0 on error.
+(defn resolve-requires-at [ast base visited]
   (if (= ast 0) 0
     (let [n (count ast)
           result (vector)
@@ -99,27 +151,46 @@
           (let [expr (get ast i)
                 req (mods/parse-require expr)]
             (if (> (count req) 0)
-              (let [path (ensure-brs-path (get req 0))
+              (let [path-raw (get req 0)
                     alias (get req 1)
                     prefix (mods/module-prefix alias)
-                    mod-raw (read-file path)]
-                (if (= mod-raw 0)
-                  (do (err "module" (str-concat "failed to load require `" (str-concat path "`")))
+                    found (find-module base path-raw)]
+                (if (= found 0)
+                  (do (err "module" (str-concat "cannot find `" (str-concat path-raw "`")))
+                      (note (str-concat "searched from base `" (str-concat base "` and lib/")))
                       0)
-                  (let [mod-resolved (resolve-requires mod-raw)]
-                    (if (= mod-resolved 0) 0
-                      (let [mod-ast (get mod-resolved 0)
-                            mod-pairs (get mod-resolved 1)
-                            renamed (mods/rename-module mod-ast prefix)
-                            pair (vector)]
-                        (do (mods/append-all result renamed)
-                            (mods/append-all pairs mod-pairs)
-                            (push pair alias)
-                            (push pair prefix)
-                            (push pairs pair)
-                            (recur (+ i 1))))))))
+                  (let [mod-raw (get found 0)
+                        mod-path (get found 1)]
+                    (if (path-in? visited mod-path)
+                      (do (err "module" (str-concat "circular or duplicate require of `" (str-concat mod-path "`")))
+                          (note "each module file is loaded once (host-compatible)")
+                          0)
+                      (do (push visited mod-path)
+                          (let [mod-base (dirname mod-path)
+                                mod-resolved (resolve-requires-at mod-raw mod-base visited)]
+                            (if (= mod-resolved 0) 0
+                              (let [mod-ast (get mod-resolved 0)
+                                    mod-pairs (get mod-resolved 1)
+                                    renamed (mods/rename-module mod-ast prefix)
+                                    pair (vector)]
+                                (do (mods/append-all result renamed)
+                                    (mods/append-all pairs mod-pairs)
+                                    (push pair alias)
+                                    (push pair prefix)
+                                    (push pairs pair)
+                                    (recur (+ i 1)))))))))))
               (do (push result expr)
                   (recur (+ i 1))))))))))
+
+(defn resolve-requires [ast]
+  (resolve-requires-at ast "." (vector)))
+
+;; Resolve from a main file: seed visited with the main path and use its dir as base.
+(defn resolve-requires-main [ast main-path]
+  (let [visited (vector)
+        base (dirname main-path)]
+    (do (push visited main-path)
+        (resolve-requires-at ast base visited))))
 
 (defn run-typecheck [ast path]
   (if (skip-typecheck?)
@@ -151,7 +222,7 @@
         (if (= (count raw) 0)
           (do (err "parse" (str-concat "empty program `" (str-concat input-path "`")))
               1)
-          (let [resolved (resolve-requires raw)]
+          (let [resolved (resolve-requires-main raw input-path)]
             (if (= resolved 0)
               1
               (let [flat (get resolved 0)

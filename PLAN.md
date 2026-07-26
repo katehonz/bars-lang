@@ -94,10 +94,15 @@ compiler/
 - [x] **12.17** Built-in макроси: `when`, `unless`, `cond`, …
 - [x] **12.18** Интегриран в `build.brs` pipeline
 
-### Stage 9: Self-Hosted Module System ✅ (framework)
+### Stage 9: Self-Hosted Module System ✅
 
 - [x] **12.19** `require` parse, rename, merge-module (`compiler/modules.brs`)
-- [ ] **12.20** Пълна мулти-файлова компилация в self-hosted pipeline
+- [x] **12.20** Пълна мулти-файлова компилация в self-hosted pipeline
+  - Nested requires: skip re-prefix of already-mangled `_m_*` names
+  - Cycle/duplicate detection via visited set (no hang)
+  - Path search: exact → relative to file dir → `lib/`
+  - `resolve-requires-main` seeds visited with main path + dirname base
+  - self-test includes `module_demo` + `module_nested`
 - [ ] **12.21** Интеграция с пакетната система (Bars.toml dependencies)
 
 ### Stage 10: Пълен Bootstrap 🚧

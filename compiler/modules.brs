@@ -45,7 +45,16 @@
 (defn is-require? [expr]
   (> (count (parse-require expr)) 0))
 
-;; ---- collect public defn names ----
+;; Already module-mangled? (_m_alias_name) — do not re-prefix (nested requires).
+(defn is-mangled? [name]
+  (if (< (count name) 3) false
+    (if (if (= (str-get name 0) 95)
+          (if (= (str-get name 1) 109) (= (str-get name 2) 95) false)
+          false)
+      true
+      false)))
+
+;; ---- collect public defn names (skip already-mangled nested modules) ----
 
 (defn collect-names [ast-list]
   (let [n (count ast-list) names (vector)]
@@ -59,8 +68,11 @@
               (if (= tag 10)
                 (let [name-atom (get expr 1)]
                   (if (is-atom? name-atom)
-                    (do (push names (ast-val name-atom))
-                        (recur (+ i 1)))
+                    (let [nm (ast-val name-atom)]
+                      (if (is-mangled? nm)
+                        (recur (+ i 1))
+                        (do (push names nm)
+                            (recur (+ i 1)))))
                     (recur (+ i 1))))
                 (recur (+ i 1))))))))))
 
@@ -83,14 +95,14 @@
         (if (> slash-pos 0)
           (let [al (str-slice name 0 slash-pos)
                 rest (str-slice name (+ slash-pos 1) (count name))]
-            ;; Drop span on rename — offsets refer to the module's own source,
-            ;; not the caller's file text used for line:col diagnostics.
             (if (str-eq? al alias-for-slash)
               (make-atom 1 (str-concat prefix rest))
               expr))
-          (if (name-in-list? name names)
-            (make-atom 1 (str-concat prefix name))
-            expr)))
+          ;; Skip already-mangled (_m_...) and only rename local public names
+          (if (is-mangled? name) expr
+            (if (name-in-list? name names)
+              (make-atom 1 (str-concat prefix name))
+              expr))))
       expr)
     (let [n (count expr) new-expr (vector)]
       (do (push new-expr (rename-expr (get expr 0) prefix names alias-for-slash))

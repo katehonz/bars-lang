@@ -58,6 +58,7 @@ EXAMPLES=(
   examples/match_binding.brs
   examples/vector.brs
   examples/module_demo.brs
+  examples/module_nested.brs
   examples/adt_demo.brs
   examples/adt_demo2.brs
   examples/string.brs

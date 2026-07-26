@@ -179,6 +179,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Phase 13.2b: parse spans — `line:col` + `--> file:line:col` on reader errors
 - [x] Phase 13.2c: ownership UAM + type warnings with file/line:col (AST offsets)
 - [x] Phase 13.2d: source snippets under `-->` (line + caret) for parse/ownership
+- [x] Stage 12.20: multi-file self-host — nested modules, cycles, path search
 
 **Bars-first workflow:**  
 ```
