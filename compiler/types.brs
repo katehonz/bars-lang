@@ -320,32 +320,44 @@
         (T_Var id)))
 )
 
+;; ctx = [counter-vec, constraints-vec, path, source-text]
 (defn make_ctx []
   (let [v (vector)]
     (do (push v (vector))
         (push v (vector))
         (push v "")
+        (push v "")
         v))
 )
 
-(defn make_ctx_at [path]
+(defn make_ctx_at [path text]
   (let [v (vector)]
     (do (push v (vector))
         (push v (vector))
         (push v path)
+        (push v text)
         v))
 )
 
 (defn ctx_path [ctx]
   (if (>= (count ctx) 3) (get ctx 2) ""))
 
-(defn ctx_add_constraint [ctx a b]
+(defn ctx_text [ctx]
+  (if (>= (count ctx) 4) (get ctx 3) ""))
+
+;; Constraint is [type-a type-b offset] (offset -1 if unknown).
+(defn ctx_add_constraint_at [ctx a b off]
   (let [c (vector)
         cs (get ctx 1)]
     (do (push c a)
         (push c b)
+        (push c off)
         (push cs c)
         ctx))
+)
+
+(defn ctx_add_constraint [ctx a b]
+  (ctx_add_constraint_at ctx a b -1)
 )
 
 ;; ====== Builtin Environment ======
@@ -462,10 +474,89 @@
   (do (println (str-concat "error: type: " msg)) (T_Void))
 )
 
+;; Optional source offset on atoms: [tag val off]
+(defn ast_off [x]
+  (if (>= (count x) 3) (get x 2) -1))
+
+;; Best-effort offset for any expr (atom or head of list).
+(defn expr_off [expr]
+  (if (= expr 0) -1
+    (if (is_atom? expr)
+      (ast_off expr)
+      (if (> (count expr) 0) (expr_off (get expr 0)) -1))))
+
+(defn digit-str [d]
+  (str-slice "0123456789" d (+ d 1)))
+
+(defn int-str [n]
+  (if (< n 0)
+    (str-concat "-" (int-str (- 0 n)))
+    (if (< n 10)
+      (digit-str n)
+      (str-concat (int-str (/ n 10)) (digit-str (% n 10))))))
+
+(defn offset-to-span [text offset]
+  (let [n (count text)
+        lim (if (< offset 0) 0 (if (> offset n) n offset))]
+    (loop [i 0 line 1 col 1]
+      (if (>= i lim)
+        (let [v (vector)]
+          (do (push v line) (push v col) v))
+        (if (= (str-get text i) 10)
+          (recur (+ i 1) (+ line 1) 1)
+          (recur (+ i 1) line (+ col 1)))))))
+
+(defn line-content [text line-num]
+  (let [n (count text)]
+    (loop [i 0 cur 1 start 0]
+      (if (>= i n)
+        (if (= cur line-num) (str-slice text start n) "")
+        (if (= (str-get text i) 10)
+          (if (= cur line-num)
+            (str-slice text start i)
+            (recur (+ i 1) (+ cur 1) (+ i 1)))
+          (recur (+ i 1) cur start))))))
+
+(defn n-spaces [n]
+  (loop [i 0 acc ""]
+    (if (>= i n) acc
+      (recur (+ i 1) (str-concat acc " ")))))
+
+(defn print-snippet [text line col]
+  (if (if (<= line 0) true (= (count text) 0))
+    0
+    (let [src (line-content text line)
+          gutter (int-str line)
+          pad (n-spaces (count gutter))
+          c0 (if (< col 1) 0 (- col 1))
+          c1 (if (> c0 (count src)) (count src) c0)
+          indent (n-spaces c1)]
+      (do (println "")
+          (println (str-concat "  " (str-concat gutter (str-concat " | " src))))
+          (println (str-concat "  " (str-concat pad (str-concat " | " (str-concat indent "^")))))
+          0))))
+
 (defn type_warn [msg path]
   (if (> (count path) 0)
     (println (str-concat "warning: type: " (str-concat msg (str-concat " [" (str-concat path "]")))))
     (println (str-concat "warning: type: " msg)))
+)
+
+;; Report type warning with optional line:col + snippet (when off is in text).
+(defn type_warn_at [msg path text off]
+  (let [tlen (count text)]
+    (if (if (>= off 0) (< off tlen) false)
+      (let [lc (offset-to-span text off)
+            line (get lc 0)
+            col (get lc 1)
+            where (str-concat (int-str line) (str-concat ":" (int-str col)))]
+        (do (println (str-concat "warning: type: " (str-concat msg (str-concat " at " where))))
+            (if (> (count path) 0)
+              (println (str-concat "  --> " (str-concat path (str-concat ":" where))))
+              0)
+            (print-snippet text line col)
+            0))
+      (type_warn msg path)))
 )
 
 ;; Unwrap vector marker [[28] ...] and skip ^meta (tag 26) params.
@@ -574,11 +665,14 @@
   (infer_flat_binds env ctx (get expr 1) 2 expr))
 
 (defn infer_if [env ctx expr]
-  (let [cond-ty (res-ty (infer_expr env ctx (get expr 1)))
-        then-ty (res-ty (infer_expr env ctx (get expr 2)))
-        else-ty (res-ty (infer_expr env ctx (get expr 3)))]
-    (do (ctx_add_constraint ctx cond-ty (T_Bool))
-        (ctx_add_constraint ctx then-ty else-ty)
+  (let [cond-e (get expr 1)
+        then-e (get expr 2)
+        else-e (get expr 3)
+        cond-ty (res-ty (infer_expr env ctx cond-e))
+        then-ty (res-ty (infer_expr env ctx then-e))
+        else-ty (res-ty (infer_expr env ctx else-e))]
+    (do (ctx_add_constraint_at ctx cond-ty (T_Bool) (expr_off cond-e))
+        (ctx_add_constraint_at ctx then-ty else-ty (expr_off then-e))
         (ret2 then-ty ctx))))
 
 (defn infer_do [env ctx expr]
@@ -605,8 +699,9 @@
     (do (loop [i 2]
           (if (>= i n) 0
             (do (infer_pattern (get expr i) env ctx)
-                (let [arm-ty (res-ty (infer_expr env ctx (get expr (+ i 1))))]
-                  (do (ctx_add_constraint ctx result-ty arm-ty)
+                (let [arm-e (get expr (+ i 1))
+                      arm-ty (res-ty (infer_expr env ctx arm-e))]
+                  (do (ctx_add_constraint_at ctx result-ty arm-ty (expr_off arm-e))
                       (recur (+ i 2)))))))
         (ret2 result-ty ctx))))
 
@@ -643,10 +738,11 @@
                     ret-ty (fun_ret fn-ty)]
                 (do (loop [i 1]
                       (if (>= i n) 0
-                        (let [arg-ty (res-ty (infer_expr env ctx (get expr i)))
+                        (let [arg-e (get expr i)
+                              arg-ty (res-ty (infer_expr env ctx arg-e))
                               param-idx (- i 1)]
                           (do (if (< param-idx (count param-tys))
-                                (ctx_add_constraint ctx arg-ty (get param-tys param-idx))
+                                (ctx_add_constraint_at ctx arg-ty (get param-tys param-idx) (expr_off arg-e))
                                 0)
                               (recur (+ i 1))))))
                     (ret2 ret-ty ctx)))
@@ -659,25 +755,27 @@
 (defn solve [ctx]
   (let [subst (vector)
         constraints (get ctx 1)
-        path (ctx_path ctx)]
+        path (ctx_path ctx)
+        text (ctx_text ctx)]
     (loop [i 0 subst subst failed 0]
       (if (>= i (count constraints))
         (if (= failed 0) [true subst] [false subst])
         (let [c (get constraints i)
               a (get c 0)
               b (get c 1)
+              off (if (>= (count c) 3) (get c 2) -1)
               res (unify a b subst)]
           (if (get res 0)
             (recur (+ i 1) (get res 1) failed)
             (let [err (str-concat "type mismatch: " (str-concat (type_str a) (str-concat " vs " (type_str b))))]
-              (do (type_warn err path)
+              (do (type_warn_at err path text off)
                   (recur (+ i 1) subst 1))))))))
 )
 
 ;; ====== Top-Level Inference ======
 
-(defn infer_program_at [ast-list path]
-  (let [ctx (make_ctx_at path)
+(defn infer_program_at [ast-list path text]
+  (let [ctx (make_ctx_at path text)
         env (builtin_env ctx)]
     (loop [i 0 env env ctx ctx]
       (if (>= i (count ast-list))
@@ -690,21 +788,21 @@
 )
 
 (defn infer_program [ast-list]
-  (infer_program_at ast-list "")
+  (infer_program_at ast-list "" "")
 )
 
 ;; ====== Public API ======
 
 ;; Returns 0 on clean pass, 1 if any mismatch was reported.
 ;; Pipeline soft-fails by default; BARS_STRICT_TYPES=1 makes it hard-fail.
-(defn type_check_at [ast-list path]
-  (let [result (infer_program_at ast-list path)]
+(defn type_check_at [ast-list path text]
+  (let [result (infer_program_at ast-list path text)]
     (if (get result 0)
       0
       (do (type_warn "check reported issues" path) 1)))
 )
 
 (defn type_check [ast-list]
-  (type_check_at ast-list "")
+  (type_check_at ast-list "" "")
 )
 

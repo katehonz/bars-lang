@@ -229,10 +229,10 @@
           0)
         (resolve-requires-at ast base visited deps))))
 
-(defn run-typecheck [ast path]
+(defn run-typecheck [ast path text]
   (if (skip-typecheck?)
     0
-    (let [tc (types/type_check_at ast path)]
+    (let [tc (types/type_check_at ast path text)]
       (if (= tc 0) 0
         (if (strict-types?)
           (do (err "type" (str-concat "check failed in `" (str-concat path "`")))
@@ -266,7 +266,7 @@
                     pairs (get resolved 1)
                     with-quals (mods/subst-qualified flat pairs)
                     expanded (macros/expand-program with-quals)
-                    tc (run-typecheck expanded input-path)]
+                    tc (run-typecheck expanded input-path src)]
                 (if (!= tc 0)
                   3
                   (let [oc (run-ownership expanded input-path src)]
