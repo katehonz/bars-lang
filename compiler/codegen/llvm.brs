@@ -1,14 +1,14 @@
-;; Bars LLVM Backend — Stage 7 of self-hosting
-;; Parses HIR text format from hir.brs -> LLVM IR text (.ll format)
+;; Bars LLVM Backend — Stage 7/10 of self-hosting
+;; HIR text → LLVM IR (.ll). Bare HIR temps; quoted LLVM ids for safety.
 ;;
-;; HIR format (4-space indent for instructions, 2-space for labels):
+;; HIR:
 ;;   func name [params]:
-;;     label_name:
+;;     label:
 ;;       assign name var/const val
 ;;       call dest fname [var/const arg ...]
-;;       branch var/const cond then_lbl else_lbl
+;;       branch var/const cond then else
 ;;       return var/const val
-;;       stringlit dest string_content
+;;       stringlit dest content...
 
 (defn str-eq? [a b]
   (if (!= (count a) (count b)) false
@@ -20,8 +20,6 @@
       (if (< n 10) (str-slice d n (+ n 1))
         (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
 
-;; ---- helpers ----
-
 (defn lines-push [v s] (do (push v s) v))
 
 (defn trim-left [s]
@@ -31,7 +29,6 @@
         (recur (+ i 1))
         (str-slice s i (count s))))))
 
-;; Split string by spaces -> vector of tokens
 (defn split-words [s]
   (let [v (vector) n (count s)]
     (if (= n 0) v
@@ -44,27 +41,89 @@
               (recur (+ i 1) ""))
             (recur (+ i 1) (str-concat cur (str-slice s i (+ i 1))))))))))
 
-;; "var x" -> "%x",  "const 42" -> "42"
-(defn op-llvm [prefix val]
+;; ---- LLVM identifiers: always quoted (handles -, /, ?, etc.) ----
+
+(defn llvm-local [name]
+  (str-concat "%\"" (str-concat name "\"")))
+
+(defn llvm-global [name]
+  (str-concat "@\"" (str-concat name "\"")))
+
+;; ---- Mutable locals via alloca (needed for loop reassignments) ----
+;; env = vector of names that have an alloca (name.addr)
+;; When reading a slotted name: emit load into ld_N
+;; When assigning: ensure alloca exists, then store
+
+(defn env-has? [env name]
+  (let [n (count env)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get env i) name) true
+          (recur (+ i 1)))))))
+
+(defn env-add [env name]
+  (if (env-has? env name) env
+    (do (push env name) env)))
+
+(defn addr-name [name]
+  (str-concat name ".addr"))
+
+;; Ensure alloca for name; returns [output env]
+(defn ensure-alloca [output env name]
+  (if (env-has? env name) [output env]
+    (do (lines-push output
+          (str-concat "  " (str-concat (llvm-local (addr-name name)) " = alloca i64")))
+        [output (env-add env name)])))
+
+;; Resolve operand: returns [llvm-str output reg]
+;; For slotted vars, emits a load.
+(defn resolve-operand [prefix val output env reg]
   (if (str-eq? prefix "var")
-    (str-concat "%" val)
-    val))
+    (if (env-has? env val)
+      (let [tmp (str-concat "ld" (int-str reg))]
+        (do (lines-push output
+              (str-concat "  " (str-concat (llvm-local tmp)
+                (str-concat " = load i64, i64* " (llvm-local (addr-name val))))))
+            [(llvm-local tmp) output (+ reg 1)]))
+      [(llvm-local val) output reg])
+    [val output reg]))
 
-;; Reconstruct operand from prefix+val pair and convert to LLVM
-(defn pair-to-llvm [words i]
-  (op-llvm (get words i) (get words (+ i 1))))
+(defn pair-resolve [words i output env reg]
+  (resolve-operand (get words i) (get words (+ i 1)) output env reg))
 
-;; "func name [p1 p2]:" -> "name"
 (defn extract-func-name [line]
   (str-slice line 5 (- (str-index-of line "[") 1)))
 
-;; "func name [p1 p2]:" -> "p1 p2"
 (defn extract-params-str [line]
   (let [lb (+ (str-index-of line "[") 1)
         rb (str-index-of line "]")]
     (str-slice line lb rb)))
 
-;; ---- LLVM header ----
+;; ---- stringlit ----
+
+(defn stringlit-dest [trimmed]
+  (let [rest (str-slice trimmed 10 (count trimmed))
+        sp (str-index-of rest " ")]
+    (if (< sp 0) rest (str-slice rest 0 sp))))
+
+(defn stringlit-content [trimmed]
+  (let [rest (str-slice trimmed 10 (count trimmed))
+        sp (str-index-of rest " ")]
+    (if (< sp 0) "" (str-slice rest (+ sp 1) (count rest)))))
+
+(defn llvm-escape [s]
+  (let [n (count s)]
+    (loop [i 0 acc ""]
+      (if (>= i n) (str-concat acc "\\00")
+        (let [c (str-get s i)
+              ch (str-slice s i (+ i 1))]
+          (if (= c 34) (recur (+ i 1) (str-concat acc "\\22"))
+            (if (= c 92) (recur (+ i 1) (str-concat acc "\\5C"))
+              (if (= c 10) (recur (+ i 1) (str-concat acc "\\0A"))
+                (if (= c 9) (recur (+ i 1) (str-concat acc "\\09"))
+                  (recur (+ i 1) (str-concat acc ch)))))))))))
+
+;; ---- header with correct C runtime names ----
 
 (defn llvm-header []
   (let [lines (vector)]
@@ -74,178 +133,390 @@
         (lines-push lines "declare i64 @bars_print_any_i64(i64)")
         (lines-push lines "declare i64 @bars_print_newline()")
         (lines-push lines "declare i64 @bars_print_i64(i64)")
-        (lines-push lines "declare i64 @bars_str_concat(i64, i64)")
-        (lines-push lines "declare i64 @bars_str_get(i64, i64)")
-        (lines-push lines "declare i64 @bars_str_slice(i64, i64, i64)")
-        (lines-push lines "declare i64 @bars_str_count(i64)")
-        (lines-push lines "declare i64 @bars_str_starts_with(i64, i64)")
-        (lines-push lines "declare i64 @bars_str_index_of(i64, i64)")
-        (lines-push lines "declare i64 @bars_vec_new()")
-        (lines-push lines "declare i64 @bars_vec_push(i64, i64)")
-        (lines-push lines "declare i64 @bars_vec_get(i64, i64)")
-        (lines-push lines "declare i64 @bars_vec_count(i64)")
+        (lines-push lines "declare i64 @bars_string_concat(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_get(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_slice(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_string_length(i64)")
+        (lines-push lines "declare i64 @bars_string_starts_with(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_index_of(i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_new_i64()")
+        (lines-push lines "declare i64 @bars_vector_push_i64(i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_get_i64(i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_count_i64(i64)")
         (lines-push lines "declare i64 @bars_slurp(i64)")
         (lines-push lines "declare i64 @bars_spit(i64, i64)")
         (lines-push lines "declare i64 @bars_system(i64)")
         (lines-push lines "declare i64 @bars_args_count()")
         (lines-push lines "declare i64 @bars_args_get(i64)")
         (lines-push lines "declare i64 @bars_exit(i64)")
+        (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
 
-;; ---- function name mapping ----
+;; Bars main is emitted as _bars_main; C main sets argv then calls it.
+(defn map-user-fname [fname]
+  (if (str-eq? fname "main") "_bars_main" fname))
+
+;; ---- map Bars names → C runtime (flat cond-style via helpers) ----
+;; Avoids 15-deep if nesting / paren piles.
+
+(defn map-str-ops [fname]
+  (if (str-eq? fname "str-concat") "bars_string_concat"
+    (if (str-eq? fname "str-get") "bars_string_get"
+      (if (str-eq? fname "str-slice") "bars_string_slice"
+        (if (str-eq? fname "str-count") "bars_string_length"
+          (if (str-eq? fname "str-starts-with?") "bars_string_starts_with"
+            (if (str-eq? fname "str-index-of") "bars_string_index_of"
+              "")))))))
+
+(defn map-vec-ops [fname]
+  (if (str-eq? fname "count") "bars_vector_count_i64"
+    (if (str-eq? fname "push") "bars_vector_push_i64"
+      (if (str-eq? fname "get") "bars_vector_get_i64"
+        (if (str-eq? fname "vector") "bars_vector_new_i64"
+          "")))))
+
+(defn map-io-ops [fname]
+  (if (str-eq? fname "slurp") "bars_slurp"
+    (if (str-eq? fname "spit") "bars_spit"
+      (if (str-eq? fname "exit") "bars_exit"
+        (if (str-eq? fname "args-count") "bars_args_count"
+          (if (str-eq? fname "args-get") "bars_args_get"
+            (if (str-eq? fname "println") "bars_print_any_i64"
+              "")))))))
 
 (defn map-fname [fname]
-  (if (str-eq? fname "println") "bars_print_any_i64"
-  (if (str-eq? fname "str-concat") "bars_str_concat"
-  (if (str-eq? fname "str-get") "bars_str_get"
-  (if (str-eq? fname "str-slice") "bars_str_slice"
-  (if (str-eq? fname "str-count") "bars_str_count"
-  (if (str-eq? fname "count") "bars_vec_count"
-  (if (str-eq? fname "push") "bars_vec_push"
-  (if (str-eq? fname "get") "bars_vec_get"
-  (if (str-eq? fname "vector") "bars_vec_new"
-  (if (str-eq? fname "slurp") "bars_slurp"
-  (if (str-eq? fname "spit") "bars_spit"
-  (if (str-eq? fname "exit") "bars_exit"
-  (if (str-eq? fname "args-count") "bars_args_count"
-  (if (str-eq? fname "args-get") "bars_args_get"
-  (if (str-eq? fname "str-starts-with?") "bars_str_starts_with"
-  fname))))))))))))))))
+  (let [a (map-str-ops fname)]
+    (if (> (count a) 0) a
+      (let [b (map-vec-ops fname)]
+        (if (> (count b) 0) b
+          (let [c (map-io-ops fname)]
+            (if (> (count c) 0) c fname)))))))
 
-;; ---- operator inlining ----
-;; Returns 1 if fname is a known operator (output already pushed), else 0
+;; ---- operators (small groups = fewer closing parens) ----
 
-(defn emit-cmp [output dest fname words si zext-suffix]
-  (let [l (pair-to-llvm words si)
-        r (pair-to-llvm words (+ si 2))
+(defn binop-code [fname]
+  (if (str-eq? fname "+") "add"
+    (if (str-eq? fname "-") "sub"
+      (if (str-eq? fname "*") "mul"
+        (if (str-eq? fname "/") "sdiv"
+          (if (str-eq? fname "%") "srem"
+            ""))))))
+
+(defn cmp-code [fname]
+  (if (str-eq? fname "=") "eq"
+    (if (str-eq? fname "!=") "ne"
+      (if (str-eq? fname "<") "slt"
+        (if (str-eq? fname ">") "sgt"
+          (if (str-eq? fname "<=") "sle"
+            (if (str-eq? fname ">=") "sge"
+              "")))))))
+
+(defn cmp-suffix [fname]
+  (if (str-eq? fname "=") "_c"
+    (if (str-eq? fname "!=") "_n"
+      (if (str-eq? fname "<") "_l"
+        (if (str-eq? fname ">") "_g"
+          (if (str-eq? fname "<=") "_le"
+            (if (str-eq? fname ">=") "_ge"
+              "_x")))))))
+
+
+;; ---- operators with alloca loads ----
+;; Returns [output reg]
+
+(defn emit-binop [output dest llvm-op words si env reg]
+  (let [r1 (pair-resolve words si output env reg)
+        l (get r1 0)
+        o1 (get r1 1)
+        g1 (get r1 2)
+        r2 (pair-resolve words (+ si 2) o1 env g1)
+        r (get r2 0)
+        o2 (get r2 1)
+        g2 (get r2 2)]
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = " (str-concat llvm-op
+              (str-concat " i64 " (str-concat l (str-concat ", " r))))))))
+        [o2 g2])))
+
+(defn emit-cmp [output dest pred words si zext-suffix env reg]
+  (let [r1 (pair-resolve words si output env reg)
+        l (get r1 0)
+        o1 (get r1 1)
+        g1 (get r1 2)
+        r2 (pair-resolve words (+ si 2) o1 env g1)
+        r (get r2 0)
+        o2 (get r2 1)
+        g2 (get r2 2)
         tmp (str-concat dest zext-suffix)]
-    (do (lines-push output (str-concat "  %" (str-concat tmp (str-concat " = icmp " (str-concat fname (str-concat " i64 " (str-concat l (str-concat ", " r))))))))
-        (lines-push output (str-concat "  %" (str-concat dest (str-concat " = zext i1 %" (str-concat tmp " to i64"))))))))
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp)
+            (str-concat " = icmp " (str-concat pred
+              (str-concat " i64 " (str-concat l (str-concat ", " r))))))))
+        (lines-push o2
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = zext i1 " (str-concat (llvm-local tmp) " to i64")))))
+        [o2 g2])))
 
-(defn emit-binop [output dest llvm-op words si]
-  (let [l (pair-to-llvm words si)
-        r (pair-to-llvm words (+ si 2))]
-    (lines-push output (str-concat "  %" (str-concat dest (str-concat " = " (str-concat llvm-op (str-concat " i64 " (str-concat l (str-concat ", " r))))))))))
+;; Returns [output reg handled]
+(defn inline-op [output dest fname words si n env reg]
+  (let [bop (binop-code fname)]
+    (if (> (count bop) 0)
+      (let [r (emit-binop output dest bop words si env reg)]
+        [(get r 0) (get r 1) 1])
+      (let [cop (cmp-code fname)]
+        (if (> (count cop) 0)
+          (let [r (emit-cmp output dest cop words si (cmp-suffix fname) env reg)]
+            [(get r 0) (get r 1) 1])
+          (if (str-eq? fname "not")
+            (let [r1 (pair-resolve words si output env reg)
+                  a (get r1 0)
+                  o1 (get r1 1)
+                  g1 (get r1 2)
+                  tmp (str-concat dest "_not")]
+              (do (lines-push o1
+                    (str-concat "  " (str-concat (llvm-local tmp)
+                      (str-concat " = icmp eq i64 " (str-concat a ", 0")))))
+                  (lines-push o1
+                    (str-concat "  " (str-concat (llvm-local dest)
+                      (str-concat " = zext i1 " (str-concat (llvm-local tmp) " to i64")))))
+                  [o1 g1 1]))
+            [output reg 0]))))))
 
-(defn inline-op [output dest fname words si n]
-  (if (str-eq? fname "+")  (do (emit-binop output dest "add" words si) 1)
-  (if (str-eq? fname "-")  (do (emit-binop output dest "sub" words si) 1)
-  (if (str-eq? fname "*")  (do (emit-binop output dest "mul" words si) 1)
-  (if (str-eq? fname "/")  (do (emit-binop output dest "sdiv" words si) 1)
-  (if (str-eq? fname "%")  (do (emit-binop output dest "srem" words si) 1)
-  (if (str-eq? fname "=")  (do (emit-cmp output dest "eq" words si "_c") 1)
-  (if (str-eq? fname "!=") (do (emit-cmp output dest "ne" words si "_n") 1)
-  (if (str-eq? fname "<")  (do (emit-cmp output dest "slt" words si "_l") 1)
-  (if (str-eq? fname ">")  (do (emit-cmp output dest "sgt" words si "_g") 1)
-  (if (str-eq? fname "<=") (do (emit-cmp output dest "sle" words si "_le") 1)
-  (if (str-eq? fname ">=") (do (emit-cmp output dest "sge" words si "_ge") 1)
-  (if (str-eq? fname "not")
-    (let [a (pair-to-llvm words si)
-          tmp (str-concat dest "_not")]
-      (do (lines-push output (str-concat "  %" (str-concat tmp (str-concat " = icmp eq i64 " (str-concat a ", 0")))))
-          (lines-push output (str-concat "  %" (str-concat dest (str-concat " = zext i1 %" (str-concat tmp " to i64")))))
-          1))
-  0
-  )))))))))))))
+;; Returns [output env reg]
+(defn emit-assign [output words env reg]
+  (let [dest (get words 1)
+        raw (if (>= (count words) 4) (get words 3) (get words 2))]
+    ;; Skip stores of HIR dead markers (unreachable paths)
+    (if (str-eq? raw "<dead>")
+      [output env reg]
+      (if (str-eq? raw "<done>")
+        [output env reg]
+        (let [r1 (pair-resolve words 2 output env reg)
+              val (get r1 0)
+              o1 (get r1 1)
+              g1 (get r1 2)
+              r2 (ensure-alloca o1 env dest)
+              o2 (get r2 0)
+              env2 (get r2 1)]
+          (do (lines-push o2
+                (str-concat "  store i64 " (str-concat val
+                  (str-concat ", i64* " (llvm-local (addr-name dest))))))
+              [o2 env2 g1]))))))
 
-;; ---- emit one HIR instruction -> LLVM IR lines ----
+;; Returns [arglist-str output reg]
+(defn emit-call-args [words n output env reg]
+  (loop [i 3 acc "" ocur output rcur reg]
+    (if (>= i n) [acc ocur rcur]
+      (let [r (pair-resolve words i ocur env rcur)
+            a (get r 0)
+            o2 (get r 1)
+            g2 (get r 2)]
+        (if (= i 3)
+          (recur (+ i 2) (str-concat "i64 " a) o2 g2)
+          (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)) o2 g2))))))
 
-(defn llvm-name [dest cnt]
-  (str-concat "%" (str-concat dest (str-concat "_" (int-str cnt)))))
+;; Returns [output reg]
+(defn emit-call [output words n env reg]
+  (let [dest (get words 1)
+        fname (get words 2)
+        ir (inline-op output dest fname words 3 n env reg)
+        o1 (get ir 0)
+        g1 (get ir 1)
+        handled (get ir 2)]
+    (if (= handled 1) [o1 g1]
+      (if (str-eq? fname "println")
+        (let [r (if (<= n 3)
+                  ["0" o1 g1]
+                  (pair-resolve words 3 o1 env g1))
+              arg (get r 0)
+              o2 (get r 1)
+              g2 (get r 2)]
+          (do (lines-push o2
+                (str-concat "  " (str-concat (llvm-local dest)
+                  (str-concat " = call i64 @bars_print_any_i64(i64 " (str-concat arg ")")))))
+              (lines-push o2 "  call i64 @bars_print_newline()")
+              [o2 g2]))
+        (let [mapped (map-fname fname)
+              gname (llvm-global mapped)]
+          (if (<= n 3)
+            (do (lines-push o1
+                  (str-concat "  " (str-concat (llvm-local dest)
+                    (str-concat " = call i64 " (str-concat gname "()")))))
+                [o1 g1])
+            (let [ra (emit-call-args words n o1 env g1)
+                  arglist (get ra 0)
+                  o2 (get ra 1)
+                  g2 (get ra 2)]
+              (do (lines-push o2
+                    (str-concat "  " (str-concat (llvm-local dest)
+                      (str-concat " = call i64 " (str-concat gname
+                        (str-concat "(" (str-concat arglist ")")))))))
+                  [o2 g2]))))))))
 
-(defn emit-instr [output words cnt]
+;; Returns [output reg]
+(defn emit-branch [output words env reg]
+  (let [r (pair-resolve words 1 output env reg)
+        c (get r 0)
+        o1 (get r 1)
+        g1 (get r 2)
+        then-lbl (get words 3)
+        else-lbl (get words 4)
+        tmp (str-concat then-lbl "_c")]
+    (do (lines-push o1
+          (str-concat "  " (str-concat (llvm-local tmp)
+            (str-concat " = trunc i64 " (str-concat c " to i1")))))
+        (lines-push o1
+          (str-concat "  br i1 " (str-concat (llvm-local tmp)
+            (str-concat ", label %" (str-concat then-lbl
+              (str-concat ", label %" else-lbl))))))
+        [o1 g1])))
+
+;; Returns [output reg]
+(defn emit-return [output words env reg]
+  (let [n (count words)
+        val (if (>= n 3) (get words 2) "")]
+    (if (str-eq? val "<dead>") [output reg]
+      (if (str-eq? val "<done>") [output reg]
+        (let [r (pair-resolve words 1 output env reg)
+              v (get r 0)
+              o1 (get r 1)
+              g1 (get r 2)]
+          (do (lines-push o1 (str-concat "  ret i64 " v))
+              [o1 g1]))))))
+
+(defn emit-jump [output words]
+  (let [lbl (get words 1)]
+    (lines-push output (str-concat "  br label %" lbl))))
+
+;; Returns [output strs str-cnt env reg]
+(defn emit-stringlit [output trimmed strs str-cnt env reg]
+  (let [dest (stringlit-dest trimmed)
+        content (stringlit-content trimmed)
+        escaped (llvm-escape content)
+        len (+ (count content) 1)
+        gname (str-concat "str_" (int-str str-cnt))
+        gdef (str-concat "@" (str-concat gname
+                (str-concat " = private unnamed_addr constant ["
+                  (str-concat (int-str len)
+                    (str-concat " x i8] c\"" (str-concat escaped "\""))))))
+        ptrtmp (str-concat dest "_p")
+        inttmp (str-concat dest "_i")]
+    (do (lines-push strs gdef)
+        (lines-push output
+          (str-concat "  " (str-concat (llvm-local ptrtmp)
+            (str-concat " = getelementptr [" (str-concat (int-str len)
+              (str-concat " x i8], [" (str-concat (int-str len)
+                (str-concat " x i8]* @" (str-concat gname ", i64 0, i64 0")))))))))
+        (lines-push output
+          (str-concat "  " (str-concat (llvm-local inttmp)
+            (str-concat " = ptrtoint i8* " (str-concat (llvm-local ptrtmp) " to i64")))))
+        (lines-push output
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = call i64 @bars_string_new(i64 "
+              (str-concat (llvm-local inttmp) ")")))))
+        [output strs (+ str-cnt 1) env reg])))
+
+;; Returns [output strs str-cnt env reg]
+(defn emit-instr [output words trimmed strs str-cnt env reg]
   (let [cmd (get words 0) n (count words)]
-    ;; assign dest var/const val
     (if (str-eq? cmd "assign")
-      (let [dest (get words 1)
-            llvm-val (pair-to-llvm words 2)
-            name (llvm-name dest cnt)]
-        (lines-push output (str-concat "  " (str-concat name (str-concat " = add i64 " (str-concat llvm-val ", 0"))))))
-    ;; call dest fname [var/const arg ...]
-    (if (str-eq? cmd "call")
-      (let [dest (get words 1)
-            fname (get words 2)
-            handled (inline-op output dest fname words 3 n)
-            name (llvm-name dest cnt)]
-        (if (= handled 1) output
-          (let [mapped (map-fname fname)]
-            (if (<= n 3)
-              (lines-push output (str-concat "  " (str-concat name (str-concat " = call i64 @" (str-concat mapped "()")))))
-              (let [arglist (loop [i 3 acc ""]
-                              (if (>= i n) acc
-                                (let [a (pair-to-llvm words i)]
-                                  (if (= i 3)
-                                    (recur (+ i 2) (str-concat "i64 " a))
-                                    (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)))))))]
-                (lines-push output (str-concat "  " (str-concat name (str-concat " = call i64 @" (str-concat mapped (str-concat "(" (str-concat arglist ")"))))))))))))))
-    )
-    ;; branch var/const cond then_lbl else_lbl
-    (if (str-eq? cmd "branch")
-      (let [c (pair-to-llvm words 1)
-            then-lbl (get words 3)
-            else-lbl (get words 4)
-            tmp (str-concat then-lbl "_c")]
-        (do (lines-push output (str-concat "  %" (str-concat tmp (str-concat " = trunc i64 " (str-concat c " to i1")))))
-            (lines-push output (str-concat "  br i1 %" (str-concat tmp (str-concat ", label %" (str-concat then-lbl (str-concat ", label %" else-lbl))))))))
-    ;; return var/const val
-    (if (str-eq? cmd "return")
-      (let [llvm-val (pair-to-llvm words 1)]
-        (lines-push output (str-concat "  ret i64 " llvm-val)))
-    ;; stringlit dest content... -> placeholder with unique name
-    (if (str-eq? cmd "stringlit")
-      (let [dest (get words 1)
-            name (llvm-name dest cnt)]
-        (do (lines-push output (str-concat "  ; stringlit " dest))
-            (lines-push output (str-concat "  " (str-concat name " = add i64 0, 0")))))
-    output
-    ))))
+      (let [r (emit-assign output words env reg)]
+        [(get r 0) strs str-cnt (get r 1) (get r 2)])
+      (if (str-eq? cmd "call")
+        (let [r (emit-call output words n env reg)]
+          [(get r 0) strs str-cnt env (get r 1)])
+        (if (str-eq? cmd "branch")
+          (let [r (emit-branch output words env reg)]
+            [(get r 0) strs str-cnt env (get r 1)])
+          (if (str-eq? cmd "return")
+            (let [r (emit-return output words env reg)]
+              [(get r 0) strs str-cnt env (get r 1)])
+            (if (str-eq? cmd "jump")
+              [(emit-jump output words) strs str-cnt env reg]
+              (if (str-eq? cmd "stringlit")
+                (emit-stringlit output trimmed strs str-cnt env reg)
+                [output strs str-cnt env reg]))))))))
 
-;; ---- main line processing ----
+(defn process-func [body line in-func strs str-cnt]
+  (let [body2 (if (= in-func 1) (lines-push body "}") body)
+        name (map-user-fname (extract-func-name line))
+        params (split-words (extract-params-str line))
+        nparams (count params)
+        gname (llvm-global name)
+        empty (vector)]
+    (if (= nparams 0)
+      [(lines-push body2 (str-concat "define i64 " (str-concat gname "() {"))) 1 strs str-cnt empty 0]
+      (let [plist (loop [i 0 acc ""]
+                    (if (>= i nparams) acc
+                      (if (= i 0)
+                        (recur (+ i 1) (str-concat "i64 " (llvm-local (get params i))))
+                        (recur (+ i 1) (str-concat acc
+                          (str-concat ", i64 " (llvm-local (get params i))))))))]
+        [(lines-push body2
+           (str-concat "define i64 " (str-concat gname
+             (str-concat "(" (str-concat plist ") {")))))
+         1 strs str-cnt empty 0]))))
 
-(defn process-line [output line in-func cnt]
-  (if (< (count line) 1) [output in-func cnt]
-  ;; -- function def: "func name [params]:"
-  (if (str-starts-with? line "func ")
-    (let [output (if (= in-func 1) (lines-push output "}") output)
-          name (extract-func-name line)
-          params (split-words (extract-params-str line))
-          nparams (count params)]
-      (if (= nparams 0)
-        [(lines-push output (str-concat "define i64 @" (str-concat name "() {"))) 1 cnt]
-        (let [plist (loop [i 0 acc ""]
-                      (if (>= i nparams) acc
-                        (if (= i 0)
-                          (recur (+ i 1) (str-concat "i64 %" (get params i)))
-                          (recur (+ i 1) (str-concat acc (str-concat ", i64 %" (get params i)))))))]
-          [(lines-push output (str-concat "define i64 @" (str-concat name (str-concat "(" (str-concat plist ") {"))))) 1 cnt])))
-  ;; -- indented lines --
-  (if (str-starts-with? line "  ")
-    (if (str-starts-with? line "    ")
-      ;; 4+ spaces = instruction
-      [(emit-instr output (split-words (trim-left line)) cnt) in-func (+ cnt 1)]
-      ;; 2 spaces = label
-      [(lines-push output (str-slice line 2 (count line))) in-func cnt])
-    ;; 0 spaces, not func -> skip
-    [output in-func cnt]))))
+(defn process-line [body line in-func strs str-cnt env reg]
+  (if (< (count line) 1)
+    [body in-func strs str-cnt env reg]
+    (if (str-starts-with? line "func ")
+      (process-func body line in-func strs str-cnt)
+      (if (str-starts-with? line "    ")
+        (let [trimmed (trim-left line)
+              words (split-words trimmed)
+              res (emit-instr body words trimmed strs str-cnt env reg)]
+          [(get res 0) in-func (get res 1) (get res 2) (get res 3) (get res 4)])
+        (if (str-starts-with? line "  ")
+          [(lines-push body (str-slice line 2 (count line))) in-func strs str-cnt env reg]
+          [body in-func strs str-cnt env reg])))))
 
-;; ---- pipeline ----
+(defn append-vec [dst src]
+  (let [n (count src)]
+    (loop [i 0]
+      (if (>= i n) dst
+        (do (push dst (get src i))
+            (recur (+ i 1)))))))
+
+(defn c-main-wrapper []
+  (let [lines (vector)]
+    (do (lines-push lines "")
+        (lines-push lines "define i32 @main(i32 %argc, i8** %argv) {")
+        (lines-push lines "  call void @bars_set_args(i32 %argc, i8** %argv)")
+        (lines-push lines "  %r = call i64 @_bars_main()")
+        (lines-push lines "  %r32 = trunc i64 %r to i32")
+        (lines-push lines "  ret i32 %r32")
+        (lines-push lines "}")
+        lines)))
 
 (defn hir-to-llvm [hir-lines]
-  (let [n (count hir-lines)]
-    (loop [i 0 output (llvm-header) in-func 0 cnt 0]
+  (let [n (count hir-lines)
+        empty (vector)]
+    (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env empty reg 0]
       (if (>= i n)
-        (if (= in-func 1) (lines-push output "}") output)
+        (let [body2 (if (= in-func 1) (lines-push body "}") body)
+              out (llvm-header)
+              wrap (c-main-wrapper)]
+          (do (append-vec out strs)
+              (if (> (count strs) 0) (lines-push out "") 0)
+              (append-vec out body2)
+              (append-vec out wrap)
+              out))
         (let [line (get hir-lines i)
-              res (process-line output line in-func cnt)]
-          (recur (+ i 1) (get res 0) (get res 1) (get res 2)))))))
+              res (process-line body line in-func strs str-cnt env reg)]
+          (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5)))))))
+
+(defn join-lines [ll-lines]
+  (let [n (count ll-lines)]
+    (loop [i 0 text ""]
+      (if (>= i n) text
+        (recur (+ i 1) (str-concat (str-concat text (get ll-lines i)) "\n"))))))
 
 (defn compile-llvm [hir-lines out-path]
   (let [ll-lines (hir-to-llvm hir-lines)
-        n (count ll-lines)]
-    (loop [i 0 text ""]
-      (if (>= i n)
-        (let [ll-path (str-concat out-path ".ll")]
-          (do (spit ll-path text)
-              0))
-        (recur (+ i 1) (str-concat (str-concat text (get ll-lines i)) "\n"))))))
+        text (join-lines ll-lines)
+        ll-path (str-concat out-path ".ll")]
+    (do (spit ll-path text)
+        0)))

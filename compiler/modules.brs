@@ -1,8 +1,8 @@
 ;; Bars Module System — Stage 9 of self-hosting
-;; Minimal implementation: parses (require ...) forms from AST,
-;; handles name prefixing for module isolation.
+;; Resolves (require "path" :as alias), renames with _m_alias_ prefix,
+;; substitutes alias/name qualified symbols.
 ;;
-;; The caller (build.brs) handles file I/O and reader integration.
+;; File I/O (slurp + reader) is provided by the caller (build.brs).
 
 (defn str-eq? [a b]
   (if (!= (count a) (count b)) false
@@ -12,144 +12,138 @@
 (defn ast-val [x] (get x 1))
 (defn is-atom? [x] (< (ast-tag x) 1000))
 
-;; make-atom [tag val] — create a tagged atom
 (defn make-atom [tag val]
   (let [v (vector)]
     (do (push v tag) (do (push v val) v))))
 
-;; ---- parse require form ----
-;; (require "path.brs" :as alias) => [path alias] or nil
+;; ---- parse require: (require "path.brs" :as alias) => [path alias] or 0 ----
 
 (defn parse-require [expr]
-  (if (is-atom? expr)
-    0
+  (if (is-atom? expr) 0
     (let [head (get expr 0)]
       (if (not (is-atom? head)) 0
-      (if (not (str-eq? (ast-val head) "require")) 0
-      (let [n (count expr)]
-        (if (< n 4) 0
-        (let [path-expr (get expr 1)
-              kw-expr (get expr 2)
-              alias-expr (get expr 3)]
-          (if (not (is-atom? path-expr)) 0
-          (if (not (str-eq? (ast-val kw-expr) "as")) 0
-          (if (not (is-atom? alias-expr)) 0
-            (let [pair (vector)]
-              (do (push pair (ast-val path-expr))
-                  (push pair (ast-val alias-expr))
-                  pair)))))))))))))
+        (if (not (str-eq? (ast-val head) "require")) 0
+          (if (< (count expr) 4) 0
+            (let [path-expr (get expr 1)
+                  kw-expr (get expr 2)
+                  alias-expr (get expr 3)]
+              (if (not (is-atom? path-expr)) 0
+                (if (not (str-eq? (ast-val kw-expr) "as")) 0
+                  (if (not (is-atom? alias-expr)) 0
+                    (let [pair (vector)]
+                      (do (push pair (ast-val path-expr))
+                          (push pair (ast-val alias-expr))
+                          pair))))))))))))
 
-;; ---- strip require forms from AST ----
+(defn is-require? [expr]
+  (> (count (parse-require expr)) 0))
 
-(defn strip-requires [ast-list]
-  (let [n (count ast-list)
-        result (vector)]
-    (loop [i 0]
-      (if (>= i n) result
-        (let [expr (get ast-list i)]
-          (if (not (> (count (parse-require expr)) 0))
-            (push result expr))
-          (recur (+ i 1)))))))
+;; ---- collect public defn names ----
 
-;; ---- prefix names in AST ----
-
-(defn prefix-name [prefix name]
-  (str-concat prefix name))
-
-;; rename symbols matching public names with prefix
-(defn rename-expr [expr prefix names]
-  (if (is-atom? expr)
-    (if (= (ast-tag expr) 1)
-      (let [name (ast-val expr)]
-        ;; Check slash-prefixed: alias/name => prefixed_name
-        (let [slash-pos (str-index-of name "/")]
-          (if (>= slash-pos 0)
-            ;; Has slash — check alias, replace with prefix
-            (let [alias (str-slice name 0 slash-pos)
-                  rest  (str-slice name (+ slash-pos 1) (count name))]
-              (if (str-eq? alias prefix)  ;; alias matches prefix
-                (make-atom 1 (str-concat prefix rest))
-                expr))
-            ;; No slash — check if name is a public name
-            (loop [i 0]
-              (if (>= i (count names)) expr
-                (if (str-eq? (get names i) name)
-                  (make-atom 1 (str-concat prefix name))
-                  (recur (+ i 1))))))))
-      expr)
-    ;; Compound: [head args...]
-    (let [n (count expr) new-expr (vector)]
-      (do (push new-expr (rename-expr (get expr 0) prefix names))
-          (loop [i 1]
-            (if (>= i n) new-expr
-              (do (push new-expr (rename-expr (get expr i) prefix names))
-                  (recur (+ i 1)))))))))
-
-;; rename top-level defn names
-(defn rename-top-defns [ast-list prefix]
-  (let [n (count ast-list)]
-    (loop [i 0]
-      (if (>= i n) ast-list
-        (let [expr (get ast-list i)]
-          (if (is-atom? expr) 0
-            (let [head (get expr 0) tag (if (is-atom? head) (ast-tag head) 99)]
-              ;; defn: position 1 is name
-              (if (= tag 10)
-                (let [name-atom (get expr 1)
-                      name (ast-val name-atom)
-                      new-name (make-atom 1 (prefix-name prefix name))]
-                  (do 0))  ;; TODO: actually mutate the vector
-                0)))
-          (recur (+ i 1)))))))
-
-;; rename all references in a module's AST
-(defn rename-module-refs [ast-list prefix public-names]
-  (let [n (count ast-list) result (vector)]
-    (loop [i 0]
-      (if (>= i n) result
-        (do (push result (rename-expr (get ast-list i) prefix public-names))
-            (recur (+ i 1)))))))
-
-;; collect public names from AST
 (defn collect-names [ast-list]
   (let [n (count ast-list) names (vector)]
     (loop [i 0]
       (if (>= i n) names
         (let [expr (get ast-list i)]
-          (if (is-atom? expr) (recur (+ i 1))
-            (let [head (get expr 0) tag (if (is-atom? head) (ast-tag head) 99)]
+          (if (is-atom? expr)
+            (recur (+ i 1))
+            (let [head (get expr 0)
+                  tag (if (is-atom? head) (ast-tag head) 99)]
               (if (= tag 10)
                 (let [name-atom (get expr 1)]
                   (if (is-atom? name-atom)
                     (do (push names (ast-val name-atom))
                         (recur (+ i 1)))
                     (recur (+ i 1))))
-              (if (= tag 20)
-                (let [name-atom (get expr 1)]
-                  (if (is-atom? name-atom)
-                    (do (push names (ast-val name-atom))
-                        (recur (+ i 1)))
-                    (recur (+ i 1))))
-              (recur (+ i 1)))))))))))
+                (recur (+ i 1))))))))))
 
-;; ---- main entry: merge module AST into main AST ----
-;; Returns [(merged AST) (prefix ...)]
+;; ---- rename: unqualified public names get prefix; keep others ----
+;; alias-for-slash: when non-empty, also rewrite alias/name → prefix+name
 
-(defn merge-module [main-ast module-ast alias]
-  (let [prefix (str-concat "_" (str-concat alias "_"))
-        pub-names (collect-names module-ast)
-        renamed-module (rename-module-refs module-ast prefix pub-names)
-        stripped-main (strip-requires main-ast)
-        ;; Merge: main defs first, then module defs
-        result (vector)
-        n1 (count stripped-main)
-        n2 (count renamed-module)]
+(defn name-in-list? [name names]
+  (let [n (count names)]
     (loop [i 0]
-      (if (>= i n1) 0
-        (do (push result (get stripped-main i))
-            (recur (+ i 1)))))
+      (if (>= i n) false
+        (if (str-eq? (get names i) name) true
+          (recur (+ i 1)))))))
+
+(defn rename-expr [expr prefix names alias-for-slash]
+  (if (is-atom? expr)
+    (if (= (ast-tag expr) 1)
+      (let [name (ast-val expr)
+            slash-pos (str-index-of name "/")]
+        ;; Qualified alias/name only when slash is not at start (so "/" operator is safe)
+        (if (> slash-pos 0)
+          (let [al (str-slice name 0 slash-pos)
+                rest (str-slice name (+ slash-pos 1) (count name))]
+            (if (str-eq? al alias-for-slash)
+              (make-atom 1 (str-concat prefix rest))
+              expr))
+          (if (name-in-list? name names)
+            (make-atom 1 (str-concat prefix name))
+            expr)))
+      expr)
+    (let [n (count expr) new-expr (vector)]
+      (do (push new-expr (rename-expr (get expr 0) prefix names alias-for-slash))
+          (loop [i 1]
+            (if (>= i n) new-expr
+              (do (push new-expr (rename-expr (get expr i) prefix names alias-for-slash))
+                  (recur (+ i 1)))))))))
+
+(defn rename-module [ast-list prefix]
+  (let [pub (collect-names ast-list)
+        n (count ast-list)
+        result (vector)]
     (loop [i 0]
-      (if (>= i n2) 0
-        (do (push result (get renamed-module i))
-            (recur (+ i 1)))))
-    result))
+      (if (>= i n) result
+        (do (push result (rename-expr (get ast-list i) prefix pub ""))
+            (recur (+ i 1)))))))
+
+;; Rewrite alias/name in an AST using alias→prefix pairs.
+;; pairs: vector of [alias prefix]
+(defn find-prefix [alias pairs]
+  (let [n (count pairs)]
+    (loop [i 0]
+      (if (>= i n) ""
+        (let [p (get pairs i)]
+          (if (str-eq? (get p 0) alias) (get p 1)
+            (recur (+ i 1))))))))
+
+(defn subst-qualified-expr [expr pairs]
+  (if (is-atom? expr)
+    (if (= (ast-tag expr) 1)
+      (let [name (ast-val expr)
+            slash-pos (str-index-of name "/")]
+        ;; slash at 0 is the "/" operator, not a qualifier
+        (if (<= slash-pos 0) expr
+          (let [al (str-slice name 0 slash-pos)
+                rest (str-slice name (+ slash-pos 1) (count name))
+                pref (find-prefix al pairs)]
+            (if (str-eq? pref "") expr
+              (make-atom 1 (str-concat pref rest))))))
+      expr)
+    (let [n (count expr) new-expr (vector)]
+      (do (push new-expr (subst-qualified-expr (get expr 0) pairs))
+          (loop [i 1]
+            (if (>= i n) new-expr
+              (do (push new-expr (subst-qualified-expr (get expr i) pairs))
+                  (recur (+ i 1)))))))))
+
+(defn subst-qualified [ast-list pairs]
+  (let [n (count ast-list) result (vector)]
+    (loop [i 0]
+      (if (>= i n) result
+        (do (push result (subst-qualified-expr (get ast-list i) pairs))
+            (recur (+ i 1)))))))
+
+;; Append all items from src onto dst (mutates dst)
+(defn append-all [dst src]
+  (let [n (count src)]
+    (loop [i 0]
+      (if (>= i n) dst
+        (do (push dst (get src i))
+            (recur (+ i 1)))))))
+
+;; Host-compatible prefix: _m_<alias>_
+(defn module-prefix [alias]
+  (str-concat "_m_" (str-concat alias "_")))

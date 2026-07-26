@@ -1,7 +1,7 @@
 # Bars — Пътна Карта (v6.0)
 
-> Актуална към: 2026-06-05  
-> Състояние: Фази 0–11 завършени. Фаза 12 в прогрес.  
+> Актуална към: 2026-07-26  
+> Състояние: Фази 0–11 завършени. Фаза 12 (self-hosting) — Stages 0–10 почти готови.  
 > Философия: Следващите версии на компилатора се пишат на Bars.
 > 
 > Структура: `bootstrap/` — Rust bootstrap (замразен), `compiler/` — компилатор на Bars, `lib/` — stdlib
@@ -165,17 +165,22 @@ Bars е работещ компилатор за системен Lisp с owners
 
 ## Фаза 12: Self-Hosting 🚧
 
-- [x] Stage 0: Подготовка — string ops, CLI args, `exit` ✅
-- [x] Stage 1: Self-hosted Reader (`compiler/reader.brs`) ✅
-- [x] Stage 2: Self-hosted HIR Lowering (`compiler/hir.brs`) ✅
-- [x] Stage 3: Self-hosted QBE Codegen (`compiler/codegen/qbe.brs`) ✅
-- [x] Stage 4: Self-hosted Build Pipeline (`compiler/build.brs`) ✅
-- [x] Stage 5: Bootstrap — компилиране през Rust host toolchain ✅
-- [ ] Stage 5a: Self-hosted компилаторът компилира произволен `.brs` файл
-- [ ] Stage 5b: Identity test — Rust и Bars компилатори произвеждат идентичен output
-- [ ] Stage 5c: Замяна на Rust host с Bars self-hosted в CI
+- [x] Stage 0–5: Reader, HIR, Build, bootstrap via Rust host ✅
+- [x] Stage 6: Ownership checker (`compiler/ownership.brs`) ✅ — не е в pipeline
+- [x] Stage 7: LLVM backend (`compiler/codegen/llvm.brs`) ✅
+- [x] Stage 8: Macro system (`compiler/macros.brs`) ✅ — в pipeline
+- [x] Stage 9: Module framework (`compiler/modules.brs`) ✅ — частично
+- [x] Stage 10: `.brs` → HIR → `.ll` → clang → binary ✅
+  - HIR SSA temp counter fix; bare LLVM names; real stringlit; println+newline
+- [ ] Stage 10b: Self-compilation (self-hosted компилира `compiler/build.brs`)
+- [ ] Stage 10c: Identity test vs Rust host
+- [ ] Stage 10d: types/ownership/modules в pipeline; CI на Bars self-hosted
 
-**Текущо състояние:** `bars build --backend cranelift compiler/build.brs` произвежда работещ binary, който се изпълнява без segfault. Остава дебъгване на `compile-file` pipeline в self-hosted версията.
+**Текущо състояние:**  
+```
+BARS_SKIP_TYPECHECK=1 bars build --backend cranelift compiler/build.brs -o bars-self
+./bars-self examples/math.brs /tmp/math && /tmp/math   # → 7\n120\n
+```
 
 ---
 

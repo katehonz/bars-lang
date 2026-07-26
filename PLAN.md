@@ -1,6 +1,6 @@
 # Bars — План за Разработка v6.0
 
-> Актуален към: 2026-06-05
+> Актуален към: 2026-07-26
 > Философия: Следващите версии на компилатора се пишат на Bars. Като Nim и Rust.
 
 ---
@@ -37,17 +37,15 @@
 ```
 compiler/
 ├── reader.brs       # Lexer + Parser ✅
-├── hir.brs          # AST → HIR lowering ✅  
+├── hir.brs          # AST → HIR lowering ✅
 ├── build.brs        # Оркестрация ✅
-├── types.brs        # Type inference (TODO)
-├── ownership.brs    # Ownership checker (TODO)
-├── macros.brs       # Macro expansion (TODO)
-├── modules.brs      # Модулна система (TODO)
+├── types.brs        # Type inference ✅ (не е в pipeline)
+├── ownership.brs    # Ownership checker ✅ (не е в pipeline)
+├── macros.brs       # Macro expansion ✅
+├── modules.brs      # Модулна система ✅ (framework)
 ├── codegen/
-│   ├── qbe.brs      # QBE backend ✅ (ще остане като reference)
-│   ├── llvm.brs     # LLVM IR backend (TODO — ПРИОРИТЕТ)
-│   └── c.brs        # C transpiler (TODO — алтернатива като Nim)
-└── selfhost.brs     # Main entry point ✅
+│   └── llvm.brs     # LLVM IR backend ✅
+└── (entry = build.brs main)
 ```
 
 ### Stage 0-4: Вече готово ✅
@@ -72,45 +70,61 @@ compiler/
 Бинарният файл работи. Интеграцията в build.brs е блокирана от Cranelift hyphen issue (`_m_types_var-id`).
 Всички self-recursive функции са конвертирани към `loop`/`recur`.
 
-### Stage 6: Self-Hosted Ownership Checker
+### Stage 6: Self-Hosted Ownership Checker ✅
 
-- [ ] **12.9** Пренасяне на ownership checker от Rust в Bars (`lib/ownership.brs`)
-- [ ] **12.10** NLL borrow checking с states (Owned, Borrowed, MutBorrowed, Moved)
-- [ ] **12.11** Error reporting: UseAfterMove, AlreadyBorrowed, MoveWhileBorrowed
+- [x] **12.9** Пренасяне на ownership checker от Rust в Bars (`compiler/ownership.brs`)
+- [x] **12.10** NLL borrow checking с states (Owned, Borrowed, MutBorrowed, Moved)
+- [ ] **12.11** Интегриране в `build.brs` pipeline (все още не е включен)
 
-**Защо:** Ownership е ключовият differentiating feature на Bars спрямо други Lisps. Без него в self-hosted версията, компилаторът не е feature-complete.
+### Stage 7: Self-Hosted LLVM Backend ✅
 
-### Stage 7: Self-Hosted LLVM Backend 🔴 ПРИОРИТЕТ (следващ)
+- [x] **12.12** HIR → LLVM IR кодогенерация (`compiler/codegen/llvm.brs`)
+- [x] **12.13** Генериране на LLVM IR текст (human-readable `.ll` формат)
+- [x] **12.14** Интеграция: `.brs` → HIR → LLVM IR → `clang` → binary
+- [x] **12.15** Поддръжка: assign, call, ops, branch, return, stringlit, params
 
-- [ ] **12.12** HIR → LLVM IR кодогенерация (`compiler/codegen/llvm.brs`)
-- [ ] **12.13** Генериране на LLVM IR текст (human-readable `.ll` формат)
-- [ ] **12.14** Интеграция: `.brs` → HIR → LLVM IR → `llc` → `.o` → `cc` → binary
-- [ ] **12.15** Поддръжка на всички HIR инструкции в LLVM
+### Stage 8: Self-Hosted Macro System ✅
 
-**Защо LLVM вместо QBE:**
-- LLVM е industry standard (Rust, Swift, Clang го ползват)
-- Оптимизации на ниво production (O2/O3)
-- Поддръжка на много архитектури
-- QBE е добър за прототипиране, но не е за production compiler
+- [x] **12.16** Macro expander в Bars (`compiler/macros.brs`)
+- [x] **12.17** Built-in макроси: `when`, `unless`, `cond`, …
+- [x] **12.18** Интегриран в `build.brs` pipeline
 
-### Stage 8: Self-Hosted Macro System
+### Stage 9: Self-Hosted Module System ✅ (framework)
 
-- [ ] **12.16** Macro expander в Bars (`lib/macros.brs`)
-- [ ] **12.17** Built-in макроси: `when`, `unless`, `cond`, `->`, `->>`
-- [ ] **12.18** `defmacro` + syntax-quote/unquote в self-hosted версията
-
-### Stage 9: Self-Hosted Module System
-
-- [ ] **12.19** `require` резолване и namespace mangling (`lib/modules.brs`)
-- [ ] **12.20** Мулти-файлова компилация
+- [x] **12.19** `require` parse, rename, merge-module (`compiler/modules.brs`)
+- [ ] **12.20** Пълна мулти-файлова компилация в self-hosted pipeline
 - [ ] **12.21** Интеграция с пакетната система (Bars.toml dependencies)
 
-### Stage 10: Пълен Bootstrap
+### Stage 10: Пълен Bootstrap 🚧
 
-- [ ] **12.22** Bars компилаторът (написан на Bars) компилира произволен `.brs` файл до работещ binary
-- [ ] **12.23** Компилира себе си успешно (self-compilation test)
-- [ ] **12.24** Identity test: Rust и Bars компилатори произвеждат идентичен изход за тестов набор
+- [x] **12.22** Bars компилаторът компилира `.brs` → работещ binary (LLVM + clang)
+  - HIR: temp counter (no loop-var rebind), skip non-defn top-level
+  - HIR: `loop`/`recur` + `jump`; if-as-expression with join
+  - LLVM: quoted ids, correct runtime names, alloca for mutables
+  - Macros: flat `cond`; special-form expand (let/defn bindings not treated as calls)
+  - Modules: `_m_alias_` prefix, resolve requires, subst qualified
+  - Link: `clang … runtime/bars_runtime.o -lgc -lm`
+- [x] **12.23a** Gen1 self-host: host → `bars-self` compiles real programs (math, match, loop, modules)
+- [x] **12.23b** Gen2 binary: `bars-self` compiles `compiler/build.brs` → `bars-self2` (~120KB, 190 funcs)
+- [ ] **12.23c** Gen2 correctness: gen2 currently segfaults in `parse-expr` (match IR edge case)
+- [ ] **12.24** Identity test: Rust и Bars компилатори — идентичен изход
 - [ ] **12.25** Rust компилаторът става само bootstrap tool (като Nim `csources`)
+
+**HIR Stage 10+ features (2026-07-26):**
+- deftype → constructors as vectors `[disc, fields…]`
+- match → tag checks + field binds + wildcard
+- vector literals tag 28 + unwrap in let/loop/defn/params
+- loop/recur + if-join; loop as expression
+- C main wrapper (`bars_set_args` + `_bars_main`)
+- modules: `/` operator not treated as qualifier
+
+**Работи (Gen1):**
+```
+BARS_SKIP_TYPECHECK=1 bars build --backend cranelift compiler/build.brs -o bars-self
+./bars-self examples/math.brs /tmp/m && /tmp/m          # 7\n120\n
+./bars-self compiler/build.brs /tmp/bars-self2          # Gen2 binary produced
+```
+
 
 ---
 
@@ -224,4 +238,4 @@ bars/
 
 ---
 
-*План версия: 6.0 | Актуализиран: 2026-06-05*
+*План версия: 6.1 | Актуализиран: 2026-07-26*

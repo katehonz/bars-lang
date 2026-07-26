@@ -311,11 +311,20 @@
             (do (push items expr) (recur items np)))))))
 
 ;; --- parse-vector ---
+;; Vectors are marked with head tag 28 so HIR can distinguish them from calls.
+;; AST: [[28 "vec"] elem0 elem1 ...]
 (defn parse-vector [tokens pos]
   (loop [items (vector) pos pos]
     (let [t (peek-t tokens pos)]
       (match t
-        (TRBrack) [items (+ pos 1)]
+        (TRBrack)
+          (let [wrapped (vector)]
+            (do (push wrapped (t0 28))
+                (loop [i 0]
+                  (if (>= i (count items)) 0
+                    (do (push wrapped (get items i))
+                        (recur (+ i 1)))))
+                [wrapped (+ pos 1)]))
         (TEof)    [items pos]
         _ (let [res (parse-expr tokens pos)
                 expr (get res 0)

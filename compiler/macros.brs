@@ -60,6 +60,89 @@
         (push v else)
         v)))
 
+;; ---- expand helpers for special forms ----
+;; Vector marker tag 28: [[28] e0 e1 ...] from reader
+
+(defn is-vec-marker? [x]
+  (if (is-atom? x) false
+    (let [head (get x 0)]
+      (if (is-atom? head)
+        (= (ast-tag head) 28)
+        false))))
+
+(defn unwrap-vec [v]
+  (if (is-vec-marker? v)
+    (let [n (count v)
+          out (vector)]
+      (do (loop [i 1]
+            (if (>= i n) 0
+              (do (push out (get v i))
+                  (recur (+ i 1)))))
+          out))
+    v))
+
+(defn wrap-vec [elems]
+  (let [out (vector)
+        n (count elems)]
+    (do (push out (mk-special 28 "vec"))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (get elems i))
+                (recur (+ i 1))))))))
+
+;; let/loop bindings: [name1 val1 name2 val2 ...] — expand only values
+(defn expand-bindings [binds]
+  (let [plain (unwrap-vec binds)
+        n (count plain)
+        new-b (vector)]
+    (loop [i 0]
+      (if (>= i n) (wrap-vec new-b)
+        (do (push new-b (get plain i))
+            (if (< (+ i 1) n)
+              (push new-b (expand-expr (get plain (+ i 1))))
+              0)
+            (recur (+ i 2)))))))
+
+(defn expand-children-from [expr start]
+  (let [n (count expr)
+        new-expr (vector)]
+    (do (push new-expr (get expr 0))
+        (loop [i 1]
+          (if (>= i n) new-expr
+            (if (< i start)
+              (do (push new-expr (get expr i))
+                  (recur (+ i 1)))
+              (do (push new-expr (expand-expr (get expr i)))
+                  (recur (+ i 1)))))))))
+
+(defn expand-special [expr tag]
+  ;; 10=defn: keep name+params (unwrap params), expand body
+  ;; 11=let / 14=loop: expand binding values + body
+  ;; 28=vector literal: expand elements
+  ;; 12=if / 13=do / others: expand all children
+  (if (= tag 28)
+    (expand-children-from expr 1)
+  (if (= tag 10)
+    (let [n (count expr)
+          new-expr (vector)]
+      (do (push new-expr (get expr 0))
+          (push new-expr (get expr 1))
+          (push new-expr (get expr 2))
+          (loop [i 3]
+            (if (>= i n) new-expr
+              (do (push new-expr (expand-expr (get expr i)))
+                  (recur (+ i 1)))))))
+    (if (if (= tag 11) true (= tag 14))
+      (let [n (count expr)
+            new-expr (vector)]
+        (do (push new-expr (get expr 0))
+            (push new-expr (expand-bindings (get expr 1)))
+            (loop [i 2]
+              (if (>= i n) new-expr
+                (do (push new-expr (expand-expr (get expr i)))
+                    (recur (+ i 1)))))))
+      (expand-children-from expr 1)))))
+
 ;; ---- expand an expression ----
 
 (defn expand-expr [expr]
@@ -71,41 +154,24 @@
         (let [tag (ast-tag head)
               name (ast-val head)]
           (if (= tag 1)
-            ;; Symbol head — check if it's a macro
+            ;; Symbol head — macros or plain call
             (if (str-eq? name "when")
               (expand-when expr)
-            (if (str-eq? name "unless")
-              (expand-unless expr)
-            (if (str-eq? name "cond")
-              (expand-cond expr)
-            (if (str-eq? name "->")
-              (expand-thread expr)
-            (if (str-eq? name "->>")
-              (expand-thread-last expr)
-              ;; Not a macro — expand args recursively
-              (let [new-expr (vector)]
-                (do (push new-expr (expand-expr head))
-                    (loop [i 1]
-                      (if (>= i n)
-                        new-expr
-                        (do (push new-expr (expand-expr (get expr i)))
-                            (recur (+ i 1))))))))))))
-            ;; Special form or other — expand body recursively
-            (let [new-expr (vector)]
-              (do (push new-expr head)
-                  (loop [i 1]
-                    (if (>= i n)
-                      new-expr
-                      (do (push new-expr (expand-expr (get expr i)))
-                          (recur (+ i 1)))))))))
-        ;; Head is compound — expand recursively
-        (let [new-expr (vector)]
-          (do (push new-expr (expand-expr head))
-              (loop [i 1]
-                (if (>= i n)
-                  new-expr
-                  (do (push new-expr (expand-expr (get expr i)))
-                      (recur (+ i 1)))))))))))
+              (if (str-eq? name "unless")
+                (expand-unless expr)
+                (if (str-eq? name "cond")
+                  (expand-cond expr)
+                  (if (str-eq? name "->")
+                    (expand-thread expr)
+                    (if (str-eq? name "->>")
+                      (expand-thread-last expr)
+                      (expand-children-from expr 0))))))
+            ;; Special form tags (>=10) or vector marker (28)
+            (if (if (>= tag 10) true (= tag 28))
+              (expand-special expr tag)
+              (expand-children-from expr 0))))
+        ;; Head is compound — data vector, expand elements
+        (expand-children-from expr 0)))))
 
 ;; ---- built-in macro expansions ----
 
@@ -144,23 +210,27 @@
                               (recur (+ i 1)))))
                       (mk-if cond (mk-do body-exprs) (mk-nil)))))))))))
 
-;; (cond (p1 e1) (p2 e2) ...)  =>  (if p1 e1 (if p2 e2 ... nil))
+;; Flat cond (host style):
+;;   (cond test1 expr1 test2 expr2 :else default)
+;; => nested ifs.  Pairs are alternating args, not sublists.
+(defn is-else-atom? [x]
+  (if (not (is-atom? x)) false
+    (if (str-eq? (ast-val x) "else") true false)))
+
 (defn expand-cond [expr]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
-      ;; Build nested ifs from the last pair to the first
-      (let [result (mk-nil)]  ;; fallback: nil
-        (loop [i (- n 1) res result]
-          (if (< i 1)
-            res
-            (let [pair (get expr i)
-                  is-else (str-eq? (ast-val (get pair 0)) "else")
-                  then-val (expand-expr (get pair 1))]
-              (if is-else
-                (recur (- i 1) then-val)  ;; :else is fallback, continue wrapping
-                (let [cond-val (expand-expr (get pair 0))]
-                  (recur (- i 1) (mk-if cond-val then-val res)))))))))))
+      ;; Walk pairs from the end: indices (n-2, n-1), (n-4, n-3), ...
+      (loop [i (- n 2) res (mk-nil)]
+        (if (< i 1)
+          res
+          (let [test (get expr i)
+                body (get expr (+ i 1))]
+            (if (is-else-atom? test)
+              (recur (- i 2) (expand-expr body))
+              (recur (- i 2)
+                (mk-if (expand-expr test) (expand-expr body) res)))))))))
 
 ;; (-> x (f a) (g b))  =>  (g (f x a) b)
 (defn expand-thread [expr]
