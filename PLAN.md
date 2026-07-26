@@ -106,23 +106,26 @@ compiler/
   - Link: `clang … runtime/bars_runtime.o -lgc -lm`
 - [x] **12.23a** Gen1 self-host: host → `bars-self` compiles real programs (math, match, loop, modules)
 - [x] **12.23b** Gen2 binary: `bars-self` compiles `compiler/build.brs` → `bars-self2` (~120KB, 190 funcs)
-- [ ] **12.23c** Gen2 correctness: gen2 currently segfaults in `parse-expr` (match IR edge case)
-- [ ] **12.24** Identity test: Rust и Bars компилатори — идентичен изход
+- [x] **12.23c** Gen2 correctness: fixed `special-tag` hash collision (`mk-if`/`mk-do` ≡ `match`); const match patterns; polymorphic count; dominate allocas
+- [x] **12.24** Identity test (IR): Gen3.ll == Gen4.ll fixed point; Gen3 compiles math/match/loop/cond
 - [ ] **12.25** Rust компилаторът става само bootstrap tool (като Nim `csources`)
 
 **HIR Stage 10+ features (2026-07-26):**
 - deftype → constructors as vectors `[disc, fields…]`
-- match → tag checks + field binds + wildcard
+- match → tag checks + field binds + wildcard + **const patterns** (int/bool/nil)
 - vector literals tag 28 + unwrap in let/loop/defn/params
 - loop/recur + if-join; loop as expression
 - C main wrapper (`bars_set_args` + `_bars_main`)
 - modules: `/` operator not treated as qualifier
+- reader: `special-tag` exact name match (no first_char×len collisions)
 
-**Работи (Gen1):**
+**Bootstrap (Gen1→Gen4):**
 ```
 BARS_SKIP_TYPECHECK=1 bars build --backend cranelift compiler/build.brs -o bars-self
 ./bars-self examples/math.brs /tmp/m && /tmp/m          # 7\n120\n
-./bars-self compiler/build.brs /tmp/bars-self2          # Gen2 binary produced
+./bars-self compiler/build.brs /tmp/bars-self2          # Gen2
+./bars-self2 compiler/build.brs /tmp/bars-self3         # Gen3
+./bars-self3 compiler/build.brs /tmp/bars-self4         # Gen4; .ll identical to Gen3
 ```
 
 

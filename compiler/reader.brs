@@ -223,26 +223,27 @@
 (defn t0 [tag]
   (let [v (vector)] (do (push v tag) v)))
 
-;; Special form detection: hash = first_char * 100 + length
+;; Special form detection by exact name.
+;; NOTE: do NOT use first_char*100+len alone — collisions (mk-if/mk-do vs match).
+(defn name-eq? [a b]
+  (if (!= (count a) (count b)) false
+    (= (str-starts-with? a b) 1)))
+
 (defn special-tag [name]
-  (let [ch (str-get name 0)
-        ln (count name)
-        h (+ (* ch 100) ln)]
-    (cond
-      (= h 10004) 10     ;; d+4 = defn
-      (= h 10002) 13     ;; d+2 = do
-      (= h 10803) 11     ;; l+3 = let
-      (= h 10804) 14     ;; l+4 = loop
-      (= h 10502) 12     ;; i+2 = if
-      (= h 11405) 15     ;; r+5 = recur
-      (= h 10202) 16     ;; f+2 = fn
-      (= h 10905) 17     ;; m+5 = match
-      (= h 10009) 18     ;; d+9 = defstruct
-      (= h 10007) 19     ;; d+7 = deftype
-      (= h 10106) 20     ;; e+6 = extern
-      (= h 10008) 21     ;; d+8 = defmacro
-      (= h 11305) 22     ;; q+5 = quote
-      :else 1)))
+  (if (name-eq? name "defn") 10
+    (if (name-eq? name "let") 11
+      (if (name-eq? name "if") 12
+        (if (name-eq? name "do") 13
+          (if (name-eq? name "loop") 14
+            (if (name-eq? name "recur") 15
+              (if (name-eq? name "fn") 16
+                (if (name-eq? name "match") 17
+                  (if (name-eq? name "defstruct") 18
+                    (if (name-eq? name "deftype") 19
+                      (if (name-eq? name "extern") 20
+                        (if (name-eq? name "defmacro") 21
+                          (if (name-eq? name "quote") 22
+                            1))))))))))))))
 
 (defn special? [tag] (>= tag 10))
 

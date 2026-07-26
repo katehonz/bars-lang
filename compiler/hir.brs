@@ -473,14 +473,24 @@
 ;;   [[1 Ctor]]               unit variant
 ;;   [[1 Ctor] [1 f0] ...]    variant with field bindings
 
+;; Patterns: only symbol atoms (tag 1) are bindings/wildcards.
+;; Number/string/bool atoms are constant patterns (equality).
+(defn is-symbol-pat? [pat]
+  (if (is-atom? pat) (= (tag-of pat) 1) false))
+
 (defn is-wildcard-pat? [pat]
-  (if (is-atom? pat)
+  (if (is-symbol-pat? pat)
     (str-eq? (val-of pat) "_")
     false))
 
 (defn is-binding-pat? [pat]
-  (if (is-atom? pat)
+  (if (is-symbol-pat? pat)
     (if (str-eq? (val-of pat) "_") false true)
+    false))
+
+(defn is-const-pat? [pat]
+  (if (is-atom? pat)
+    (if (= (tag-of pat) 1) false true)
     false))
 
 (defn pattern-ctor-name [pat]
@@ -540,6 +550,26 @@
     (do (put lines (str-concat "    assign " (str-concat (val-of pat) (str-concat " " (op-fmt val)))))
         (let [tl (match-arm-body body result join t l lines loops adt)]
           [(get tl 0) (get tl 1) 1]))
+  (if (is-const-pat? pat)
+    ;; Constant pattern: branch on equality with scrutinee
+    (let [arm (fresh-label l "match_arm_")
+          l3 (+ l 1)
+          nxt (fresh-label l3 "match_next_")
+          l4 (+ l3 1)
+          cpat (lower-atom pat t l lines)
+          cop (ret-op cpat)
+          t1 (st-t cpat)
+          eqtmp (fresh-temp t1)
+          t2 (+ t1 1)
+          _ (put lines (str-concat "    call " (str-concat eqtmp
+                (str-concat " = " (str-concat (op-fmt val)
+                  (str-concat " " (op-fmt cop)))))))
+          _ (put lines (str-concat "    branch var " (str-concat eqtmp
+                (str-concat " " (str-concat arm (str-concat " " nxt))))))
+          _ (put lines (str-concat "  " (str-concat arm ":")))
+          tl (match-arm-body body result join t2 l4 lines loops adt)
+          _ (put lines (str-concat "  " (str-concat nxt ":")))]
+      [(get tl 0) (get tl 1) 0])
     ;; ADT variant: branch on discriminant
     (let [arm (fresh-label l "match_arm_")
           l3 (+ l 1)
@@ -564,7 +594,7 @@
           t5 (bind-fields fields val t4 lines)
           tl (match-arm-body body result join t5 l4 lines loops adt)
           _ (put lines (str-concat "  " (str-concat nxt ":")))]
-      [(get tl 0) (get tl 1) 0]))))
+      [(get tl 0) (get tl 1) 0])))))
 
 ;; Collect unique binding names from all match patterns (for pre-alloca)
 (defn name-in-vec? [names name]
