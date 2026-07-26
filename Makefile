@@ -40,7 +40,8 @@ help:
 	@echo "     BARS_NO_INCREMENTAL=1  always recompile"
 	@echo "     (self-host skips types only; ownership is light NLL)"
 	@echo ""
-	@echo "bars-self: ./bars-self <in.brs> <out>  |  ./bars-self watch <in.brs> <out>"
+	@echo "bars-self: ./bars-self <in.brs> <out>"
+	@echo "           ./bars-self watch|fmt|lint|doc …"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 

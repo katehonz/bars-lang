@@ -15,6 +15,9 @@
 (require "compiler/codegen/llvm.brs" :as llvm)
 (require "compiler/codegen/c.brs" :as cgen)
 (require "compiler/pkg.brs" :as pkg)
+(require "compiler/fmt.brs" :as fmt)
+(require "compiler/lint.brs" :as lint)
+(require "compiler/doc.brs" :as doc)
 
 (extern "slurp" [path i64] -> i64)
 (extern "spit" [path i64 content i64] -> i64)
@@ -37,8 +40,11 @@
 (defn usage []
   (do (println "Usage: bars-self <input.brs> <output_bin>")
       (println "       bars-self watch <input.brs> <output_bin>")
+      (println "       bars-self fmt  <input.brs> [--write]")
+      (println "       bars-self lint <input.brs>")
+      (println "       bars-self doc  <input.brs> [output.md]")
       (println "  Stages: parse → modules → macros → types → ownership → HIR → backend → link")
-      (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership")
+      (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership | 5 lint")
       (println "  Env:    BARS_SKIP_TYPECHECK=1  BARS_SKIP_OWNERSHIP=1  BARS_STRICT_TYPES=1")
       (println "          BARS_BACKEND=llvm|c   (default llvm; c → .c + cc)")
       (println "          BARS_FORCE=1          rebuild even if up to date")
@@ -402,13 +408,79 @@
                     (do (bars_sleep_ms 500)
                         (recur last-src)))))))))))
 
+;; ---- tooling (Phase 14.2) ----
+
+(defn tool-read [path]
+  (let [src (slurp path)]
+    (if (= src 0)
+      (do (err "io" (str-concat "cannot open `" (str-concat path "`")))
+          0)
+      (let [ast (reader/bars-read-at src path)]
+        (if (= ast 0)
+          (do (err "parse" (str-concat "failed in `" (str-concat path "`")))
+              0)
+          (let [out (vector)]
+            (do (push out src) (push out ast) out)))))))
+
+(defn cmd-fmt [path write?]
+  (let [pack (tool-read path)]
+    (if (= pack 0) 1
+      (let [src (get pack 0)
+            ast (get pack 1)
+            out (fmt/format-ast ast)]
+        (if write?
+          (do (spit path out)
+              (note (str-concat "formatted `" (str-concat path "`")))
+              0)
+          (do (println out) 0))))))
+
+(defn cmd-lint [path]
+  (let [pack (tool-read path)]
+    (if (= pack 0) 1
+      (let [src (get pack 0)
+            ast (get pack 1)
+            n (lint/lint-all path src ast)]
+        (if (= n 0)
+          (do (note (str-concat "lint clean: `" (str-concat path "`")))
+              0)
+          (do (err "lint" (str-concat (int-str? n) " issue(s)"))
+              5))))))
+
+(defn cmd-doc [path out-path]
+  (let [pack (tool-read path)]
+    (if (= pack 0) 1
+      (let [src (get pack 0)
+            ast (get pack 1)
+            md (doc/generate path src ast)]
+        (if (= (count out-path) 0)
+          (do (println md) 0)
+          (do (spit out-path md)
+              (note (str-concat "wrote `" (str-concat out-path "`")))
+              0))))))
+
+(defn has-flag-arg? [flag]
+  (let [n (args-count)]
+    (loop [i 2]
+      (if (>= i n) false
+        (if (str-eq? (args-get i) flag) true
+          (recur (+ i 1)))))))
+
 (defn main []
   (let [n (args-count)]
-    (if (< n 3)
+    (if (< n 2)
       (usage)
       (let [a1 (args-get 1)]
         (if (str-eq? a1 "watch")
-          (if (< n 4)
-            (usage)
-            (watch-mode (args-get 2) (args-get 3)))
-          (compile-file a1 (args-get 2)))))))
+          (if (< n 4) (usage) (watch-mode (args-get 2) (args-get 3)))
+          (if (str-eq? a1 "fmt")
+            (if (< n 3) (usage)
+              (cmd-fmt (args-get 2) (has-flag-arg? "--write")))
+            (if (str-eq? a1 "lint")
+              (if (< n 3) (usage) (cmd-lint (args-get 2)))
+              (if (str-eq? a1 "doc")
+                (if (< n 3) (usage)
+                  (cmd-doc (args-get 2)
+                    (if (>= n 4) (args-get 3) "")))
+                (if (< n 3)
+                  (usage)
+                  (compile-file a1 (args-get 2)))))))))))

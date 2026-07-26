@@ -315,6 +315,74 @@ if [[ -f examples/io_demo.brs ]]; then
   run_stdlib_smoke
 fi
 
+# --- Phase 14.2 tooling (fmt / lint / doc) ---
+run_tooling_smoke() {
+  local out log
+
+  # fmt: pretty-print contains defn
+  out="$TMP/fmt_out.txt"
+  if ! "$CC_BIN" fmt examples/math.brs >"$out" 2>"$TMP/fmt.err"; then
+    echo "FAIL fmt      examples/math.brs"
+    tail -5 "$TMP/fmt.err" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q '(defn add' "$out"; then
+    echo "FAIL fmt      missing defn add"
+    head -10 "$out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    echo "OK   bars-self fmt examples/math.brs"
+    pass=$((pass + 1))
+  fi
+
+  # lint clean
+  if ! "$CC_BIN" lint examples/math.brs >"$TMP/lint.out" 2>&1; then
+    echo "FAIL lint     examples/math.brs"
+    cat "$TMP/lint.out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q 'lint clean' "$TMP/lint.out"; then
+    echo "FAIL lint     expected clean"
+    cat "$TMP/lint.out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    echo "OK   bars-self lint examples/math.brs"
+    pass=$((pass + 1))
+  fi
+
+  # lint dirty → exit 5
+  printf '(defn foo [x]\t(+ x 1))   \n' >"$TMP/dirty.brs"
+  set +e
+  "$CC_BIN" lint "$TMP/dirty.brs" >"$TMP/lint_dirty.out" 2>&1
+  local rc=$?
+  set -e
+  if [[ $rc -ne 5 ]]; then
+    echo "FAIL lint     dirty expected exit 5 got $rc"
+    cat "$TMP/lint_dirty.out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q 'tab character' "$TMP/lint_dirty.out"; then
+    echo "FAIL lint     expected tab warning"
+    fail=$((fail + 1))
+  else
+    echo "OK   bars-self lint (dirty → exit 5)"
+    pass=$((pass + 1))
+  fi
+
+  # doc
+  if ! "$CC_BIN" doc lib/io.brs "$TMP/io.md" >"$TMP/doc.out" 2>&1; then
+    echo "FAIL doc      lib/io.brs"
+    cat "$TMP/doc.out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q 'read-file' "$TMP/io.md"; then
+    echo "FAIL doc      missing read-file"
+    fail=$((fail + 1))
+  else
+    echo "OK   bars-self doc lib/io.brs"
+    pass=$((pass + 1))
+  fi
+}
+
+echo "=== Phase 14.2 tooling ==="
+run_tooling_smoke
+
 # --- C backend suite (BARS_BACKEND_C=1 → .c + cc) ---
 # Same examples as LLVM; set BARS_SKIP_C_TEST=1 to skip.
 C_EXAMPLES=(

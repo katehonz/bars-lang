@@ -104,6 +104,9 @@ Built with `make bars-self`. Day-to-day self-host entry point (Bars-first pipeli
 ```bash
 ./bars-self <input.brs> <output_bin>
 ./bars-self watch <input.brs> <output_bin>
+./bars-self fmt  <input.brs> [--write]
+./bars-self lint <input.brs>
+./bars-self doc  <input.brs> [output.md]
 ```
 
 | Feature | Behavior |
@@ -111,6 +114,9 @@ Built with `make bars-self`. Day-to-day self-host entry point (Bars-first pipeli
 | **Incremental** | Skips codegen/link when the binary is newer than all loaded sources (main, requires, `Bars.toml`) |
 | **Watch** | Polls every 500ms; recompiles when any loaded source changes (Ctrl+C to stop) |
 | **Force** | `BARS_FORCE=1` or `BARS_NO_INCREMENTAL=1` always rebuilds |
+| **fmt** | Pretty-print AST to stdout, or rewrite with `--write` |
+| **lint** | Style + defn shape checks; exit `5` if issues found |
+| **doc** | Markdown from `defn`/`defmacro` + leading `;;` comments |
 
 Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`, `BARS_BACKEND_C=1` (C backend).
 

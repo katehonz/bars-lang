@@ -242,9 +242,14 @@ bars/
 
 ### 14.2 Tooling
 
-- [ ] Formatter (`bars fmt`) — форматира Bars код
-- [ ] Linter (`bars lint`)
-- [ ] Documentation generator (`bars doc`) — от docstrings в кода
+- [x] Formatter — `bars-self fmt <file> [--write]`
+  - `compiler/fmt.brs` pretty-prints AST (defn/if multiline; trailing newline)
+  - default: stdout; `--write` overwrites the file
+- [x] Linter — `bars-self lint <file>` (exit 5 on issues)
+  - style: tabs, trailing whitespace, bare CR, lines > 100 cols
+  - structure: defn name/params shape
+- [x] Documentation — `bars-self doc <file> [out.md]`
+  - extracts `defn`/`defmacro` + leading `;;` comments → Markdown
 - [ ] Debugger интеграция (GDB/LLDB)
 - [ ] Profiler интеграция
 
