@@ -374,7 +374,8 @@ bars_string_t* bars_string_concat(bars_string_t* a, bars_string_t* b) {
 bars_string_t* bars_slurp(bars_string_t* path) {
     const char* p = (path && path->data) ? path->data : "";
     FILE* f = fopen(p, "rb");
-    if (!f) return bars_string_new("");
+    /* NULL (0 as i64) = missing/unreadable — callers must check before use */
+    if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
