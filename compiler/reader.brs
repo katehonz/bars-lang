@@ -289,13 +289,21 @@
 ;; Each parse-* returns [ast_value pos] where ast_value is a tagged value.
 ;; reader-macro tags: 22=quote 23=synquote 24=unquote 25=splice 26=meta 27=deref
 
-;; Helper: create tagged value [tag value]
+;; Helper: create tagged value [tag value] or [tag value off]
 (defn t1 [tag val]
   (let [v (vector)] (do (push v tag) (do (push v val) v))))
+
+(defn t1-off [tag val off]
+  (let [v (vector)]
+    (do (push v tag) (push v val) (push v off) v)))
 
 ;; Helper: create tagged value without value [tag]
 (defn t0 [tag]
   (let [v (vector)] (do (push v tag) v)))
+
+(defn t0-off [tag off]
+  (let [v (vector)]
+    (do (push v tag) (push v 0) (push v off) v)))
 
 ;; Special form detection by exact name.
 ;; NOTE: do NOT use first_char*100+len alone — collisions (mk-if/mk-do vs match).
@@ -343,28 +351,30 @@
   (parse-err (ctx-text ctx) (ctx-path ctx) (span-at ctx pos) msg))
 
 ;; --- parse-expr: main dispatch ---
+;; Atoms carry optional byte offset as 3rd element: [tag val off].
 ;; Returns [ast new-pos] or 0 on error. ctx threaded for spans.
 (defn parse-expr [ctx pos]
-  (let [t (peek-t ctx pos)]
+  (let [t (peek-t ctx pos)
+        off (span-at ctx pos)]
     (match t
-      (TLParen)       (parse-list ctx (+ pos 1) (span-at ctx pos))
-      (TLBrack)       (parse-vector ctx (+ pos 1) (span-at ctx pos))
+      (TLParen)       (parse-list ctx (+ pos 1) off)
+      (TLBrack)       (parse-vector ctx (+ pos 1) off)
       (TQuote)        (parse-macro ctx (+ pos 1) 22)
       (TSyntaxQuote)  (parse-macro ctx (+ pos 1) 23)
       (TUnquote)      (parse-macro ctx (+ pos 1) 24)
       (TSplicing)     (parse-macro ctx (+ pos 1) 25)
       (TMeta)         (parse-macro ctx (+ pos 1) 26)
       (TDeref)        (parse-macro ctx (+ pos 1) 27)
-      (TNumber v)     [(t1 0 v) (+ pos 1)]
-      (TFloat v)      [(t1 0 v) (+ pos 1)]
-      (TString v)     [(t1 2 v) (+ pos 1)]
-      (TSymbol v)     [(t1 1 v) (+ pos 1)]
-      (TKeyword v)    [(t1 3 v) (+ pos 1)]
-      (TBool v)       [(t1 5 v) (+ pos 1)]
-      (TNilType)      [(t0 4) (+ pos 1)]
-      (TRParen)       [(t0 99) (+ pos 1)]
-      (TRBrack)       [(t0 99) (+ pos 1)]
-      (TEof)          [(t0 99) (+ pos 1)])))
+      (TNumber v)     [(t1-off 0 v off) (+ pos 1)]
+      (TFloat v)      [(t1-off 0 v off) (+ pos 1)]
+      (TString v)     [(t1-off 2 v off) (+ pos 1)]
+      (TSymbol v)     [(t1-off 1 v off) (+ pos 1)]
+      (TKeyword v)    [(t1-off 3 v off) (+ pos 1)]
+      (TBool v)       [(t1-off 5 v off) (+ pos 1)]
+      (TNilType)      [(t1-off 4 0 off) (+ pos 1)]
+      (TRParen)       [(t1-off 99 0 off) (+ pos 1)]
+      (TRBrack)       [(t1-off 99 0 off) (+ pos 1)]
+      (TEof)          [(t1-off 99 0 off) (+ pos 1)])))
 
 ;; --- parse-list: collect items, detect special forms ---
 ;; open-off = byte offset of '(' for unclosed diagnostics.
@@ -375,13 +385,15 @@
             pos (get result 1)]
         (if (> (count items) 0)
           (let [head (get items 0)]
-            (if (= (count head) 2)
+            ;; head may be [tag val] or [tag val off]
+            (if (>= (count head) 2)
               (let [tag (get head 0)]
                 (if (= tag 1)
                   (let [name (get head 1)
                         stag (special-tag name)]
                     (if (special? stag)
-                      (let [new-head (t1 stag name)
+                      (let [hoff (if (>= (count head) 3) (get head 2) -1)
+                            new-head (if (< hoff 0) (t1 stag name) (t1-off stag name hoff))
                             new-items (vector)]
                         (do (push new-items new-head)
                             (loop [i 1]

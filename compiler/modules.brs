@@ -16,6 +16,13 @@
   (let [v (vector)]
     (do (push v tag) (do (push v val) v))))
 
+;; Preserve source offset (3rd element) when rewriting a symbol.
+(defn make-atom-keep-span [old tag val]
+  (if (>= (count old) 3)
+    (let [v (vector)]
+      (do (push v tag) (push v val) (push v (get old 2)) v))
+    (make-atom tag val)))
+
 ;; ---- parse require: (require "path.brs" :as alias) => [path alias] or 0 ----
 
 (defn parse-require [expr]
@@ -76,6 +83,8 @@
         (if (> slash-pos 0)
           (let [al (str-slice name 0 slash-pos)
                 rest (str-slice name (+ slash-pos 1) (count name))]
+            ;; Drop span on rename — offsets refer to the module's own source,
+            ;; not the caller's file text used for line:col diagnostics.
             (if (str-eq? al alias-for-slash)
               (make-atom 1 (str-concat prefix rest))
               expr))
@@ -120,7 +129,7 @@
                 rest (str-slice name (+ slash-pos 1) (count name))
                 pref (find-prefix al pairs)]
             (if (str-eq? pref "") expr
-              (make-atom 1 (str-concat pref rest))))))
+              (make-atom-keep-span expr 1 (str-concat pref rest))))))
       expr)
     (let [n (count expr) new-expr (vector)]
       (do (push new-expr (subst-qualified-expr (get expr 0) pairs))

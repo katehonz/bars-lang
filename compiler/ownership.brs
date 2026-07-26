@@ -38,6 +38,53 @@
 (defn ast-tag [x] (get x 0))
 (defn ast-val [x] (get x 1))
 (defn is-atom? [x] (< (ast-tag x) 1000))
+;; Optional source offset (3rd element on atoms from reader).
+(defn ast-off [x]
+  (if (>= (count x) 3) (get x 2) -1))
+
+;; diag = [path text] for line:col reporting
+(defn diag-path [d] (get d 0))
+(defn diag-text [d] (get d 1))
+
+(defn digit-str [d]
+  (str-slice "0123456789" d (+ d 1)))
+
+(defn int-str [n]
+  (if (< n 0)
+    (str-concat "-" (int-str (- 0 n)))
+    (if (< n 10)
+      (digit-str n)
+      (str-concat (int-str (/ n 10)) (digit-str (% n 10))))))
+
+(defn offset-to-span [text offset]
+  (let [n (count text)
+        lim (if (< offset 0) 0 (if (> offset n) n offset))]
+    (loop [i 0 line 1 col 1]
+      (if (>= i lim)
+        (let [v (vector)]
+          (do (push v line) (push v col) v))
+        (if (= (str-get text i) 10)
+          (recur (+ i 1) (+ line 1) 1)
+          (recur (+ i 1) line (+ col 1)))))))
+
+(defn report-uam [diag name off]
+  (let [msg (str-concat "error: ownership: use after move: `" (str-concat name "`"))
+        text (diag-text diag)
+        tlen (count text)]
+    ;; Only map offset→line:col when offset falls inside the provided source
+    ;; (main file). Module renames drop spans so multi-file stays safe.
+    (if (if (>= off 0) (< off tlen) false)
+      (let [lc (offset-to-span text off)
+            line (get lc 0)
+            col (get lc 1)
+            where (str-concat (int-str line) (str-concat ":" (int-str col)))
+            path (diag-path diag)]
+        (do (println (str-concat msg (str-concat " at " where)))
+            (if (> (count path) 0)
+              (println (str-concat "  --> " (str-concat path (str-concat ":" where))))
+              0)
+            1))
+      (do (println msg) 1))))
 
 (defn unwrap-vec [v]
   (if (is-atom? v) v
@@ -211,9 +258,10 @@
       (S_Owned))))
 
 ;; ---- Main expression checker ----
+;; diag = [path text] for line:col on UAM.
 ;; Walks AST; flags use of symbols currently marked Moved.
 
-(defn check-expr [env expr]
+(defn check-expr [env expr diag]
   (if (= expr 0) 0
   (if (is-atom? expr)
     (let [tag (ast-tag expr)]
@@ -221,38 +269,34 @@
         (let [name (ast-val expr)
               state (env-lookup env name)]
           (if (is-moved? state)
-            (do (println (str-concat "error: ownership: use after move: `" (str-concat name "`"))) 1)
+            (report-uam diag name (ast-off expr))
             0))
         0))
     (let [head (get expr 0)]
       (if (not (is-atom? head))
-        ;; data vector / nested list without atom head
         (let [n (count expr)]
           (loop [i 0 err 0]
             (if (>= i n) err
-              (let [e (check-expr env (get expr i))]
+              (let [e (check-expr env (get expr i) diag)]
                 (recur (+ i 1) (if (> e 0) e err))))))
         (let [tag (ast-tag head)]
           (if (= tag 28)
-            ;; vector literal [28 a b …] — host ignores element ownership
             0
-          (if (= tag 10) (check-defn env expr)
-          (if (= tag 11) (check-let env expr)
-          (if (= tag 12) (check-if env expr)
-          (if (= tag 13) (check-do env expr)
-          (if (= tag 14) (check-loop env expr)
-          (if (= tag 16) (check-lambda env expr)
+          (if (= tag 10) (check-defn env expr diag)
+          (if (= tag 11) (check-let env expr diag)
+          (if (= tag 12) (check-if env expr diag)
+          (if (= tag 13) (check-do env expr diag)
+          (if (= tag 14) (check-loop env expr diag)
+          (if (= tag 16) (check-lambda env expr diag)
           (if (= tag 17)
-            ;; match: scrut + flat arms (shared env; light pass)
             (let [n (count expr)]
               (loop [i 1 err 0]
                 (if (>= i n) err
-                  (let [e (check-expr env (get expr i))]
+                  (let [e (check-expr env (get expr i) diag)]
                     (recur (+ i 1) (if (> e 0) e err))))))
-          (check-call env expr)))))))))))))))
+          (check-call env expr diag)))))))))))))))
 
-;; ---- defn ----
-(defn check-defn [env expr]
+(defn check-defn [env expr diag]
   (let [params (normalize-params (get expr 2))
         n-params (count params)
         n (count expr)]
@@ -265,14 +309,13 @@
       (let [result
             (loop [j 3 err 0]
               (if (>= j n) err
-                (let [e (check-expr env (get expr j))]
+                (let [e (check-expr env (get expr j) diag)]
                   (recur (+ j 1) (if (> e 0) e err)))))]
         (do (env-release-borrows env)
             (env-pop-scope env)
             result)))))
 
-;; ---- let (flat binds: name1 val1 name2 val2 ...) ----
-(defn check-let [env expr]
+(defn check-let [env expr diag]
   (let [bindings (unwrap-vec (get expr 1))
         n (count bindings)
         nbody (count expr)]
@@ -280,48 +323,43 @@
     (loop [i 0]
       (if (>= i n)
         (let [result (if (<= nbody 3)
-                       (check-expr env (get expr 2))
+                       (check-expr env (get expr 2) diag)
                        (loop [j 2 err 0]
                          (if (>= j nbody) err
-                           (let [e (check-expr env (get expr j))]
+                           (let [e (check-expr env (get expr j) diag)]
                              (recur (+ j 1) (if (> e 0) e err))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
         (let [bname (ast-val (get bindings i))
               val-expr (get bindings (+ i 1))]
-          (do (check-expr env val-expr)
+          (do (check-expr env val-expr diag)
               (env-release-borrows env)
               (let [st (binding-state env val-expr)]
                 (do (maybe-move-symbol env val-expr)
                     (env-insert env bname st)))
               (recur (+ i 2))))))))
 
-;; ---- if (shared env; branch isolation via env-copy is too heavy
-;;      for Gen1 on the full compiler AST — false moves across arms
-;;      are reduced by not moving on loop rebinds instead) ----
-(defn check-if [env expr]
+(defn check-if [env expr diag]
   (let [cond (get expr 1)
         then-branch (get expr 2)
         else-branch (get expr 3)
-        e0 (check-expr env cond)
+        e0 (check-expr env cond diag)
         _ (env-release-borrows env)
-        e1 (check-expr env then-branch)
-        e2 (check-expr env else-branch)]
+        e1 (check-expr env then-branch diag)
+        e2 (check-expr env else-branch diag)]
     (do (env-release-borrows env)
         (if (> e0 0) e0 (if (> e1 0) e1 e2)))))
 
-;; ---- do ----
-(defn check-do [env expr]
+(defn check-do [env expr diag]
   (let [n (count expr)]
     (loop [i 1 err 0]
       (if (>= i n) err
-        (let [e (check-expr env (get expr i))]
+        (let [e (check-expr env (get expr i) diag)]
           (do (env-release-borrows env)
               (recur (+ i 1) (if (> e 0) e err))))))))
 
-;; ---- loop/recur (flat binds) ----
-(defn check-loop [env expr]
+(defn check-loop [env expr diag]
   (let [bindings (unwrap-vec (get expr 1))
         n (count bindings)
         nbody (count expr)]
@@ -329,25 +367,22 @@
     (loop [i 0]
       (if (>= i n)
         (let [result (if (<= nbody 3)
-                       (check-expr env (get expr 2))
+                       (check-expr env (get expr 2) diag)
                        (loop [j 2 err 0]
                          (if (>= j nbody) err
-                           (let [e (check-expr env (get expr j))]
+                           (let [e (check-expr env (get expr j) diag)]
                              (recur (+ j 1) (if (> e 0) e err))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
         (let [bname (ast-val (get bindings i))
               val-expr (get bindings (+ i 1))]
-          (do (check-expr env val-expr)
+          (do (check-expr env val-expr diag)
               (env-release-borrows env)
-              ;; Loop rebinds (counters/accumulators) are not moves —
-              ;; unlike let alias, recur updates the same slots.
               (env-insert env bname (binding-state env val-expr))
               (recur (+ i 2))))))))
 
-;; ---- lambda (fn) ----
-(defn check-lambda [env expr]
+(defn check-lambda [env expr diag]
   (let [params (get expr 1)
         body (get expr 2)
         n (count params)]
@@ -357,45 +392,46 @@
         (let [pname (ast-val (get params i))]
           (do (env-insert env pname (S_Owned))
               (recur (+ i 1))))))
-    (let [result (check-expr env body)]
+    (let [result (check-expr env body diag)]
       (do (env-release-borrows env)
           (env-pop-scope env)
           result))))
 
-;; ---- function call ----
-;; Most Bars functions don't consume their arguments (push, println, str-concat etc.)
-;; We check for moved/borrowed variables but don't mark as moved after call.
-(defn check-one-arg [env arg]
+(defn check-one-arg [env arg diag]
   (if (is-atom? arg)
     (let [tag (ast-tag arg)]
       (if (= tag 1)
         (let [name (ast-val arg)
               state (env-lookup env name)]
           (if (is-moved? state)
-            (do (println (str-concat "error: ownership: use after move: `" (str-concat name "`"))) 1)
+            (report-uam diag name (ast-off arg))
             0))
         0))
-    (check-expr env arg)))
+    (check-expr env arg diag)))
 
-(defn check-call [env expr]
+(defn check-call [env expr diag]
   (let [n (count expr)]
     (loop [i 0 err 0]
       (if (>= i n)
         (do (env-release-borrows env) err)
-        (let [e (check-one-arg env (get expr i))]
+        (let [e (check-one-arg env (get expr i) diag)]
           (recur (+ i 1) (if (> e 0) e err)))))))
 
 ;; ---- Top-level entry ----
+;; check_ownership [ast] or check_ownership_at [ast path text]
 ;; Returns 0 if OK, >0 if any ownership error was reported.
-;; Light NLL (aligned with host): Copy literals/ops don't move;
-;; bare-symbol alias of Owned marks source Moved; real scope pop.
-;; Branch isolation via env-copy is avoided (Gen1 LLVM / depth).
 
-(defn check_ownership [ast-list]
+(defn check_ownership_at [ast-list path text]
   (if (= ast-list 0) 0
     (let [env (env-new)
+          diag (vector)
           n (count ast-list)]
-      (loop [i 0 err 0]
-        (if (>= i n) err
-          (let [e (check-expr env (get ast-list i))]
-            (recur (+ i 1) (if (> e 0) e err))))))))
+      (do (push diag path)
+          (push diag text)
+          (loop [i 0 err 0]
+            (if (>= i n) err
+              (let [e (check-expr env (get ast-list i) diag)]
+                (recur (+ i 1) (if (> e 0) e err)))))))))
+
+(defn check_ownership [ast-list]
+  (check_ownership_at ast-list "" ""))

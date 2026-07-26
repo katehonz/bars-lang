@@ -51,7 +51,13 @@
 
 ;; Load a .brs file to AST. slurp returns 0 if file missing.
 ;; bars-read returns 0 on parse error.
+;; Returns AST only (for requires). Main compile uses read-file-pack.
 (defn read-file [path]
+  (let [pack (read-file-pack path)]
+    (if (= pack 0) 0 (get pack 0))))
+
+;; Returns [ast src] or 0. src is kept for ownership line:col mapping.
+(defn read-file-pack [path]
   (let [src (slurp path)]
     (if (= src 0)
       (do (err "io" (str-concat "cannot open file `" (str-concat path "`")))
@@ -60,7 +66,8 @@
         (if (= ast 0)
           (do (err "parse" (str-concat "failed in `" (str-concat path "`")))
               0)
-          ast)))))
+          (let [out (vector)]
+            (do (push out ast) (push out src) out)))))))
 
 ;; (require "lib/core") and (require "lib/core.brs") both work
 (defn ensure-brs-path [path]
@@ -117,7 +124,7 @@
 (defn run-typecheck [ast path]
   (if (skip-typecheck?)
     0
-    (let [tc (types/type_check ast)]
+    (let [tc (types/type_check_at ast path)]
       (if (= tc 0) 0
         (if (strict-types?)
           (do (err "type" (str-concat "check failed in `" (str-concat path "`")))
@@ -126,48 +133,50 @@
           (do (println (str-concat "warning: type: issues in `" (str-concat path "` (soft; BARS_STRICT_TYPES=1 to fail)")))
               0))))))
 
-(defn run-ownership [ast path]
+(defn run-ownership [ast path text]
   (if (skip-ownership?)
     0
-    (let [oc (own/check_ownership ast)]
+    (let [oc (own/check_ownership_at ast path text)]
       (if (= oc 0) 0
         (do (err "ownership" (str-concat "check failed in `" (str-concat path "`")))
             (note "use-after-move on Owned values; BARS_SKIP_OWNERSHIP=1 to disable")
             oc)))))
 
 (defn compile-file [input-path output-path]
-  (let [raw (read-file input-path)]
-    (if (= raw 0)
+  (let [pack (read-file-pack input-path)]
+    (if (= pack 0)
       1
-      (if (= (count raw) 0)
-        (do (err "parse" (str-concat "empty program `" (str-concat input-path "`")))
-            1)
-        (let [resolved (resolve-requires raw)]
-          (if (= resolved 0)
-            1
-            (let [flat (get resolved 0)
-                  pairs (get resolved 1)
-                  with-quals (mods/subst-qualified flat pairs)
-                  expanded (macros/expand-program with-quals)
-                  tc (run-typecheck expanded input-path)]
-              (if (!= tc 0)
-                3
-                (let [oc (run-ownership expanded input-path)]
-                  (if (!= oc 0)
-                    4
-                    (let [hir-lines (hir/lower-program expanded)
-                          _ (llvm/compile-llvm hir-lines output-path)
-                          ll-path (str-concat output-path ".ll")
-                          cmd (str-concat "clang -Wno-override-module "
-                                (str-concat ll-path
-                                  (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
-                          status (bars_system cmd)]
-                      (if (!= status 0)
-                        (do (err "link" "clang failed while producing binary")
-                            (note (str-concat "command: " cmd))
-                            (note "check the clang diagnostics above")
-                            2)
-                        0))))))))))))
+      (let [raw (get pack 0)
+            src (get pack 1)]
+        (if (= (count raw) 0)
+          (do (err "parse" (str-concat "empty program `" (str-concat input-path "`")))
+              1)
+          (let [resolved (resolve-requires raw)]
+            (if (= resolved 0)
+              1
+              (let [flat (get resolved 0)
+                    pairs (get resolved 1)
+                    with-quals (mods/subst-qualified flat pairs)
+                    expanded (macros/expand-program with-quals)
+                    tc (run-typecheck expanded input-path)]
+                (if (!= tc 0)
+                  3
+                  (let [oc (run-ownership expanded input-path src)]
+                    (if (!= oc 0)
+                      4
+                      (let [hir-lines (hir/lower-program expanded)
+                            _ (llvm/compile-llvm hir-lines output-path)
+                            ll-path (str-concat output-path ".ll")
+                            cmd (str-concat "clang -Wno-override-module "
+                                  (str-concat ll-path
+                                    (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
+                            status (bars_system cmd)]
+                        (if (!= status 0)
+                          (do (err "link" "clang failed while producing binary")
+                              (note (str-concat "command: " cmd))
+                              (note "check the clang diagnostics above")
+                              2)
+                          0)))))))))))))
 
 (defn main []
   (let [n (args-count)]

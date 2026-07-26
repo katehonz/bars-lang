@@ -190,6 +190,8 @@ bars/
   - Usage lists stages, exit codes, env flags; link failures show clang command
   - **Spans:** lexer records byte offsets; `line:col` + `--> path:line:col` on parse errors
     (`bars-read-at`, `offset-to-span`, open-paren location for unclosed forms)
+  - **AST offsets:** atoms `[tag val off]`; ownership UAM reports `at line:col` + arrow
+  - **Types:** warnings tagged with `[path]`; `type_check_at` / `check_ownership_at`
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)
 - [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност

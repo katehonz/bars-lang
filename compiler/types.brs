@@ -324,8 +324,20 @@
   (let [v (vector)]
     (do (push v (vector))
         (push v (vector))
+        (push v "")
         v))
 )
+
+(defn make_ctx_at [path]
+  (let [v (vector)]
+    (do (push v (vector))
+        (push v (vector))
+        (push v path)
+        v))
+)
+
+(defn ctx_path [ctx]
+  (if (>= (count ctx) 3) (get ctx 2) ""))
 
 (defn ctx_add_constraint [ctx a b]
   (let [c (vector)
@@ -448,6 +460,12 @@
 ;; Soft error — do not abort the process (pipeline decides hard fail).
 (defn type_error [msg]
   (do (println (str-concat "error: type: " msg)) (T_Void))
+)
+
+(defn type_warn [msg path]
+  (if (> (count path) 0)
+    (println (str-concat "warning: type: " (str-concat msg (str-concat " [" (str-concat path "]")))))
+    (println (str-concat "warning: type: " msg)))
 )
 
 ;; Unwrap vector marker [[28] ...] and skip ^meta (tag 26) params.
@@ -640,7 +658,8 @@
 
 (defn solve [ctx]
   (let [subst (vector)
-        constraints (get ctx 1)]
+        constraints (get ctx 1)
+        path (ctx_path ctx)]
     (loop [i 0 subst subst failed 0]
       (if (>= i (count constraints))
         (if (= failed 0) [true subst] [false subst])
@@ -651,14 +670,14 @@
           (if (get res 0)
             (recur (+ i 1) (get res 1) failed)
             (let [err (str-concat "type mismatch: " (str-concat (type_str a) (str-concat " vs " (type_str b))))]
-              (do (println (str-concat "warning: type: " err))
+              (do (type_warn err path)
                   (recur (+ i 1) subst 1))))))))
 )
 
 ;; ====== Top-Level Inference ======
 
-(defn infer_program [ast-list]
-  (let [ctx (make_ctx)
+(defn infer_program_at [ast-list path]
+  (let [ctx (make_ctx_at path)
         env (builtin_env ctx)]
     (loop [i 0 env env ctx ctx]
       (if (>= i (count ast-list))
@@ -670,15 +689,22 @@
           (recur (+ i 1) env ctx)))))
 )
 
+(defn infer_program [ast-list]
+  (infer_program_at ast-list "")
+)
+
 ;; ====== Public API ======
 
 ;; Returns 0 on clean pass, 1 if any mismatch was reported.
 ;; Pipeline soft-fails by default; BARS_STRICT_TYPES=1 makes it hard-fail.
-(defn type_check [ast-list]
-  (let [result (infer_program ast-list)]
+(defn type_check_at [ast-list path]
+  (let [result (infer_program_at ast-list path)]
     (if (get result 0)
       0
-      (do (println "warning: type: check reported issues") 1)))
+      (do (type_warn "check reported issues" path) 1)))
 )
 
+(defn type_check [ast-list]
+  (type_check_at ast-list "")
+)
 
