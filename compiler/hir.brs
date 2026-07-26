@@ -232,6 +232,26 @@
     (lower-atom ast t l lines)
     (lower-form ast t l lines loops adt)))
 
+;; Strip ^type meta atoms (tag 26) left as separate vector elems by reader.
+;; [^i64 n] → [[26 i64] n] — keep only symbol params (tag 1).
+(defn is-meta-atom? [x]
+  (if (is-atom? x) (= (tag-of x) 26) false))
+
+(defn normalize-params [params]
+  (let [plain (unwrap-vec params)
+        n (count plain)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [p (get plain i)]
+              (if (is-meta-atom? p)
+                (recur (+ i 1))
+                (do (if (if (is-atom? p) (= (tag-of p) 1) false)
+                      (push out p)
+                      0)
+                    (recur (+ i 1)))))))
+        out)))
+
 (defn fmt-params [params]
   (let [n (count params)]
     (if (= n 0) "[]"
@@ -255,7 +275,7 @@
 
 (defn lower-defn [ast t l lines loops adt]
   (let [name   (val-of (get ast 1))
-        params (unwrap-vec (get ast 2))
+        params (normalize-params (get ast 2))
         n      (count ast)
         entry  (fresh-label l "entry_")
         l2     (+ l 1)
@@ -296,10 +316,25 @@
                       (str-concat " " (op-fmt op)))))))]
           (recur (+ i 1) (+ t3 1) l3))))))
 
+;; (def name val) → assign (local mutable slot)
+(defn lower-def [ast t l lines loops adt]
+  (let [bname (val-of (get ast 1))
+        res (lower-expr (get ast 2) t l lines loops adt)
+        op (ret-op res)
+        t2 (st-t res)
+        l2 (st-l res)
+        _ (put lines (str-concat "    assign " (str-concat bname (str-concat " " (op-fmt op)))))]
+    (mk-ret op t2 l2)))
+
 (defn lower-call [ast t l lines loops adt]
   (let [fname (val-of (get ast 0))
         n (count ast)
         entry (adt-lookup adt fname)]
+    (if (str-eq? fname "def")
+      (lower-def ast t l lines loops adt)
+    (if (str-eq? fname "vector")
+      ;; (vector a b c) → new + push each (not multi-arg runtime new)
+      (lower-vector-from ast 1 t l lines loops adt)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -321,7 +356,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))
+            (recur (+ i 1) args t2 l2)))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
@@ -666,20 +701,59 @@
         (= (tag-of head) 10)
         false))))
 
+(defn defn-name-is-main? [expr]
+  (if (is-defn-form? expr)
+    (str-eq? (val-of (get expr 1)) "main")
+    false))
+
+(defn has-main-defn? [ast-list]
+  (let [n (count ast-list)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (defn-name-is-main? (get ast-list i)) true
+          (recur (+ i 1)))))))
+
+;; Emit synthetic main from top-level exprs (scripts without defn main)
+(defn lower-toplevel-main [exprs t l lines loops adt]
+  (let [entry (fresh-label l "entry_")
+        l2 (+ l 1)
+        n (count exprs)
+        _ (put lines "func main []:")
+        _ (put lines (str-concat "  " (str-concat entry ":")))]
+    (if (<= n 0)
+      (do (put lines "    return const 0")
+          (mk-ret "<done>" t l2))
+      (let [res (lower-body-exprs exprs 0 n t l2 lines loops adt "")
+            op (ret-op res)
+            t3 (st-t res)
+            l3 (st-l res)
+            _ (if (is-dead-op? op)
+                (put lines "    return const 0")
+                (put lines (str-concat "    return " (op-fmt op))))]
+        (mk-ret "<done>" t3 l3)))))
+
 (defn lower-program [ast-list]
   (let [lines (vector)
         n (count ast-list)
         empty (vector)
         adt (collect-adt ast-list)
-        _ (emit-all-ctors lines adt)]
+        _ (emit-all-ctors lines adt)
+        tops (vector)
+        has-main (has-main-defn? ast-list)]
     (loop [i 0 t 0 l 0]
       (if (>= i n)
-        lines
+        (do (if (if has-main false (> (count tops) 0))
+              (lower-toplevel-main tops t l lines empty adt)
+              0)
+            lines)
         (let [expr (get ast-list i)]
           (if (is-defn-form? expr)
             (let [res (lower-expr expr t l lines empty adt)]
               (recur (+ i 1) (st-t res) (st-l res)))
-            (recur (+ i 1) t l)))))))
+            (if (is-deftype-form? expr)
+              (recur (+ i 1) t l)
+              (do (push tops expr)
+                  (recur (+ i 1) t l)))))))))
 
 (defn print-hir [lines]
   (let [n (count lines)]

@@ -118,6 +118,9 @@ compiler/
 - C main wrapper (`bars_set_args` + `_bars_main`)
 - modules: `/` operator not treated as qualifier
 - reader: `special-tag` exact name match (no first_char×len collisions)
+- HIR: strip `^type` meta from defn params; `(vector a b…)` → new+push; `(def x v)` assign
+- HIR: top-level exprs without `main` → synthetic `main`
+- modules: auto-append `.brs` on require paths; map runtime ops in LLVM
 
 **Bootstrap (Gen1→Gen4):**
 ```

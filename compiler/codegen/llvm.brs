@@ -152,6 +152,10 @@
         (lines-push lines "declare i64 @bars_vector_get_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_count_i64(i64)")
         (lines-push lines "declare i64 @bars_count_any_i64(i64)")
+        (lines-push lines "declare i64 @bars_map_new_i64()")
+        (lines-push lines "declare i64 @bars_map_set_i64(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_map_get_i64(i64, i64)")
+        (lines-push lines "declare i64 @bars_map_count_i64(i64)")
         (lines-push lines "declare i64 @bars_slurp(i64)")
         (lines-push lines "declare i64 @bars_spit(i64, i64)")
         (lines-push lines "declare i64 @bars_system(i64)")
@@ -185,6 +189,13 @@
         (if (str-eq? fname "vector") "bars_vector_new_i64"
           "")))))
 
+(defn map-map-ops [fname]
+  (if (str-eq? fname "map") "bars_map_new_i64"
+    (if (str-eq? fname "map-set") "bars_map_set_i64"
+      (if (str-eq? fname "map-get") "bars_map_get_i64"
+        (if (str-eq? fname "map-count") "bars_map_count_i64"
+          "")))))
+
 (defn map-io-ops [fname]
   (if (str-eq? fname "slurp") "bars_slurp"
     (if (str-eq? fname "spit") "bars_spit"
@@ -199,8 +210,10 @@
     (if (> (count a) 0) a
       (let [b (map-vec-ops fname)]
         (if (> (count b) 0) b
-          (let [c (map-io-ops fname)]
-            (if (> (count c) 0) c fname)))))))
+          (let [c (map-map-ops fname)]
+            (if (> (count c) 0) c
+              (let [d (map-io-ops fname)]
+                (if (> (count d) 0) d fname)))))))))
 
 ;; ---- operators (small groups = fewer closing parens) ----
 

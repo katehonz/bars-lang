@@ -15,6 +15,20 @@
 (defn read-file [path]
   (reader/bars-read (slurp path)))
 
+;; (require "lib/core") and (require "lib/core.brs") both work
+(defn ensure-brs-path [path]
+  (let [n (count path)]
+    (if (< n 4) (str-concat path ".brs")
+      (if (if (= (str-get path (- n 4)) 46)
+            (if (= (str-get path (- n 3)) 98)
+              (if (= (str-get path (- n 2)) 114)
+                (= (str-get path (- n 1)) 115)
+                false)
+              false)
+            false)
+        path
+        (str-concat path ".brs")))))
+
 ;; Resolve all requires in an AST (recursive).
 ;; Returns [flat-ast alias-pairs] where alias-pairs is [[alias prefix] ...]
 (defn resolve-requires [ast]
@@ -30,7 +44,7 @@
         (let [expr (get ast i)
               req (mods/parse-require expr)]
           (if (> (count req) 0)
-            (let [path (get req 0)
+            (let [path (ensure-brs-path (get req 0))
                   alias (get req 1)
                   prefix (mods/module-prefix alias)
                   mod-raw (read-file path)
