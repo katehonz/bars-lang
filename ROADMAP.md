@@ -181,6 +181,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Phase 13.2d: source snippets under `-->` (line + caret) for parse/ownership
 - [x] Stage 12.20: multi-file self-host — nested modules, cycles, path search
 - [x] Stage 12.21: Bars.toml path-deps in self-host (`compiler/pkg.brs`, pkg_app example)
+- [x] Stage 12.21b: Bars.toml git deps — clone to `target/bars-deps/<name>` (self-host)
 
 **Bars-first workflow:**  
 ```

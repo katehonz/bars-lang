@@ -103,11 +103,12 @@ compiler/
   - Path search: exact → relative to file dir → `lib/`
   - `resolve-requires-main` seeds visited with main path + dirname base
   - self-test includes `module_demo` + `module_nested`
-- [x] **12.21** Интеграция с пакетната система (Bars.toml path dependencies)
-  - `compiler/pkg.brs`: minimal TOML `[dependencies] name = { path = "..." }`
+- [x] **12.21** Интеграция с пакетната система (Bars.toml path + git dependencies)
+  - `compiler/pkg.brs`: TOML `[dependencies] name = { path|git = "..." }`
   - Walk up for Bars.toml; `find-module` resolves package name → `src/lib.brs`
-  - Also searches `dep/src/<path>` and `target/bars-deps/<name>/src/lib.brs`
-  - Example: `examples/pkg_app` + `examples/pkg_lib` (path dep)
+  - path deps: join project dir; git deps: `git clone --depth 1` → `target/bars-deps/<name>`
+  - Cached clones (skip if `.git/HEAD` or `src/lib.brs` exists)
+  - Examples: `pkg_app`/`pkg_lib` (path); self-test smoke for local `file://` git
 
 ### Stage 10: Пълен Bootstrap 🚧
 

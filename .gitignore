@@ -14,3 +14,5 @@ bars-self3
 bars-self4
 bars-self*.ll
 *.ll
+target/bars-deps/
+examples/**/target/

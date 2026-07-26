@@ -1,6 +1,11 @@
-;; Bars.toml package integration — Stage 12.21
-;; Minimal TOML subset: [dependencies] name = { path = "..." }
-;; Used by the self-hosted build to resolve package path deps.
+;; Bars.toml package integration — Stage 12.21+
+;; TOML subset:
+;;   [dependencies]
+;;   foo = { path = "../foo" }
+;;   bar = { git = "https://…" }   ; cloned to <project>/target/bars-deps/bar
+;;
+;; Used by the self-hosted build to resolve package deps for require.
+;; slurp / bars_system are provided by the build pipeline (builtins / host).
 
 (defn str-eq? [a b]
   (if (!= (count a) (count b)) false
@@ -46,7 +51,6 @@
                 (recur (+ j 1)))))
           (recur (+ i 1)))))))
 
-;; Line is [section] → section name, else "".
 (defn section-name [line]
   (let [s (str-trim line)
         n (count s)]
@@ -55,7 +59,14 @@
         (str-slice s 1 (- n 1))
         ""))))
 
-;; "name = { path = \"../foo\" }" → [name path] or 0
+;; Single-quote for shell (reject values containing ').
+(defn shell-quote [s]
+  (if (>= (str-index-of s "'") 0)
+    ""
+    (str-concat "'" (str-concat s "'"))))
+
+;; "name = { path = \"..\" }" or "{ git = \"url\" }"
+;; → [name "path"|"git" value] or 0
 (defn parse-dep-line [line]
   (let [s (str-trim line)]
     (if (if (= (count s) 0) true (= (str-get s 0) 35))
@@ -64,16 +75,23 @@
         (if (< eq 1) 0
           (let [name (str-trim (str-slice s 0 eq))
                 rest (str-slice s (+ eq 1) (count s))
+                git-key (str-index-of rest "git")
                 path-key (str-index-of rest "path")]
-            (if (< path-key 0) 0
-              (let [after (str-slice rest path-key (count rest))
-                    q (first-quoted after)]
+            ;; Prefer git if both present (host: git first)
+            (if (>= git-key 0)
+              (let [q (first-quoted (str-slice rest git-key (count rest)))]
                 (if (= (count q) 0) 0
                   (let [pair (vector)]
-                    (do (push pair name) (push pair q) pair)))))))))))
+                    (do (push pair name) (push pair "git") (push pair q) pair))))
+              (if (>= path-key 0)
+                (let [q (first-quoted (str-slice rest path-key (count rest)))]
+                  (if (= (count q) 0) 0
+                    (let [pair (vector)]
+                      (do (push pair name) (push pair "path") (push pair q) pair))))
+                0))))))))
 
-;; Parse Bars.toml text → vector of [dep-name relative-path]
-(defn parse-path-deps [text]
+;; Parse Bars.toml → vector of [name kind value]
+(defn parse-deps [text]
   (let [lines (split-lines text)
         n (count lines)
         out (vector)]
@@ -93,6 +111,23 @@
                   (do (push out dep)
                       (recur (+ i 1) 1)))))))))))
 
+;; Back-compat alias
+(defn parse-path-deps [text]
+  (let [raw (parse-deps text)
+        n (count raw)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [d (get raw i)]
+              (if (str-eq? (get d 1) "path")
+                (let [pair (vector)]
+                  (do (push pair (get d 0))
+                      (push pair (get d 2))
+                      (push out pair)
+                      (recur (+ i 1))))
+                (recur (+ i 1))))))
+        out)))
+
 (defn dirname [path]
   (let [n (count path)]
     (loop [i (- n 1)]
@@ -108,7 +143,9 @@
       (str-concat base rel)
       (str-concat base (str-concat "/" rel)))))
 
-;; Walk up from start-dir looking for Bars.toml. Returns dir or "".
+(defn file-readable? [path]
+  (!= (slurp path) 0))
+
 (defn find-manifest-dir [start-dir]
   (loop [dir start-dir depth 0]
     (if (> depth 24) ""
@@ -121,28 +158,64 @@
               (if (str-eq? parent dir) ""
                 (recur parent (+ depth 1))))))))))
 
-;; Load path deps for a project dir → [[name root-dir] ...]
+;; Clone git dep into project/target/bars-deps/<name>. Returns root or "".
+(defn ensure-git-dep [project-dir name url]
+  (let [dest (join-path project-dir (join-path "target/bars-deps" name))
+        marker (join-path dest "src/lib.brs")
+        head (join-path dest ".git/HEAD")]
+    (if (if (file-readable? marker) true (file-readable? head))
+      dest
+      (let [uq (shell-quote url)
+            dq (shell-quote dest)
+            parent (join-path project-dir "target/bars-deps")]
+        (if (if (= (count uq) 0) true (= (count dq) 0))
+          (do (println (str-concat "error: pkg: unsafe git url/path for `" (str-concat name "`")))
+              "")
+          (do (println (str-concat "  📦 git clone " (str-concat name " …")))
+              (bars_system (str-concat "mkdir -p " (shell-quote parent)))
+              (let [cmd (str-concat "git clone --depth 1 " (str-concat uq (str-concat " " dq)))
+                    st (bars_system cmd)]
+                (if (!= st 0)
+                  (do (println (str-concat "error: pkg: git clone failed for `" (str-concat name "`")))
+                      (println (str-concat "  note: " cmd))
+                      "")
+                  dest))))))))
+
+;; Load all deps for project-dir → [[name root-dir] ...]
+;; path deps: join project-dir + relative path
+;; git deps: clone (if needed) to target/bars-deps/<name>
 (defn load-path-deps [project-dir]
   (let [toml-path (join-path project-dir "Bars.toml")
         text (slurp toml-path)]
     (if (= text 0) (vector)
-      (let [raw (parse-path-deps text)
+      (let [raw (parse-deps text)
             n (count raw)
             out (vector)]
         (do (loop [i 0]
               (if (>= i n) 0
                 (let [dep (get raw i)
                       name (get dep 0)
-                      rel (get dep 1)
-                      root (join-path project-dir rel)
-                      pair (vector)]
-                  (do (push pair name)
-                      (push pair root)
-                      (push out pair)
-                      (recur (+ i 1))))))
+                      kind (get dep 1)
+                      val (get dep 2)]
+                  (if (str-eq? kind "path")
+                    (let [root (join-path project-dir val)
+                          pair (vector)]
+                      (do (push pair name)
+                          (push pair root)
+                          (push out pair)
+                          (recur (+ i 1))))
+                    (if (str-eq? kind "git")
+                      (let [root (ensure-git-dep project-dir name val)]
+                        (if (= (count root) 0)
+                          (recur (+ i 1))
+                          (let [pair (vector)]
+                            (do (push pair name)
+                                (push pair root)
+                                (push out pair)
+                                (recur (+ i 1))))))
+                      (recur (+ i 1)))))))
             out)))))
 
-;; Look up dep root by package name. Returns root or "".
 (defn dep-root-by-name [deps name]
   (let [n (count deps)]
     (loop [i 0]
@@ -151,7 +224,6 @@
           (if (str-eq? (get d 0) name) (get d 1)
             (recur (+ i 1))))))))
 
-;; Strip trailing .brs if present.
 (defn strip-brs [path]
   (let [n (count path)]
     (if (< n 4) path
