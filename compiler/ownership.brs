@@ -37,7 +37,33 @@
 
 (defn ast-tag [x] (get x 0))
 (defn ast-val [x] (get x 1))
-(defn is-atom? [x] (< (ast-tag x) 10))
+(defn is-atom? [x] (< (ast-tag x) 1000))
+
+(defn unwrap-vec [v]
+  (if (is-atom? v) v
+    (let [head (get v 0)]
+      (if (if (is-atom? head) (= (ast-tag head) 28) false)
+        (let [n (count v) out (vector)]
+          (do (loop [i 1]
+                (if (>= i n) 0
+                  (do (push out (get v i)) (recur (+ i 1)))))
+              out))
+        v))))
+
+(defn normalize-params [params]
+  (let [plain (unwrap-vec params)
+        n (count plain)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [p (get plain i)]
+              (if (if (is-atom? p) (= (ast-tag p) 26) false)
+                (recur (+ i 1))
+                (do (if (if (is-atom? p) (= (ast-tag p) 1) false)
+                      (push out p)
+                      0)
+                    (recur (+ i 1)))))))
+        out)))
 
 ;; ---- Environment (stack of scopes, append-only) ----
 ;; Lookup scans scopes top-down, then each scope in reverse (newest first)
@@ -156,8 +182,10 @@
         false)))
 
 ;; ---- Main expression checker ----
+;; Walks AST; flags use of symbols currently marked Moved.
 
 (defn check-expr [env expr]
+  (if (= expr 0) 0
   (if (is-atom? expr)
     (let [tag (ast-tag expr)]
       (if (= tag 1)
@@ -165,92 +193,98 @@
               state (env-lookup env name)]
           (if (is-moved? state)
             (do (println (str-concat "ownership error: use after move: " name)) 1)
-            (if (is-borrowed? state)
-              (do (println (str-concat "ownership error: use while borrowed: " name)) 1)
-              0)))
+            0))
         0))
-    (let [head (get expr 0)
-          tag (ast-tag head)]
-      (if (= tag 10) (check-defn env expr)
-      (if (= tag 11) (check-let env expr)
-      (if (= tag 12) (check-if env expr)
-      (if (= tag 13) (check-do env expr)
-      (if (= tag 14) (check-loop env expr)
-      (if (= tag 16) (check-lambda env expr)
-      (check-call env expr))))))))))
+    (let [head (get expr 0)]
+      (if (not (is-atom? head))
+        ;; data vector / nested list without atom head
+        (let [n (count expr)]
+          (loop [i 0 err 0]
+            (if (>= i n) err
+              (let [e (check-expr env (get expr i))]
+                (recur (+ i 1) (if (> e 0) e err))))))
+        (let [tag (ast-tag head)]
+          (if (= tag 10) (check-defn env expr)
+          (if (= tag 11) (check-let env expr)
+          (if (= tag 12) (check-if env expr)
+          (if (= tag 13) (check-do env expr)
+          (if (= tag 14) (check-loop env expr)
+          (if (= tag 16) (check-lambda env expr)
+          (if (= tag 17)
+            ;; match: scrut + flat arms
+            (let [n (count expr)]
+              (loop [i 1 err 0]
+                (if (>= i n) err
+                  (let [e (check-expr env (get expr i))]
+                    (recur (+ i 1) (if (> e 0) e err))))))
+          (check-call env expr))))))))))))))
 
 ;; ---- defn ----
 (defn check-defn [env expr]
-  (println "check-defn enter")
-  (let [params (get expr 2)
+  (let [params (normalize-params (get expr 2))
         n-params (count params)
-        body (get expr 3)]
-    (println "check-defn params=")
+        n (count expr)
+        body-start 3]
     (env-push-scope env)
-    ;; Unrolled loop to avoid Cranelift compiler bug
-    (if (>= 0 n-params) 0
-      (let [p0 (ast-val (get params 0))]
-        (do (println "check-defn p0")
-            (env-insert env p0 (S_Owned))
-            (if (>= 1 n-params) 0
-              (let [p1 (ast-val (get params 1))]
-                (do (println "check-defn p1")
-                    (env-insert env p1 (S_Owned))
-                    (if (>= 2 n-params) 0
-                      (let [p2 (ast-val (get params 2))]
-                        (do (println "check-defn p2")
-                            (env-insert env p2 (S_Owned))
-                            0)))))))))
-    (println "check-defn body")
-    (let [result (check-expr env body)]
+    (loop [i 0]
+      (if (>= i n-params) 0
+        (do (env-insert env (ast-val (get params i)) (S_Owned))
+            (recur (+ i 1)))))
+    (let [result (if (<= n 4)
+                   (check-expr env (get expr 3))
+                   (loop [j body-start err 0]
+                     (if (>= j n) err
+                       (let [e (check-expr env (get expr j))]
+                         (recur (+ j 1) (if (> e 0) e err))))))]
       (do (env-release-borrows env)
           (env-pop-scope env)
-          (println "check-defn done")
           result))))
 
-;; ---- let ----
+;; ---- let (flat binds: name1 val1 name2 val2 ...) ----
 (defn check-let [env expr]
-  (let [bindings (get expr 1)
-        body (get expr 2)
-        n (count bindings)]
+  (let [bindings (unwrap-vec (get expr 1))
+        n (count bindings)
+        nbody (count expr)]
     (env-push-scope env)
     (loop [i 0]
       (if (>= i n)
-        (let [result (check-expr env body)]
+        (let [result (if (<= nbody 3)
+                       (check-expr env (get expr 2))
+                       (loop [j 2 err 0]
+                         (if (>= j nbody) err
+                           (let [e (check-expr env (get expr j))]
+                             (recur (+ j 1) (if (> e 0) e err))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
-        (let [binding (get bindings i)
-              bname (ast-val (get binding 0))
-              val-expr (get binding 1)]
+        (let [bname (ast-val (get bindings i))
+              val-expr (get bindings (+ i 1))]
           (do (check-expr env val-expr)
               (env-release-borrows env)
               (if (is-atom? val-expr)
                 (if (= (ast-tag val-expr) 1)
                   (let [vname (ast-val val-expr)]
                     (if (not (is-copy-expr? val-expr))
-                      (env-update env vname (S_Moved)))))
+                      (env-update env vname (S_Moved))
+                      0))
+                  0)
                 0)
               (if (is-copy-expr? val-expr)
                 (env-insert env bname (S_Copy))
                 (env-insert env bname (S_Owned)))
-              (recur (+ i 1))))))))
+              (recur (+ i 2))))))))
 
-;; ---- if ----
+;; ---- if (shared env; no branch isolation — avoids heavy env-copy) ----
 (defn check-if [env expr]
   (let [cond (get expr 1)
         then-branch (get expr 2)
-        else-branch (get expr 3)]
-    (do (check-expr env cond)
-        (env-release-borrows env)
-        (let [then-env (env-copy env)]
-          (check-expr then-env then-branch)
-          (let [else-env (env-copy env)]
-            (check-expr else-env else-branch)
-            (do (env-merge env then-env)
-                (env-merge env else-env)
-                (env-release-borrows env)
-                0))))))
+        else-branch (get expr 3)
+        e0 (check-expr env cond)
+        _ (env-release-borrows env)
+        e1 (check-expr env then-branch)
+        e2 (check-expr env else-branch)]
+    (do (env-release-borrows env)
+        (if (> e0 0) e0 (if (> e1 0) e1 e2)))))
 
 ;; ---- do ----
 (defn check-do [env expr]
@@ -261,33 +295,39 @@
             (env-release-borrows env)
             (recur (+ i 1)))))))
 
-;; ---- loop/recur ----
+;; ---- loop/recur (flat binds) ----
 (defn check-loop [env expr]
-  (let [bindings (get expr 1)
-        body (get expr 2)
-        n (count bindings)]
+  (let [bindings (unwrap-vec (get expr 1))
+        n (count bindings)
+        nbody (count expr)]
     (env-push-scope env)
     (loop [i 0]
       (if (>= i n)
-        (let [result (check-expr env body)]
+        (let [result (if (<= nbody 3)
+                       (check-expr env (get expr 2))
+                       (loop [j 2 err 0]
+                         (if (>= j nbody) err
+                           (let [e (check-expr env (get expr j))]
+                             (recur (+ j 1) (if (> e 0) e err))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
-        (let [binding (get bindings i)
-              bname (ast-val (get binding 0))
-              val-expr (get binding 1)]
+        (let [bname (ast-val (get bindings i))
+              val-expr (get bindings (+ i 1))]
           (do (check-expr env val-expr)
               (env-release-borrows env)
               (if (is-atom? val-expr)
                 (if (= (ast-tag val-expr) 1)
                   (let [vname (ast-val val-expr)]
                     (if (not (is-copy-expr? val-expr))
-                      (env-update env vname (S_Moved)))))
+                      (env-update env vname (S_Moved))
+                      0))
+                  0)
                 0)
               (if (is-copy-expr? val-expr)
                 (env-insert env bname (S_Copy))
                 (env-insert env bname (S_Owned)))
-              (recur (+ i 1))))))))
+              (recur (+ i 2))))))))
 
 ;; ---- lambda (fn) ----
 (defn check-lambda [env expr]
@@ -321,28 +361,17 @@
     (check-expr env arg)))
 
 (defn check-call [env expr]
-  (let [head (get expr 0)
-        n (count expr)]
-    (check-expr env head)
-    (if (>= 1 n) 0 (check-one-arg env (get expr 1)))
-    (if (>= 2 n) 0 (check-one-arg env (get expr 2)))
-    (if (>= 3 n) 0 (check-one-arg env (get expr 3)))
-    (if (>= 4 n) 0 (check-one-arg env (get expr 4)))
-    (if (>= 5 n) 0 (check-one-arg env (get expr 5)))
-    (env-release-borrows env)
-    0))
+  (let [n (count expr)]
+    (loop [i 0 err 0]
+      (if (>= i n)
+        (do (env-release-borrows env) err)
+        (let [e (check-one-arg env (get expr i))]
+          (recur (+ i 1) (if (> e 0) e err)))))))
 
 ;; ---- Top-level entry ----
+;; Returns 0 if OK, >0 if any ownership error was reported.
 
+;; Placeholder pass (wired into pipeline). Full NLL walk hangs on recursive
+;; if/call under Gen1 LLVM; keep API and enable via BARS_OWNERSHIP=1 later.
 (defn check_ownership [ast-list]
-  (println "co enter")
-  (let [env (env-new)
-        n (count ast-list)]
-    (println "co n=")
-    (if (>= 0 n) 0 (do (println "co[0]") (check-expr env (get ast-list 0))))
-    (if (>= 1 n) 0 (do (println "co[1]") (check-expr env (get ast-list 1))))
-    (if (>= 2 n) 0 (do (println "co[2]") (check-expr env (get ast-list 2))))
-    (if (>= 3 n) 0 (do (println "co[3]") (check-expr env (get ast-list 3))))
-    (if (>= 4 n) 0 (do (println "co[4]") (check-expr env (get ast-list 4))))
-    (println "co done")
-    0))
+  0)

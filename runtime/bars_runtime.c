@@ -583,3 +583,10 @@ int64_t bars_system(bars_string_t* cmd) {
     if (!cmd || !cmd->data) return -1;
     return (int64_t)system(cmd->data);
 }
+
+/* Non-zero if environment variable is set and non-empty */
+int64_t bars_env_set(bars_string_t* name) {
+    if (!name || !name->data) return 0;
+    const char* v = getenv(name->data);
+    return (v && v[0] != '\0') ? 1 : 0;
+}

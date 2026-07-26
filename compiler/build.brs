@@ -1,20 +1,30 @@
-;; Self-hosted build pipeline — Stage 4/10 / Phase 13
-;; reader → modules → macros → HIR → LLVM → clang → binary
+;; Self-hosted build pipeline — Stage 10d / Phase 13
+;; reader → modules → macros → types → ownership → HIR → LLVM → clang
 ;;
-;; Exit codes: 0 ok, 1 usage/input error, 2 link (clang) error
+;; Exit codes: 0 ok, 1 usage/input, 2 clang, 3 typecheck, 4 ownership
+;; Skip: BARS_SKIP_TYPECHECK / BARS_SKIP_OWNERSHIP (non-empty env)
 
 (require "compiler/reader.brs" :as reader)
 (require "compiler/modules.brs" :as mods)
 (require "compiler/macros.brs" :as macros)
+(require "compiler/types.brs" :as types)
+(require "compiler/ownership.brs" :as own)
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/llvm.brs" :as llvm)
 
 (extern "slurp" [path i64] -> i64)
 (extern "spit" [path i64 content i64] -> i64)
 (extern "bars_system" [cmd i64] -> i64)
+(extern "bars_env_set" [name i64] -> i64)
 
 (defn die [msg code]
   (do (println msg) code))
+
+(defn skip-typecheck? []
+  (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
+
+(defn skip-ownership? []
+  (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1))
 
 ;; Load a .brs file to AST. slurp returns 0 if file missing.
 (defn read-file [path]
@@ -75,6 +85,22 @@
               (do (push result expr)
                   (recur (+ i 1))))))))))
 
+(defn strict-types? []
+  (= (bars_env_set "BARS_STRICT_TYPES") 1))
+
+(defn run-typecheck [ast]
+  (if (skip-typecheck?)
+    0
+    (let [tc (types/type_check ast)]
+      (if (if (strict-types?) (!= tc 0) false)
+        tc
+        0))))
+
+(defn run-ownership [ast]
+  (if (skip-ownership?)
+    0
+    (own/check_ownership ast)))
+
 (defn compile-file [input-path output-path]
   (let [raw (read-file input-path)]
     (if (= raw 0)
@@ -86,18 +112,24 @@
                 pairs (get resolved 1)
                 with-quals (mods/subst-qualified flat pairs)
                 expanded (macros/expand-program with-quals)
-                hir-lines (hir/lower-program expanded)
-                _ (llvm/compile-llvm hir-lines output-path)
-                ll-path (str-concat output-path ".ll")
-                cmd (str-concat "clang -Wno-override-module "
-                      (str-concat ll-path
-                        (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
-                status (bars_system cmd)]
-            (if (!= status 0)
-              (do (println (str-concat "error: clang failed: " cmd))
-                  (println status)
-                  2)
-              0)))))))
+                tc (run-typecheck expanded)]
+            (if (!= tc 0)
+              (die "error: type check failed" 3)
+              (let [oc (run-ownership expanded)]
+                (if (!= oc 0)
+                  (die "error: ownership check failed" 4)
+                  (let [hir-lines (hir/lower-program expanded)
+                        _ (llvm/compile-llvm hir-lines output-path)
+                        ll-path (str-concat output-path ".ll")
+                        cmd (str-concat "clang -Wno-override-module "
+                              (str-concat ll-path
+                                (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
+                        status (bars_system cmd)]
+                    (if (!= status 0)
+                      (do (println (str-concat "error: clang failed: " cmd))
+                          (println status)
+                          2)
+                      0)))))))))))
 
 (defn main []
   (let [n (args-count)]

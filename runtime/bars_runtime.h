@@ -161,5 +161,7 @@ int64_t bars_char_code(bars_string_t* s);
 /* Process */
 void bars_exit(int64_t status);
 int64_t bars_system(bars_string_t* cmd);
+/* 1 if env var is set and non-empty, else 0 */
+int64_t bars_env_set(bars_string_t* name);
 
 #endif

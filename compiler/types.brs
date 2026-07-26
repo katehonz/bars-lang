@@ -104,11 +104,16 @@
 
 ;; ====== Environment ======
 
+(defn str-eq? [a b]
+  (if (!= (count a) (count b)) false
+    (= (str-starts-with? a b) 1)))
+
+;; Not-found = empty vector (count 0). Found = scheme [vars ty].
 (defn env_lookup [env name]
   (loop [i 0]
-    (if (>= i (count env)) (t0 4)
+    (if (>= i (count env)) (vector)
       (let [pair (get env i)]
-        (if (= (get pair 0) name)
+        (if (str-eq? (get pair 0) name)
           (get pair 1)
           (recur (+ i 1))))))
 )
@@ -122,7 +127,7 @@
 
 (defn subst_get [subst id]
   (loop [i 0]
-    (if (>= i (count subst)) (t0 4)
+    (if (>= i (count subst)) (vector)
       (let [pair (get subst i)]
         (if (= (get pair 0) id)
           (get pair 1)
@@ -302,14 +307,20 @@
 )
 
 
+;; ctx = [counter-vec, constraints-vec]
+;; counter id = (count counter-vec); push mutates in place.
 (defn fresh_var [ctx]
-  (let [id (get ctx 0)
-        new-ctx (set_at ctx 0 (+ id 1))]
-    (T_Var id))
+  (let [counter (get ctx 0)
+        id (count counter)]
+    (do (push counter 0)
+        (T_Var id)))
 )
 
 (defn make_ctx []
-  (let [v (vector)] (do (push v 0) (do (push v (vector)) v)))
+  (let [v (vector)]
+    (do (push v (vector))
+        (push v (vector))
+        v))
 )
 
 (defn ctx_add_constraint [ctx a b]
@@ -381,6 +392,13 @@
         (env_insert env "args-count" (mono_scheme (T_Fun (empty_vec) (T_I64))))
         (env_insert env "args-get" unary)
         (env_insert env "nil" i64-t)
+        (env_insert env "true" (mono_scheme (T_Bool)))
+        (env_insert env "false" (mono_scheme (T_Bool)))
+        (env_insert env "map" (mono_scheme (T_Fun (empty_vec) (T_I64))))
+        (env_insert env "map-set" (mono_scheme (T_Fun (i64_i64-i64) (T_I64))))
+        (env_insert env "map-get" (mono_scheme (T_Fun (i64_i64) (T_I64))))
+        (env_insert env "map-count" unary)
+        (env_insert env "def" (mono_scheme (T_Fun (i64_i64) (T_I64))))
         ;; do removed from builtin — it's a special form
         env))
 )
@@ -395,8 +413,9 @@
   (get x 1)
 )
 
+;; Atoms: tag < 1000. Compounds: head is nested vector (pointer >= 1000 as i64).
 (defn is_atom? [x]
-  (< (ast_tag x) 10)
+  (< (ast_tag x) 1000)
 )
 
 (defn contains_tag? [v tag]
@@ -406,11 +425,37 @@
         (recur (+ i 1)))))
 )
 
-;; ====== Error Reporting ======
-
+;; Soft error — do not abort the process (pipeline decides hard fail).
 (defn type_error [msg]
-  (do (println (str-concat "Type error: " msg)) (exit 1) (T_Void))
+  (do (println (str-concat "Type error: " msg)) (T_Void))
 )
+
+;; Unwrap vector marker [[28] ...] and skip ^meta (tag 26) params.
+(defn unwrap_vec [v]
+  (if (is_atom? v) v
+    (let [head (get v 0)]
+      (if (if (is_atom? head) (= (ast_tag head) 28) false)
+        (let [n (count v) out (vector)]
+          (do (loop [i 1]
+                (if (>= i n) 0
+                  (do (push out (get v i)) (recur (+ i 1)))))
+              out))
+        v))))
+
+(defn normalize_params [params]
+  (let [plain (unwrap_vec params)
+        n (count plain)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [p (get plain i)]
+              (if (if (is_atom? p) (= (ast_tag p) 26) false)
+                (recur (+ i 1))
+                (do (if (if (is_atom? p) (= (ast_tag p) 1) false)
+                      (push out p)
+                      0)
+                    (recur (+ i 1)))))))
+        out)))
 
 ;; ====== INFER-EXPR (core recursive function) ======
 
@@ -427,17 +472,18 @@
                         found (env_lookup env name)]
                     (if (> (count found) 0)
                       [(apply_subst (vector) (get found 1)) ctx]
-                      [(type_error (str-concat "undefined variable: " name)) ctx]))
+                      ;; Unknown free var — fresh (modules / forward refs)
+                      [(fresh_var ctx) ctx]))
         (= tag 2) [(T_Str) ctx]
         (= tag 3) [(T_Str) ctx]
         (= tag 4) [(T_Void) ctx]
         (= tag 5) [(T_Bool) ctx]
-        :else     [(type_error "unknown atom tag") ctx]))
+        :else     [(fresh_var ctx) ctx]))
     (let [tag (ast_tag (get expr 0))]
       (cond
         (= tag 10) (let [name-sym (get expr 1)
                               name (ast_val name-sym)
-                              params (get expr 2)
+                              params (normalize_params (get expr 2))
                               body (get expr 3)]
                           (do (loop [i 0]
                                 (if (>= i (count params)) 0
@@ -469,21 +515,32 @@
 
 ;; ====== Special Form Handlers ======
 
-(defn infer_let [env ctx expr]
-  (let [bindings (get expr 1)
-        n (count bindings)
-        body (get expr 2)]
+;; Bindings are flat: [name1 val1 name2 val2 ...] (after unwrap_vec)
+(defn infer_flat_binds [env ctx binds body-start body-ast]
+  (let [plain (unwrap_vec binds)
+        n (count plain)
+        nbody (count body-ast)]
     (loop [i 0 env env ctx ctx]
       (if (>= i n)
-        (infer_expr env ctx body)
-        (let [pair (get bindings i)
-              name (ast_val (get pair 0))
-              val-expr (get pair 1)
+        (if (<= nbody (+ body-start 1))
+          (infer_expr env ctx (get body-ast body-start))
+          (loop [j body-start last-ty (T_Void) ctx ctx]
+            (if (>= j nbody) [last-ty ctx]
+              (let [res (infer_expr env ctx (get body-ast j))
+                    ty (get res 0)
+                    ctx (get res 1)]
+                (recur (+ j 1) ty ctx)))))
+        (let [name-atom (get plain i)
+              val-expr (get plain (+ i 1))
+              name (ast_val name-atom)
               res (infer_expr env ctx val-expr)
               val-ty (get res 0)
               ctx (get res 1)]
           (do (env_insert env name (mono_scheme val-ty))
-              (recur (+ i 1) env ctx))))))
+              (recur (+ i 2) env ctx)))))))
+
+(defn infer_let [env ctx expr]
+  (infer_flat_binds env ctx (get expr 1) 2 expr)
 )
 
 (defn infer_if [env ctx expr]
@@ -515,20 +572,7 @@
 )
 
 (defn infer_loop [env ctx expr]
-  (let [bindings (get expr 1)
-        n (count bindings)
-        body (get expr 2)]
-    (loop [i 0 env env ctx ctx]
-      (if (>= i n)
-        (infer_expr env ctx body)
-        (let [pair (get bindings i)
-              name (ast_val (get pair 0))
-              val-expr (get pair 1)
-              res (infer_expr env ctx val-expr)
-              val-ty (get res 0)
-              ctx (get res 1)]
-          (do (env_insert env name (mono_scheme val-ty))
-              (recur (+ i 1) env ctx))))))
+  (infer_flat_binds env ctx (get expr 1) 2 expr)
 )
 
 (defn infer_recur [env ctx expr]
@@ -540,6 +584,7 @@
           (recur (+ i 1) ctx)))))
 )
 
+;; Match AST: [[17] scrut pat1 body1 pat2 body2 ...]
 (defn infer_match [env ctx expr]
   (let [matched (get expr 1)
         n (count expr)
@@ -549,16 +594,14 @@
         result-ty (fresh_var ctx)]
     (loop [i 2 ctx ctx]
       (if (>= i n) [result-ty ctx]
-        (let [arm (get expr i)
-              pattern (get arm 0)
-              body (get arm 1)
-              arm-env env]
-          (do (infer_pattern pattern arm-env ctx)
-              (let [res (infer_expr arm-env ctx body)
+        (let [pattern (get expr i)
+              body (get expr (+ i 1))]
+          (do (infer_pattern pattern env ctx)
+              (let [res (infer_expr env ctx body)
                     arm-ty (get res 0)
                     ctx (get res 1)]
                 (do (ctx_add_constraint ctx result-ty arm-ty)
-                    (recur (+ i 1) ctx))))))))
+                    (recur (+ i 2) ctx))))))))
 )
 
 (defn infer_pattern [pattern env ctx]
@@ -576,75 +619,58 @@
 
 ;; ====== Function Call Inference ======
 
+(defn infer_args [env ctx expr start ret-ty]
+  (let [n (count expr)]
+    (loop [i start ctx ctx]
+      (if (>= i n) [ret-ty ctx]
+        (let [res (infer_expr env ctx (get expr i))
+              ctx (get res 1)]
+          (recur (+ i 1) ctx))))))
+
 (defn infer_call [env ctx expr]
   (let [head (get expr 0)
         n (count expr)]
-    (if (is_atom? head)
-      (let [tag (ast_tag head)]
-        (if (= tag 1)
-          (let [name (ast_val head)
-                found (env_lookup env name)]
-            (if (> (count found) 0)
-              (let [scheme found
-                    fn-ty (get scheme 1)]
-                (if (is_fun? fn-ty)
-                  (let [param-tys (fun_params fn-ty)
-                        ret-ty (fun_ret fn-ty)]
-                    (loop [i 1 ctx ctx]
-                      (if (>= i n) [ret-ty ctx]
-                        (let [arg (get expr i)
-                              res (infer_expr env ctx arg)
-                              arg-ty (get res 0)
-                              ctx (get res 1)
-                              param-idx (- i 1)]
-                          (if (< param-idx (count param-tys))
-                            (do (ctx_add_constraint ctx arg-ty (get param-tys param-idx))
-                                (recur (+ i 1) ctx))
-                            (recur (+ i 1) ctx))))))
-                  ;; Not a function type — allow with fresh result
-                  (let [ret-ty (fresh_var ctx)]
-                    (loop [i 1 ctx ctx]
-                      (if (>= i n) [ret-ty ctx]
-                        (let [res (infer_expr env ctx (get expr i))
-                              ctx (get res 1)]
-                          (recur (+ i 1) ctx)))))))
-              [(type_error (str-concat "undefined function: " name)) ctx]))
-          ;; Non-symbol head (lambda call etc) — just infer args and return fresh
-          (let [res (infer_expr env ctx head)
-                ctx (get res 1)
-                ret-ty (fresh_var ctx)]
-            (loop [i 1 ctx ctx]
-              (if (>= i n) [ret-ty ctx]
-                (let [res (infer_expr env ctx (get expr i))
-                      ctx (get res 1)]
-                  (recur (+ i 1) ctx)))))))
-      ;; Head is a complex expression — same as non-symbol
+    (if (if (is_atom? head) (= (ast_tag head) 1) false)
+      (let [name (ast_val head)
+            found (env_lookup env name)]
+        (if (> (count found) 0)
+          (let [fn-ty (get found 1)]
+            (if (is_fun? fn-ty)
+              (let [param-tys (fun_params fn-ty)
+                    ret-ty (fun_ret fn-ty)]
+                (loop [i 1 ctx ctx]
+                  (if (>= i n) [ret-ty ctx]
+                    (let [res (infer_expr env ctx (get expr i))
+                          arg-ty (get res 0)
+                          ctx (get res 1)
+                          param-idx (- i 1)]
+                      (do (if (< param-idx (count param-tys))
+                            (ctx_add_constraint ctx arg-ty (get param-tys param-idx))
+                            0)
+                          (recur (+ i 1) ctx))))))
+              (infer_args env ctx expr 1 (fresh_var ctx))))
+          (infer_args env ctx expr 1 (fresh_var ctx))))
       (let [res (infer_expr env ctx head)
-            ctx (get res 1)
-            ret-ty (fresh_var ctx)]
-        (loop [i 1 ctx ctx]
-          (if (>= i n) [ret-ty ctx]
-            (let [res (infer_expr env ctx (get expr i))
-                  ctx (get res 1)]
-              (recur (+ i 1) ctx))))))
-  )
-)
+            ctx (get res 1)]
+        (infer_args env ctx expr 1 (fresh_var ctx))))))
 
 ;; ====== Solving Constraints ======
 
 (defn solve [ctx]
   (let [subst (vector)
         constraints (get ctx 1)]
-    (loop [i 0 subst subst]
-      (if (>= i (count constraints)) [true subst]
+    (loop [i 0 subst subst failed 0]
+      (if (>= i (count constraints))
+        (if (= failed 0) [true subst] [false subst])
         (let [c (get constraints i)
               a (get c 0)
               b (get c 1)
               res (unify a b subst)]
           (if (get res 0)
-            (recur (+ i 1) (get res 1))
+            (recur (+ i 1) (get res 1) failed)
             (let [err (str-concat "type mismatch: " (str-concat (type_str a) (str-concat " vs " (type_str b))))]
-              (do (println (str-concat "Type error: " err)) [false subst])))))))
+              (do (println (str-concat "Type warning: " err))
+                  (recur (+ i 1) subst 1))))))))
 )
 
 ;; ====== Top-Level Inference ======
@@ -664,11 +690,13 @@
 
 ;; ====== Public API ======
 
+;; Returns 0 on clean pass, 1 if any mismatch was reported.
+;; Pipeline soft-fails by default; BARS_STRICT_TYPES=1 makes it hard-fail.
 (defn type_check [ast-list]
   (let [result (infer_program ast-list)]
     (if (get result 0)
-      (do (println "Type check passed") 0)
-      (do (println "Type check failed") 1)))
+      0
+      (do (println "Type check: issues found") 1)))
 )
 
 

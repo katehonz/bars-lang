@@ -162,6 +162,7 @@
         (lines-push lines "declare i64 @bars_args_count()")
         (lines-push lines "declare i64 @bars_args_get(i64)")
         (lines-push lines "declare i64 @bars_exit(i64)")
+        (lines-push lines "declare i64 @bars_env_set(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
@@ -203,7 +204,9 @@
         (if (str-eq? fname "args-count") "bars_args_count"
           (if (str-eq? fname "args-get") "bars_args_get"
             (if (str-eq? fname "println") "bars_print_any_i64"
-              "")))))))
+              (if (str-eq? fname "bars_env_set") "bars_env_set"
+                (if (str-eq? fname "bars_system") "bars_system"
+                  "")))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

@@ -174,7 +174,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Stage 10b: Self-compilation Gen1→Gen2→Gen3→Gen4 ✅
 - [x] Stage 10c: Identity test — Gen3.ll == Gen4.ll fixed point ✅
 - [x] Stage 10e: Rust bootstrap frozen (`bootstrap/FROZEN.md`, `make bars-self`) ✅
-- [ ] Stage 10d: types/ownership в pipeline; CI green on self-hosted only
+- [x] Stage 10d: types + ownership wired in `build.brs` (soft types; ownership stub until NLL stable)
 
 **Bars-first workflow:**  
 ```

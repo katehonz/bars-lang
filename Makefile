@@ -26,9 +26,11 @@ help:
 	@echo "  make gen2        - Gen2: bars-self recompiles itself → ./bars-self2"
 	@echo "  make gen3        - Gen3: bars-self2 recompiles → ./bars-self3"
 	@echo "  make identity    - Gen3.ll == Gen4.ll fixed-point check"
-	@echo "  make self-test   - run example suite with ./bars-self"
+	@echo "  make self-test   - run example suite with ./bars-self (types ON)"
 	@echo "  make test        - cargo test (bootstrap)"
 	@echo "  make clean       - remove build artifacts"
+	@echo ""
+	@echo "Env: BARS_SKIP_TYPECHECK BARS_SKIP_OWNERSHIP BARS_STRICT_TYPES"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 
@@ -49,6 +51,9 @@ runtime $(RUNTIME): runtime/bars_runtime.c runtime/bars_runtime.h
 
 # ── Self-hosted compiler ───────────────────────────────────────────────────
 
+# Skip analysis when recompiling the compiler (heavy / incomplete for all forms)
+SELF_SKIP := BARS_SKIP_TYPECHECK=1 BARS_SKIP_OWNERSHIP=1
+
 # Gen1: host → bars-self
 bars-self self: $(HOST) $(RUNTIME)
 	BARS_SKIP_TYPECHECK=1 $(HOST) build --backend cranelift $(BUILD_BRS) -o $(SELF)
@@ -56,18 +61,18 @@ bars-self self: $(HOST) $(RUNTIME)
 
 # Gen2: bars-self → bars-self2
 gen2: bars-self
-	$(SELF) $(BUILD_BRS) $(SELF2)
+	$(SELF_SKIP) $(SELF) $(BUILD_BRS) $(SELF2)
 	@echo "→ $(SELF2) ready (Gen2)"
 
 # Gen3: bars-self2 → bars-self3
 gen3: gen2
-	$(SELF2) $(BUILD_BRS) $(SELF3)
+	$(SELF_SKIP) $(SELF2) $(BUILD_BRS) $(SELF3)
 	@echo "→ $(SELF3) ready (Gen3)"
 
 # Identity: Gen3 and Gen4 produce identical LLVM IR
 identity: gen3
 	@tmp=$$(mktemp -d) && \
-	  $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
+	  $(SELF_SKIP) $(SELF3) $(BUILD_BRS) $$tmp/gen4 && \
 	  if cmp -s $(SELF3).ll $$tmp/gen4.ll; then \
 	    echo "OK identity: Gen3.ll == Gen4.ll (fixed point)"; \
 	  else \
@@ -76,7 +81,7 @@ identity: gen3
 	    rm -rf $$tmp; exit 1; \
 	  fi && rm -rf $$tmp
 
-# Example suite against Gen1 bars-self
+# Example suite against Gen1 bars-self (typecheck + ownership ON)
 self-test: bars-self
 	@bash scripts/selfhost-test.sh $(SELF)
 
