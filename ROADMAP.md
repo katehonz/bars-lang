@@ -182,6 +182,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Stage 12.20: multi-file self-host — nested modules, cycles, path search
 - [x] Stage 12.21: Bars.toml path-deps in self-host (`compiler/pkg.brs`, pkg_app example)
 - [x] Stage 12.21b: Bars.toml git deps — clone to `target/bars-deps/<name>` (self-host)
+- [x] Stage 12.21c: git dep pins — `branch` / `tag` / `rev` + `.bars-dep-pin` cache
 - [x] Phase 13.2e: type mismatch diagnostics with line:col + source snippet
 - [x] Phase 13.5: C backend (`codegen/c.brs`, `BARS_BACKEND_C=1`, self-test C suite)
 

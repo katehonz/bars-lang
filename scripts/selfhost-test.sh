@@ -97,9 +97,18 @@ EOF
 name = "gitlib"
 version = "0.1.0"
 EOF
-  git -C "$gitlib" init -q
+  git -C "$gitlib" init -q -b master
   git -C "$gitlib" add -A
   git -C "$gitlib" -c user.email=t@t -c user.name=t commit -q -m init
+  git -C "$gitlib" tag v0.1
+  # pinned branch with different value
+  git -C "$gitlib" checkout -q -b pinbr
+  cat >"$gitlib/src/lib.brs" <<'EOF'
+(defn magic [] 77)
+EOF
+  git -C "$gitlib" add -A
+  git -C "$gitlib" -c user.email=t@t -c user.name=t commit -q -m pin
+  git -C "$gitlib" checkout -q master
   local url="file://$gitlib"
   cat >"$gitapp/Bars.toml" <<EOF
 [package]
@@ -130,6 +139,47 @@ EOF
   else
     echo "FAIL run      git-dep smoke (got: $stdout)"
     fail=$((fail + 1))
+  fi
+
+  # branch pin → pinbr → 77; re-clone because pin changed
+  cat >"$gitapp/Bars.toml" <<EOF
+[package]
+name = "gitapp"
+version = "0.1.0"
+
+[dependencies]
+gitlib = { git = "$url", branch = "pinbr" }
+EOF
+  out="$TMP/gitapp_pin"
+  if ! "$CC_BIN" "$gitapp/src/main.brs" "$out" >"$TMP/gitapp_pin.compile.log" 2>&1; then
+    echo "FAIL compile  git-dep branch pin"
+    tail -8 "$TMP/gitapp_pin.compile.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  stdout="$("$out" 2>/dev/null || true)"
+  if [[ "$stdout" == *"77"* ]]; then
+    echo "OK   git-dep branch pin (branch=pinbr)"
+    echo "     | $stdout"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      git-dep branch pin (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+
+  # cache hit: same branch, no re-clone line required — just succeed with 77
+  out="$TMP/gitapp_pin2"
+  if ! "$CC_BIN" "$gitapp/src/main.brs" "$out" >"$TMP/gitapp_pin2.compile.log" 2>&1; then
+    echo "FAIL compile  git-dep pin cache"
+    fail=$((fail + 1))
+    return
+  fi
+  if grep -q 'git clone' "$TMP/gitapp_pin2.compile.log"; then
+    echo "FAIL cache     git-dep re-cloned with same pin"
+    fail=$((fail + 1))
+  else
+    echo "OK   git-dep pin cache hit"
+    pass=$((pass + 1))
   fi
 }
 

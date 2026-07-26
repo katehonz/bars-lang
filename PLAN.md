@@ -106,9 +106,10 @@ compiler/
 - [x] **12.21** Интеграция с пакетната система (Bars.toml path + git dependencies)
   - `compiler/pkg.brs`: TOML `[dependencies] name = { path|git = "..." }`
   - Walk up for Bars.toml; `find-module` resolves package name → `src/lib.brs`
-  - path deps: join project dir; git deps: `git clone --depth 1` → `target/bars-deps/<name>`
-  - Cached clones (skip if `.git/HEAD` or `src/lib.brs` exists)
-  - Examples: `pkg_app`/`pkg_lib` (path); self-test smoke for local `file://` git
+  - path deps: join project dir; git deps: `git clone` → `target/bars-deps/<name>`
+  - **Pins:** `branch` / `tag` (`--branch`) or `rev` (full clone + checkout); precedence rev>tag>branch
+  - Cache via `.bars-dep-pin`; re-clone when pin changes
+  - Examples: `pkg_app`/`pkg_lib` (path); self-test smoke for git + branch pin + cache
 
 ### Stage 10: Пълен Bootstrap 🚧
 

@@ -13,7 +13,9 @@
 
 (defn is-space? [c]
   (if (= c 32) true
-    (if (= c 9) true false)))
+    (if (= c 9) true
+      (if (= c 10) true
+        (if (= c 13) true false)))))
 
 (defn str-trim [s]
   (let [n (count s)]
@@ -65,8 +67,28 @@
     ""
     (str-concat "'" (str-concat s "'"))))
 
-;; "name = { path = \"..\" }" or "{ git = \"url\" }"
-;; → [name "path"|"git" value] or 0
+;; First quoted value after key name in s, or "".
+(defn quoted-after-key [s key]
+  (let [k (str-index-of s key)]
+    (if (< k 0) ""
+      (first-quoted (str-slice s k (count s))))))
+
+;; Pick pin: rev > tag > branch (Cargo-like precedence for our subset).
+;; Returns [pin-kind pin-val] where kind is ""|"branch"|"tag"|"rev".
+(defn parse-git-pin [rest]
+  (let [rev (quoted-after-key rest "rev")
+        tag (quoted-after-key rest "tag")
+        branch (quoted-after-key rest "branch")]
+    (if (> (count rev) 0)
+      (let [v (vector)] (do (push v "rev") (push v rev) v))
+      (if (> (count tag) 0)
+        (let [v (vector)] (do (push v "tag") (push v tag) v))
+        (if (> (count branch) 0)
+          (let [v (vector)] (do (push v "branch") (push v branch) v))
+          (let [v (vector)] (do (push v "") (push v "") v)))))))
+
+;; "name = { path = \"..\" }" or "{ git = \"url\", branch = \"main\" }"
+;; → [name "path"|"git" value pin-kind pin] or 0
 (defn parse-dep-line [line]
   (let [s (str-trim line)]
     (if (if (= (count s) 0) true (= (str-get s 0) 35))
@@ -75,22 +97,28 @@
         (if (< eq 1) 0
           (let [name (str-trim (str-slice s 0 eq))
                 rest (str-slice s (+ eq 1) (count s))
-                git-key (str-index-of rest "git")
-                path-key (str-index-of rest "path")]
-            ;; Prefer git if both present (host: git first)
-            (if (>= git-key 0)
-              (let [q (first-quoted (str-slice rest git-key (count rest)))]
-                (if (= (count q) 0) 0
-                  (let [pair (vector)]
-                    (do (push pair name) (push pair "git") (push pair q) pair))))
-              (if (>= path-key 0)
-                (let [q (first-quoted (str-slice rest path-key (count rest)))]
-                  (if (= (count q) 0) 0
-                    (let [pair (vector)]
-                      (do (push pair name) (push pair "path") (push pair q) pair))))
+                git-url (quoted-after-key rest "git")
+                path-val (quoted-after-key rest "path")]
+            (if (> (count git-url) 0)
+              (let [pin (parse-git-pin rest)
+                    pair (vector)]
+                (do (push pair name)
+                    (push pair "git")
+                    (push pair git-url)
+                    (push pair (get pin 0))
+                    (push pair (get pin 1))
+                    pair))
+              (if (> (count path-val) 0)
+                (let [pair (vector)]
+                  (do (push pair name)
+                      (push pair "path")
+                      (push pair path-val)
+                      (push pair "")
+                      (push pair "")
+                      pair))
                 0))))))))
 
-;; Parse Bars.toml → vector of [name kind value]
+;; Parse Bars.toml → vector of [name kind value pin-kind pin]
 (defn parse-deps [text]
   (let [lines (split-lines text)
         n (count lines)
@@ -111,7 +139,7 @@
                   (do (push out dep)
                       (recur (+ i 1) 1)))))))))))
 
-;; Back-compat alias
+;; Back-compat: path deps only as [name path]
 (defn parse-path-deps [text]
   (let [raw (parse-deps text)
         n (count raw)
@@ -158,32 +186,76 @@
               (if (str-eq? parent dir) ""
                 (recur parent (+ depth 1))))))))))
 
+(defn pin-path [dest]
+  (join-path dest ".bars-dep-pin"))
+
+(defn pin-record [kind val]
+  (str-concat kind (str-concat ":" val)))
+
+(defn pin-matches? [dest kind val]
+  (let [want (pin-record kind val)
+        got (slurp (pin-path dest))]
+    (if (= got 0)
+      ;; Legacy clone without pin file: only reuse if no pin requested
+      (= (count kind) 0)
+      (str-eq? (str-trim got) want))))
+
+(defn write-pin [dest kind val]
+  (spit (pin-path dest) (str-concat (pin-record kind val) "\n")))
+
+;; Build git clone command. branch/tag → --branch; rev → full clone + checkout.
+(defn git-clone-cmd [url dest pin-kind pin]
+  (let [uq (shell-quote url)
+        dq (shell-quote dest)
+        pq (shell-quote pin)]
+    (if (if (= (count uq) 0) true (= (count dq) 0))
+      ""
+      (if (if (str-eq? pin-kind "branch") true (str-eq? pin-kind "tag"))
+        (if (= (count pq) 0) ""
+          (str-concat "git clone --depth 1 --branch " (str-concat pq (str-concat " " (str-concat uq (str-concat " " dq))))))
+        (if (str-eq? pin-kind "rev")
+          (if (= (count pq) 0) ""
+            ;; Full clone so the commit is available, then checkout.
+            (str-concat "git clone " (str-concat uq (str-concat " " (str-concat dq
+              (str-concat " && git -C " (str-concat dq (str-concat " checkout " pq))))))))
+          (str-concat "git clone --depth 1 " (str-concat uq (str-concat " " dq))))))))
+
 ;; Clone git dep into project/target/bars-deps/<name>. Returns root or "".
-(defn ensure-git-dep [project-dir name url]
+;; pin-kind: "" | "branch" | "tag" | "rev"
+(defn ensure-git-dep [project-dir name url pin-kind pin]
   (let [dest (join-path project-dir (join-path "target/bars-deps" name))
         marker (join-path dest "src/lib.brs")
-        head (join-path dest ".git/HEAD")]
-    (if (if (file-readable? marker) true (file-readable? head))
+        head (join-path dest ".git/HEAD")
+        cached (if (if (file-readable? marker) true (file-readable? head))
+                 (pin-matches? dest pin-kind pin)
+                 false)]
+    (if cached
       dest
-      (let [uq (shell-quote url)
-            dq (shell-quote dest)
-            parent (join-path project-dir "target/bars-deps")]
-        (if (if (= (count uq) 0) true (= (count dq) 0))
-          (do (println (str-concat "error: pkg: unsafe git url/path for `" (str-concat name "`")))
+      (let [parent (join-path project-dir "target/bars-deps")
+            cmd (git-clone-cmd url dest pin-kind pin)]
+        (if (= (count cmd) 0)
+          (do (println (str-concat "error: pkg: unsafe git url/path/pin for `" (str-concat name "`")))
               "")
-          (do (println (str-concat "  📦 git clone " (str-concat name " …")))
-              (bars_system (str-concat "mkdir -p " (shell-quote parent)))
-              (let [cmd (str-concat "git clone --depth 1 " (str-concat uq (str-concat " " dq)))
-                    st (bars_system cmd)]
-                (if (!= st 0)
-                  (do (println (str-concat "error: pkg: git clone failed for `" (str-concat name "`")))
-                      (println (str-concat "  note: " cmd))
-                      "")
-                  dest))))))))
+          (do
+            ;; Drop stale clone if pin changed
+            (if (if (file-readable? head) true (file-readable? marker))
+              (bars_system (str-concat "rm -rf " (shell-quote dest)))
+              0)
+            (println (str-concat "  📦 git clone " (str-concat name
+              (if (= (count pin-kind) 0) " …"
+                (str-concat " (" (str-concat pin-kind (str-concat "=" (str-concat pin ") …"))))))))
+            (bars_system (str-concat "mkdir -p " (shell-quote parent)))
+            (let [st (bars_system cmd)]
+              (if (!= st 0)
+                (do (println (str-concat "error: pkg: git clone failed for `" (str-concat name "`")))
+                    (println (str-concat "  note: " cmd))
+                    "")
+                (do (write-pin dest pin-kind pin)
+                    dest)))))))))
 
 ;; Load all deps for project-dir → [[name root-dir] ...]
 ;; path deps: join project-dir + relative path
-;; git deps: clone (if needed) to target/bars-deps/<name>
+;; git deps: clone (if needed) to target/bars-deps/<name> with optional pin
 (defn load-path-deps [project-dir]
   (let [toml-path (join-path project-dir "Bars.toml")
         text (slurp toml-path)]
@@ -196,7 +268,9 @@
                 (let [dep (get raw i)
                       name (get dep 0)
                       kind (get dep 1)
-                      val (get dep 2)]
+                      val (get dep 2)
+                      pin-kind (if (>= (count dep) 5) (get dep 3) "")
+                      pin (if (>= (count dep) 5) (get dep 4) "")]
                   (if (str-eq? kind "path")
                     (let [root (join-path project-dir val)
                           pair (vector)]
@@ -205,7 +279,7 @@
                           (push out pair)
                           (recur (+ i 1))))
                     (if (str-eq? kind "git")
-                      (let [root (ensure-git-dep project-dir name val)]
+                      (let [root (ensure-git-dep project-dir name val pin-kind pin)]
                         (if (= (count root) 0)
                           (recur (+ i 1))
                           (let [pair (vector)]
