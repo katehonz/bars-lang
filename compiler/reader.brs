@@ -83,6 +83,42 @@
               (recur (+ i 1) (+ (* acc 10) (- c 48)) neg)
               (* acc neg))))))))
 
+;; Digit char → one-char string for int-str (0..9)
+(defn digit-str [d]
+  (str-slice "0123456789" d (+ d 1)))
+
+;; Integer → decimal string (for line:col diagnostics)
+(defn int-str [n]
+  (if (< n 0)
+    (str-concat "-" (int-str (- 0 n)))
+    (if (< n 10)
+      (digit-str n)
+      (str-concat (int-str (/ n 10)) (digit-str (% n 10))))))
+
+;; Byte offset → [line col] (1-based), scanning source text.
+(defn offset-to-span [text offset]
+  (let [n (count text)
+        lim (if (< offset 0) 0 (if (> offset n) n offset))]
+    (loop [i 0 line 1 col 1]
+      (if (>= i lim)
+        (let [v (vector)]
+          (do (push v line) (push v col) v))
+        (if (= (str-get text i) 10)
+          (recur (+ i 1) (+ line 1) 1)
+          (recur (+ i 1) line (+ col 1)))))))
+
+;; Print parse error with line:col (+ optional path arrow).
+(defn parse-err [text path off msg]
+  (let [lc (offset-to-span text off)
+        line (get lc 0)
+        col (get lc 1)
+        where (str-concat (int-str line) (str-concat ":" (int-str col)))]
+    (do (println (str-concat "error: parse: " (str-concat msg (str-concat " at " where))))
+        (if (> (count path) 0)
+          (println (str-concat "  --> " (str-concat path (str-concat ":" where))))
+          0)
+        0)))
+
 ;; ===========================================================================
 ;; Lexer state helpers
 ;; ===========================================================================
@@ -110,20 +146,28 @@
         s))))
 
 ;; ===========================================================================
-;; Token parsers — mutate tokens in-place; return just position
+;; Token parsers — emit tok+span; return new byte offset
 ;; ===========================================================================
 
-(defn lex-read-string [state tokens]
+(defn emit-tok [tokens spans tok off]
+  (do (push tokens tok)
+      (push spans off)))
+
+(defn digit-or-sign? [c acc]
+  (if (digit? c) true
+    (if (= c 45) (= (count acc) 0) false)))
+
+(defn lex-read-string-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]
     (loop [i (+ pos 1) acc ""]
       (if (>= i len)
-        (do (push tokens (TString "")) i)
+        (do (emit-tok tokens spans (TString acc) off) i)
         (let [c (str-get text i)]
           (if (= c 34)
-            (do (push tokens (TString acc)) (+ i 1))
+            (do (emit-tok tokens spans (TString acc) off) (+ i 1))
             (if (= c 92)
               (if (>= (+ i 1) len)
-                (do (push tokens (TString acc)) i)
+                (do (emit-tok tokens spans (TString acc) off) i)
                 (let [next (str-get text (+ i 1))
                       esc (if (= next 110) "\n"
                             (if (= next 116) "\t"
@@ -134,39 +178,35 @@
                   (recur (+ i 2) (str-concat acc esc))))
               (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1)))))))))))
 
-(defn digit-or-sign? [c acc]
-  (if (digit? c) true
-    (if (= c 45) (= (count acc) 0) false)))
-
-(defn lex-read-number [state tokens]
+(defn lex-read-number-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]
     (loop [i pos acc ""]
       (if (>= i len)
-        (do (push tokens (TNumber (parse-int acc))) i)
+        (do (emit-tok tokens spans (TNumber (parse-int acc)) off) i)
         (let [c (str-get text i)]
           (if (digit-or-sign? c acc)
             (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1))))
-            (do (push tokens (TNumber (parse-int acc))) i)))))))
+            (do (emit-tok tokens spans (TNumber (parse-int acc)) off) i)))))))
 
-(defn lex-read-symbol [state tokens]
+(defn lex-read-symbol-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]
     (loop [i pos acc ""]
       (if (>= i len)
-        (do (push tokens (TSymbol acc)) i)
+        (do (emit-tok tokens spans (TSymbol acc) off) i)
         (let [c (str-get text i)]
           (if (sym-char? c)
             (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1))))
-            (do (push tokens (TSymbol acc)) i)))))))
+            (do (emit-tok tokens spans (TSymbol acc) off) i)))))))
 
-(defn lex-read-keyword [state tokens]
+(defn lex-read-keyword-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]
     (loop [i (+ pos 1) acc ""]
       (if (>= i len)
-        (do (push tokens (TKeyword acc)) i)
+        (do (emit-tok tokens spans (TKeyword acc) off) i)
         (let [c (str-get text i)]
           (if (sym-char? c)
             (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1))))
-            (do (push tokens (TKeyword acc)) i)))))))
+            (do (emit-tok tokens spans (TKeyword acc) off) i)))))))
 
 (defn lex-is-neg-number? [state]
   (let [c (lex-peek state)]
@@ -176,37 +216,71 @@
       false)))
 
 ;; ===========================================================================
-;; Main tokenize
+;; Main tokenize — returns [tokens spans] (spans[i] = start byte offset)
 ;; ===========================================================================
 
 (defn tokenize [text]
-  (let [len (count text)]
-    (loop [state [text 0 len] tokens (vector)]
+  (let [len (count text)
+        tokens (vector)
+        spans (vector)]
+    (loop [state [text 0 len]]
       (let [state (lex-skip-whitespace state)
-            c (lex-peek state)]
+            c (lex-peek state)
+            off (get state 1)]
         (cond
-          (= c -1)               (do (push tokens (TEof)) tokens)
-          (= c 59)               (recur (lex-skip-comment (lex-advance state)) tokens)
-          (= c 40)               (recur (lex-advance state) (do (push tokens (TLParen)) tokens))
-          (= c 41)               (recur (lex-advance state) (do (push tokens (TRParen)) tokens))
-          (= c 91)               (recur (lex-advance state) (do (push tokens (TLBrack)) tokens))
-          (= c 93)               (recur (lex-advance state) (do (push tokens (TRBrack)) tokens))
-          (= c 34)               (recur [(get state 0) (lex-read-string state tokens) (get state 2)] tokens)
-          (= c 39)               (recur (lex-advance state) (do (push tokens (TQuote)) tokens))
-          (= c 96)               (recur (lex-advance state) (do (push tokens (TSyntaxQuote)) tokens))
-          (= c 94)               (recur (lex-advance state) (do (push tokens (TMeta)) tokens))
-          (= c 64)               (recur (lex-advance state) (do (push tokens (TDeref)) tokens))
-          (= c 126)              (let [next (lex-peek (lex-advance state))]
-                                   (if (= next 64)
-                                     (recur (lex-advance (lex-advance state))
-                                            (do (push tokens (TSplicing)) tokens))
-                                     (recur (lex-advance state)
-                                            (do (push tokens (TUnquote)) tokens))))
-          (= c 58)               (recur [(get state 0) (lex-read-keyword state tokens) (get state 2)] tokens)
-          (lex-is-neg-number? state) (recur [(get state 0) (lex-read-number state tokens) (get state 2)] tokens)
-          (digit? c)              (recur [(get state 0) (lex-read-number state tokens) (get state 2)] tokens)
-          (sym-char? c)           (recur [(get state 0) (lex-read-symbol state tokens) (get state 2)] tokens)
-          :else                   (recur (lex-advance state) tokens))))))
+          (= c -1)
+            (do (emit-tok tokens spans (TEof) off)
+                (let [out (vector)]
+                  (do (push out tokens) (push out spans) out)))
+          (= c 59)
+            (recur (lex-skip-comment (lex-advance state)))
+          (= c 40)
+            (do (emit-tok tokens spans (TLParen) off)
+                (recur (lex-advance state)))
+          (= c 41)
+            (do (emit-tok tokens spans (TRParen) off)
+                (recur (lex-advance state)))
+          (= c 91)
+            (do (emit-tok tokens spans (TLBrack) off)
+                (recur (lex-advance state)))
+          (= c 93)
+            (do (emit-tok tokens spans (TRBrack) off)
+                (recur (lex-advance state)))
+          (= c 34)
+            (let [npos (lex-read-string-at state tokens spans off)]
+              (recur [text npos len]))
+          (= c 39)
+            (do (emit-tok tokens spans (TQuote) off)
+                (recur (lex-advance state)))
+          (= c 96)
+            (do (emit-tok tokens spans (TSyntaxQuote) off)
+                (recur (lex-advance state)))
+          (= c 94)
+            (do (emit-tok tokens spans (TMeta) off)
+                (recur (lex-advance state)))
+          (= c 64)
+            (do (emit-tok tokens spans (TDeref) off)
+                (recur (lex-advance state)))
+          (= c 126)
+            (let [next (lex-peek (lex-advance state))]
+              (if (= next 64)
+                (do (emit-tok tokens spans (TSplicing) off)
+                    (recur (lex-advance (lex-advance state))))
+                (do (emit-tok tokens spans (TUnquote) off)
+                    (recur (lex-advance state)))))
+          (= c 58)
+            (let [npos (lex-read-keyword-at state tokens spans off)]
+              (recur [text npos len]))
+          (lex-is-neg-number? state)
+            (let [npos (lex-read-number-at state tokens spans off)]
+              (recur [text npos len]))
+          (digit? c)
+            (let [npos (lex-read-number-at state tokens spans off)]
+              (recur [text npos len]))
+          (sym-char? c)
+            (let [npos (lex-read-symbol-at state tokens spans off)]
+              (recur [text npos len]))
+          :else (recur (lex-advance state)))))))
 
 ;; ===========================================================================
 ;; PARSER
@@ -247,22 +321,40 @@
 
 (defn special? [tag] (>= tag 10))
 
-;; --- Token peeking ---
-(defn peek-t [tokens pos]
-  (if (>= pos (count tokens)) (TEof) (get tokens pos)))
+;; --- Token / span peeking ---
+;; ctx = [tokens spans text path]
+
+(defn ctx-tokens [ctx] (get ctx 0))
+(defn ctx-spans [ctx] (get ctx 1))
+(defn ctx-text [ctx] (get ctx 2))
+(defn ctx-path [ctx] (get ctx 3))
+
+(defn peek-t [ctx pos]
+  (let [tokens (ctx-tokens ctx)]
+    (if (>= pos (count tokens)) (TEof) (get tokens pos))))
+
+(defn span-at [ctx pos]
+  (let [spans (ctx-spans ctx)]
+    (if (>= pos (count spans))
+      (if (> (count spans) 0) (get spans (- (count spans) 1)) 0)
+      (get spans pos))))
+
+(defn perr [ctx pos msg]
+  (parse-err (ctx-text ctx) (ctx-path ctx) (span-at ctx pos) msg))
 
 ;; --- parse-expr: main dispatch ---
-(defn parse-expr [tokens pos]
-  (let [t (peek-t tokens pos)]
+;; Returns [ast new-pos] or 0 on error. ctx threaded for spans.
+(defn parse-expr [ctx pos]
+  (let [t (peek-t ctx pos)]
     (match t
-      (TLParen)       (parse-list tokens (+ pos 1))
-      (TLBrack)       (parse-vector tokens (+ pos 1))
-      (TQuote)        (parse-macro tokens (+ pos 1) 22)
-      (TSyntaxQuote)  (parse-macro tokens (+ pos 1) 23)
-      (TUnquote)      (parse-macro tokens (+ pos 1) 24)
-      (TSplicing)     (parse-macro tokens (+ pos 1) 25)
-      (TMeta)         (parse-macro tokens (+ pos 1) 26)
-      (TDeref)        (parse-macro tokens (+ pos 1) 27)
+      (TLParen)       (parse-list ctx (+ pos 1) (span-at ctx pos))
+      (TLBrack)       (parse-vector ctx (+ pos 1) (span-at ctx pos))
+      (TQuote)        (parse-macro ctx (+ pos 1) 22)
+      (TSyntaxQuote)  (parse-macro ctx (+ pos 1) 23)
+      (TUnquote)      (parse-macro ctx (+ pos 1) 24)
+      (TSplicing)     (parse-macro ctx (+ pos 1) 25)
+      (TMeta)         (parse-macro ctx (+ pos 1) 26)
+      (TDeref)        (parse-macro ctx (+ pos 1) 27)
       (TNumber v)     [(t1 0 v) (+ pos 1)]
       (TFloat v)      [(t1 0 v) (+ pos 1)]
       (TString v)     [(t1 2 v) (+ pos 1)]
@@ -275,9 +367,9 @@
       (TEof)          [(t0 99) (+ pos 1)])))
 
 ;; --- parse-list: collect items, detect special forms ---
-;; Returns [items new-pos] or 0 on parse error.
-(defn parse-list [tokens pos]
-  (let [result (collect-items tokens pos (vector))]
+;; open-off = byte offset of '(' for unclosed diagnostics.
+(defn parse-list [ctx pos open-off]
+  (let [result (collect-items ctx pos (vector) open-off)]
     (if (= result 0) 0
       (let [items (get result 0)
             pos (get result 1)]
@@ -303,15 +395,16 @@
           [items pos])))))
 
 ;; Returns [items new-pos] or 0 on unclosed '('.
-(defn collect-items [tokens pos items]
+(defn collect-items [ctx pos items open-off]
   (loop [items items pos pos]
-    (let [t (peek-t tokens pos)]
+    (let [t (peek-t ctx pos)]
       (match t
         (TRParen) [items (+ pos 1)]
         (TEof)
-          (do (println "error: parse: unclosed list") 0)
+          (do (parse-err (ctx-text ctx) (ctx-path ctx) open-off "unclosed list")
+              0)
         _
-          (let [res (parse-expr tokens pos)]
+          (let [res (parse-expr ctx pos)]
             (if (= res 0)
               0
               (let [expr (get res 0)
@@ -320,12 +413,10 @@
                     (recur items np)))))))))
 
 ;; --- parse-vector ---
-;; Vectors are marked with head tag 28 so HIR can distinguish them from calls.
-;; AST: [[28] elem0 elem1 ...]
-;; Returns [wrapped-vector new-pos] or 0 on unclosed '['.
-(defn parse-vector [tokens pos]
+;; open-off = byte offset of '['.
+(defn parse-vector [ctx pos open-off]
   (loop [items (vector) pos pos]
-    (let [t (peek-t tokens pos)]
+    (let [t (peek-t ctx pos)]
       (match t
         (TRBrack)
           (let [wrapped (vector)]
@@ -337,9 +428,10 @@
                         (recur (+ i 1)))))
                 [wrapped (+ pos 1)]))
         (TEof)
-          (do (println "error: parse: unclosed vector") 0)
+          (do (parse-err (ctx-text ctx) (ctx-path ctx) open-off "unclosed vector")
+              0)
         _
-          (let [res (parse-expr tokens pos)]
+          (let [res (parse-expr ctx pos)]
             (if (= res 0)
               0
               (let [expr (get res 0)
@@ -348,9 +440,8 @@
                     (recur items np)))))))))
 
 ;; --- parse-macro: ' ` ~ ~@ ^ @ ---
-;; Returns [tagged-expr new-pos] or 0 on error.
-(defn parse-macro [tokens pos tag]
-  (let [res (parse-expr tokens pos)]
+(defn parse-macro [ctx pos tag]
+  (let [res (parse-expr ctx pos)]
     (if (= res 0)
       0
       (let [expr (get res 0)
@@ -358,32 +449,48 @@
         [(t1 tag expr) np]))))
 
 ;; --- parse-all: all top-level expressions; 0 on parse error ---
-(defn parse-all [tokens]
+(defn parse-all [ctx]
   (loop [exprs (vector) pos 0]
-    (let [t (peek-t tokens pos)]
+    (let [t (peek-t ctx pos)]
       (match t
         (TEof) exprs
         (TRParen)
-          (do (println "error: parse: unexpected ')'") 0)
+          (do (perr ctx pos "unexpected ')'") 0)
         (TRBrack)
-          (do (println "error: parse: unexpected ']'") 0)
+          (do (perr ctx pos "unexpected ']'") 0)
         _
-          (let [res (parse-expr tokens pos)]
+          (let [res (parse-expr ctx pos)]
             (if (= res 0)
               0
               (let [expr (get res 0)
                     np (get res 1)
                     tag0 (if (> (count expr) 0) (get expr 0) -1)]
                 (if (= tag0 99)
-                  (do (println "error: parse: unexpected token") 0)
+                  (do (perr ctx pos "unexpected token") 0)
                   (do (push exprs expr)
                       (recur exprs np))))))))))
 
-;; --- Public: read. Returns AST vector or 0 on parse error. ---
-(defn bars-read [source]
+;; --- Public API ---
+;; bars-read / bars-read-at → AST vector or 0 on parse error.
+
+(defn make-ctx [tokens spans text path]
+  (let [v (vector)]
+    (do (push v tokens)
+        (push v spans)
+        (push v text)
+        (push v path)
+        v)))
+
+(defn bars-read-at [source path]
   (if (= source 0)
     0
-    (parse-all (tokenize source))))
+    (let [pack (tokenize source)
+          tokens (get pack 0)
+          spans (get pack 1)]
+      (parse-all (make-ctx tokens spans source path)))))
+
+(defn bars-read [source]
+  (bars-read-at source ""))
 
 ;; ===========================================================================
 ;; Demo

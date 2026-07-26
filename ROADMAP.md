@@ -176,6 +176,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Stage 10e: Rust bootstrap frozen (`bootstrap/FROZEN.md`, `make bars-self`) ✅
 - [x] Stage 10d: types + ownership wired in `build.brs` (soft types; light NLL ownership ON)
 - [x] Phase 13.2: self-host error messages (`error: kind:`, parse unclosed, usage/exit codes)
+- [x] Phase 13.2b: parse spans — `line:col` + `--> file:line:col` on reader errors
 
 **Bars-first workflow:**  
 ```

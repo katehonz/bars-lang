@@ -56,7 +56,7 @@
     (if (= src 0)
       (do (err "io" (str-concat "cannot open file `" (str-concat path "`")))
           0)
-      (let [ast (reader/bars-read src)]
+      (let [ast (reader/bars-read-at src path)]
         (if (= ast 0)
           (do (err "parse" (str-concat "failed in `" (str-concat path "`")))
               0)

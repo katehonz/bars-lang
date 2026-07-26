@@ -188,6 +188,8 @@ bars/
   - Parse: unclosed list/vector, unexpected `)`/`]`, empty program, file path
   - Type soft summary + strict fail with hint; ownership UAM + file path
   - Usage lists stages, exit codes, env flags; link failures show clang command
+  - **Spans:** lexer records byte offsets; `line:col` + `--> path:line:col` on parse errors
+    (`bars-read-at`, `offset-to-span`, open-paren location for unclosed forms)
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)
 - [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност
