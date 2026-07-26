@@ -236,6 +236,85 @@ run_incremental_smoke() {
 
 run_incremental_smoke
 
+# --- Phase 14.1 stdlib smoke (io / json / random+time+regex) ---
+run_stdlib_smoke() {
+  local out log stdout
+
+  # io
+  out="$TMP/io_demo"
+  log="$TMP/io_demo.log"
+  if ! "$CC_BIN" examples/io_demo.brs "$out" >"$log" 2>&1; then
+    echo "FAIL compile  examples/io_demo.brs"
+    tail -5 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    if [[ "$stdout" == *"hello world"* ]] && [[ "$stdout" == *$'\n'0 ]] || [[ "$stdout" == *$'0' ]]; then
+      # last line should be 0 (deleted)
+      if echo "$stdout" | tail -1 | grep -qx '0'; then
+        echo "OK   examples/io_demo.brs"
+        pass=$((pass + 1))
+      else
+        echo "FAIL run      io_demo (expected last line 0)"
+        echo "$stdout" | sed 's/^/     | /'
+        fail=$((fail + 1))
+      fi
+    else
+      echo "FAIL run      io_demo"
+      echo "$stdout" | sed 's/^/     | /'
+      fail=$((fail + 1))
+    fi
+  fi
+
+  # json
+  out="$TMP/json_demo"
+  log="$TMP/json_demo.log"
+  if ! "$CC_BIN" examples/json_demo.brs "$out" >"$log" 2>&1; then
+    echo "FAIL compile  examples/json_demo.brs"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    if echo "$stdout" | grep -q '{"k":7}' && echo "$stdout" | head -1 | grep -qx '42'; then
+      echo "OK   examples/json_demo.brs"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      json_demo"
+      echo "$stdout" | sed 's/^/     | /' | head -20
+      fail=$((fail + 1))
+    fi
+  fi
+
+  # random + time + regex
+  out="$TMP/rtr_demo"
+  log="$TMP/rtr_demo.log"
+  if ! "$CC_BIN" examples/random_time_demo.brs "$out" >"$log" 2>&1; then
+    echo "FAIL compile  examples/random_time_demo.brs"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    # lines: timeok timeok a b rangeok match1 match0 find miss elapsedok
+    # match1=1, match0=0, find=2, miss=-1
+    if echo "$stdout" | sed -n '6p' | grep -qx '1' \
+       && echo "$stdout" | sed -n '7p' | grep -qx '0' \
+       && echo "$stdout" | sed -n '8p' | grep -qx '2' \
+       && echo "$stdout" | sed -n '9p' | grep -qx -- '-1'; then
+      echo "OK   examples/random_time_demo.brs"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      random_time_demo"
+      echo "$stdout" | sed 's/^/     | /'
+      fail=$((fail + 1))
+    fi
+  fi
+}
+
+if [[ -f examples/io_demo.brs ]]; then
+  echo "=== Phase 14.1 stdlib ==="
+  run_stdlib_smoke
+fi
+
 # --- C backend suite (BARS_BACKEND_C=1 → .c + cc) ---
 # Same examples as LLVM; set BARS_SKIP_C_TEST=1 to skip.
 C_EXAMPLES=(

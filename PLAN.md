@@ -229,12 +229,16 @@ bars/
 
 ### 14.1 Стандартна Библиотека (разширение)
 
-- [ ] File I/O (async-ready интерфейс, но sync имплементация)
-- [ ] JSON парсване/генериране
-- [ ] Regex
-- [ ] Random числа
-- [ ] Time/Date
-- [ ] Command-line argument parsing (clap-like)
+- [x] File I/O — `lib/io.brs` + runtime `bars_file_{exists,delete,append,mtime}`
+  - `read-file` / `write-file` / `append-file` / `exists?` / `delete` / `mtime`
+  - Sync only (async-ready API later as package)
+- [x] JSON — `lib/json.brs` pure Bars parse/stringify
+  - Tagged values: null/bool/num/str/arr/obj; objects as key–value pair vectors
+  - Integers only (no floats); escapes for `\" \\ \n \t \r`
+- [x] Regex — `lib/regex.brs` + POSIX `bars_re_is_match` / `bars_re_find`
+- [x] Random — `lib/random.brs` + `bars_srand` / `bars_rand`
+- [x] Time — `lib/time.brs` + `bars_time_unix` / `bars_time_ms` / `bars_sleep_ms`
+- [x] CLI args — `lib/args.brs` (`has-flag?`, `flag-value`, `positionals`)
 
 ### 14.2 Tooling
 

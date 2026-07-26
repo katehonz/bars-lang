@@ -622,3 +622,73 @@ int64_t bars_sleep_ms(int64_t ms) {
     nanosleep(&ts, NULL);
     return 0;
 }
+
+#include <stdlib.h>
+#include <errno.h>
+#include <regex.h>
+#include <sys/time.h>
+
+int64_t bars_file_exists(bars_string_t* path) {
+    if (!path || !path->data) return 0;
+    struct stat st;
+    return (stat(path->data, &st) == 0) ? 1 : 0;
+}
+
+int64_t bars_file_delete(bars_string_t* path) {
+    if (!path || !path->data) return 0;
+    return (unlink(path->data) == 0) ? 1 : 0;
+}
+
+int64_t bars_file_append(bars_string_t* path, bars_string_t* content) {
+    if (!content || !content->data) return 0;
+    const char* p = (path && path->data) ? path->data : "";
+    FILE* f = fopen(p, "ab");
+    if (!f) return 0;
+    size_t written = fwrite(content->data, 1, content->len, f);
+    fclose(f);
+    return (int64_t)written;
+}
+
+int64_t bars_time_unix(void) {
+    return (int64_t)time(NULL);
+}
+
+int64_t bars_time_ms(void) {
+    struct timeval tv;
+    if (gettimeofday(&tv, NULL) != 0) return 0;
+    return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
+}
+
+int64_t bars_srand(int64_t seed) {
+    srand((unsigned int)seed);
+    return 0;
+}
+
+int64_t bars_rand(void) {
+    return (int64_t)rand();
+}
+
+int64_t bars_re_is_match(bars_string_t* text, bars_string_t* pattern) {
+    if (!text || !text->data || !pattern || !pattern->data) return 0;
+    regex_t re;
+    /* REG_NOSUB must NOT be set — we need rm_so/rm_eo for full-match check. */
+    if (regcomp(&re, pattern->data, REG_EXTENDED) != 0) return 0;
+    regmatch_t m;
+    int rc = regexec(&re, text->data, 1, &m, 0);
+    int ok = 0;
+    if (rc == 0 && m.rm_so == 0 && (size_t)m.rm_eo == text->len) ok = 1;
+    regfree(&re);
+    return ok;
+}
+
+int64_t bars_re_find(bars_string_t* text, bars_string_t* pattern) {
+    if (!text || !text->data || !pattern || !pattern->data) return -1;
+    regex_t re;
+    if (regcomp(&re, pattern->data, REG_EXTENDED) != 0) return -1;
+    regmatch_t m;
+    int rc = regexec(&re, text->data, 1, &m, 0);
+    int64_t idx = -1;
+    if (rc == 0) idx = (int64_t)m.rm_so;
+    regfree(&re);
+    return idx;
+}

@@ -143,6 +143,67 @@ Maps can hold vectors and other collections:
 | `str-empty?` | `(str-empty? s)` | `true` if string is empty |
 | `str-count` | `(str-count s)` | Length of string |
 
+## Phase 14.1 modules
+
+Load with `(require "lib/io" :as io)` (etc.). Backed by C runtime primitives where needed.
+
+### `lib/io.brs` — File I/O
+
+| Function | Description |
+|----------|-------------|
+| `exists?` | Path exists |
+| `mtime` | Unix mtime seconds (0 if missing) |
+| `delete` | Unlink path |
+| `read-file` | Slurp whole file (0 if missing) |
+| `write-file` | Overwrite file; returns bytes written |
+| `append-file` | Append; returns bytes written |
+
+### `lib/time.brs` — Time
+
+| Function | Description |
+|----------|-------------|
+| `now` | Unix seconds |
+| `now-ms` | Unix milliseconds |
+| `sleep-ms` | Sleep |
+| `elapsed-ms` | `now-ms - start` |
+
+### `lib/random.brs` — Random
+
+| Function | Description |
+|----------|-------------|
+| `seed!` | Seed libc `rand` |
+| `raw` | Raw `rand()` |
+| `rand-int` | Integer in `[0, n)` |
+| `rand-range` | Inclusive `[lo, hi]` |
+
+### `lib/regex.brs` — POSIX ERE
+
+| Function | Description |
+|----------|-------------|
+| `matches?` | Full-string match |
+| `find` | Start index of first match, or `-1` |
+| `contains?` | Pattern occurs anywhere |
+
+### `lib/json.brs` — JSON (integers)
+
+Tagged values: `[0]` null, `[1 b]` bool, `[2 n]` number, `[3 s]` string,
+`[4 elems]` array, `[5 pairs]` object (`pairs` = vector of `[key val]`).
+
+| Function | Description |
+|----------|-------------|
+| `j-null` / `j-bool` / `j-num` / `j-str` / `j-arr` / `j-obj` | Constructors |
+| `parse` | String → tagged value (or `0` on error) |
+| `stringify` | Tagged value → JSON string |
+
+### `lib/args.brs` — CLI helpers
+
+| Function | Description |
+|----------|-------------|
+| `count-args` / `get-arg` | `argv` length / element |
+| `has-flag?` | Exact flag present |
+| `flag-value` | Token after flag |
+| `positionals` | Non-flag args |
+
 ## `lib/map.brs`
 
 | Function | Signature | Description |

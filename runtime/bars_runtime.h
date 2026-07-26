@@ -170,4 +170,24 @@ int64_t bars_file_mtime(bars_string_t* path);
 /* Sleep for milliseconds (watch mode). Returns 0. */
 int64_t bars_sleep_ms(int64_t ms);
 
+/* File helpers (Phase 14.1) */
+int64_t bars_file_exists(bars_string_t* path);   /* 1 if path exists, else 0 */
+int64_t bars_file_delete(bars_string_t* path);   /* 1 on success, else 0 */
+int64_t bars_file_append(bars_string_t* path, bars_string_t* content); /* bytes written */
+
+/* Time (Phase 14.1) */
+int64_t bars_time_unix(void);  /* Unix seconds */
+int64_t bars_time_ms(void);    /* Unix milliseconds */
+
+/* Random (Phase 14.1) — libc rand; call bars_srand first for reproducibility */
+int64_t bars_srand(int64_t seed);  /* returns 0 */
+int64_t bars_rand(void);           /* 0 .. RAND_MAX */
+
+/* Minimal POSIX regex (Phase 14.1) */
+int64_t bars_re_is_match(bars_string_t* text, bars_string_t* pattern); /* full match 1/0 */
+int64_t bars_re_find(bars_string_t* text, bars_string_t* pattern);     /* start index or -1 */
+
+/* i64 → decimal string (JSON / formatting) */
+/* bars_string_from_i64 already declared above */
+
 #endif

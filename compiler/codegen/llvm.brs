@@ -166,6 +166,16 @@
         (lines-push lines "declare i64 @bars_env_set(i64)")
         (lines-push lines "declare i64 @bars_file_mtime(i64)")
         (lines-push lines "declare i64 @bars_sleep_ms(i64)")
+        (lines-push lines "declare i64 @bars_file_exists(i64)")
+        (lines-push lines "declare i64 @bars_file_delete(i64)")
+        (lines-push lines "declare i64 @bars_file_append(i64, i64)")
+        (lines-push lines "declare i64 @bars_time_unix()")
+        (lines-push lines "declare i64 @bars_time_ms()")
+        (lines-push lines "declare i64 @bars_srand(i64)")
+        (lines-push lines "declare i64 @bars_rand()")
+        (lines-push lines "declare i64 @bars_re_is_match(i64, i64)")
+        (lines-push lines "declare i64 @bars_re_find(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_from_i64(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
@@ -210,9 +220,25 @@
             (if (str-eq? fname "println") "bars_print_any_i64"
               (if (str-eq? fname "bars_env_set") "bars_env_set"
                 (if (str-eq? fname "bars_system") "bars_system"
-                  (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
-                    (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
-                      "")))))))))))
+                  "")))))))))
+
+(defn map-file-ops [fname]
+  (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
+    (if (str-eq? fname "bars_file_exists") "bars_file_exists"
+      (if (str-eq? fname "bars_file_delete") "bars_file_delete"
+        (if (str-eq? fname "bars_file_append") "bars_file_append"
+          (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
+            ""))))))
+
+(defn map-time-rand-ops [fname]
+  (if (str-eq? fname "bars_time_unix") "bars_time_unix"
+    (if (str-eq? fname "bars_time_ms") "bars_time_ms"
+      (if (str-eq? fname "bars_srand") "bars_srand"
+        (if (str-eq? fname "bars_rand") "bars_rand"
+          (if (str-eq? fname "bars_re_is_match") "bars_re_is_match"
+            (if (str-eq? fname "bars_re_find") "bars_re_find"
+              (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                ""))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
@@ -222,7 +248,11 @@
           (let [c (map-map-ops fname)]
             (if (> (count c) 0) c
               (let [d (map-io-ops fname)]
-                (if (> (count d) 0) d fname)))))))))
+                (if (> (count d) 0) d
+                  (let [e (map-file-ops fname)]
+                    (if (> (count e) 0) e
+                      (let [f (map-time-rand-ops fname)]
+                        (if (> (count f) 0) f fname)))))))))))))
 
 ;; ---- operators (small groups = fewer closing parens) ----
 

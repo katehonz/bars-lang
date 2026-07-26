@@ -59,6 +59,15 @@ unsafe extern "C" {
     fn bars_env_set(s: *const u8) -> i64;
     fn bars_file_mtime(path: *const u8) -> i64;
     fn bars_sleep_ms(ms: i64) -> i64;
+    fn bars_file_exists(path: *const u8) -> i64;
+    fn bars_file_delete(path: *const u8) -> i64;
+    fn bars_file_append(path: *const u8, content: *const u8) -> i64;
+    fn bars_time_unix() -> i64;
+    fn bars_time_ms() -> i64;
+    fn bars_srand(seed: i64) -> i64;
+    fn bars_rand() -> i64;
+    fn bars_re_is_match(text: *const u8, pattern: *const u8) -> i64;
+    fn bars_re_find(text: *const u8, pattern: *const u8) -> i64;
 }
 
 pub struct CraneliftBackend {
@@ -128,6 +137,15 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_env_set", bars_env_set as *const u8);
         jit_builder.symbol("bars_file_mtime", bars_file_mtime as *const u8);
         jit_builder.symbol("bars_sleep_ms", bars_sleep_ms as *const u8);
+        jit_builder.symbol("bars_file_exists", bars_file_exists as *const u8);
+        jit_builder.symbol("bars_file_delete", bars_file_delete as *const u8);
+        jit_builder.symbol("bars_file_append", bars_file_append as *const u8);
+        jit_builder.symbol("bars_time_unix", bars_time_unix as *const u8);
+        jit_builder.symbol("bars_time_ms", bars_time_ms as *const u8);
+        jit_builder.symbol("bars_srand", bars_srand as *const u8);
+        jit_builder.symbol("bars_rand", bars_rand as *const u8);
+        jit_builder.symbol("bars_re_is_match", bars_re_is_match as *const u8);
+        jit_builder.symbol("bars_re_find", bars_re_find as *const u8);
 
         let module = JITModule::new(jit_builder);
 
@@ -591,11 +609,19 @@ fn compile_instr<M: Module>(
                 "exit" if arg_vals.len() == 1 => {
                     call_runtime(builder, module, "bars_exit", &arg_vals)?
                 }
-                "bars_system" | "bars_env_set" | "bars_file_mtime" if arg_vals.len() == 1 => {
+                "bars_system" | "bars_env_set" | "bars_file_mtime" | "bars_sleep_ms"
+                | "bars_file_exists" | "bars_file_delete" | "bars_srand"
+                    if arg_vals.len() == 1 => {
                     call_runtime(builder, module, func_name, &arg_vals)?
                 }
-                "bars_sleep_ms" if arg_vals.len() == 1 => {
-                    call_runtime(builder, module, "bars_sleep_ms", &arg_vals)?
+                "bars_file_append" | "bars_re_is_match" | "bars_re_find" if arg_vals.len() == 2 => {
+                    call_runtime(builder, module, func_name, &arg_vals)?
+                }
+                "bars_time_unix" | "bars_time_ms" | "bars_rand" if arg_vals.is_empty() => {
+                    call_runtime(builder, module, func_name, &arg_vals)?
+                }
+                "str-from-i64" | "str_from_i64" if arg_vals.len() == 1 => {
+                    call_runtime(builder, module, "bars_string_from_i64", &arg_vals)?
                 }
                 _ => {
                     if let Some(&func_id) = functions.get(func_name) {

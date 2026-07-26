@@ -91,9 +91,25 @@
           (if (str-eq? fname "args-get") "bars_args_get"
             (if (str-eq? fname "bars_env_set") "bars_env_set"
               (if (str-eq? fname "bars_system") "bars_system"
-                (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
-                  (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
-                    ""))))))))))
+                ""))))))))
+
+(defn map-file-ops [fname]
+  (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
+    (if (str-eq? fname "bars_file_exists") "bars_file_exists"
+      (if (str-eq? fname "bars_file_delete") "bars_file_delete"
+        (if (str-eq? fname "bars_file_append") "bars_file_append"
+          (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
+            ""))))))
+
+(defn map-time-rand-ops [fname]
+  (if (str-eq? fname "bars_time_unix") "bars_time_unix"
+    (if (str-eq? fname "bars_time_ms") "bars_time_ms"
+      (if (str-eq? fname "bars_srand") "bars_srand"
+        (if (str-eq? fname "bars_rand") "bars_rand"
+          (if (str-eq? fname "bars_re_is_match") "bars_re_is_match"
+            (if (str-eq? fname "bars_re_find") "bars_re_find"
+              (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                ""))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
@@ -103,7 +119,11 @@
           (let [c (map-map-ops fname)]
             (if (> (count c) 0) c
               (let [d (map-io-ops fname)]
-                (if (> (count d) 0) d (map-user-fname fname))))))))))
+                (if (> (count d) 0) d
+                  (let [e (map-file-ops fname)]
+                    (if (> (count e) 0) e
+                      (let [f (map-time-rand-ops fname)]
+                        (if (> (count f) 0) f (map-user-fname fname))))))))))))))
 
 (defn binop-c [fname]
   (if (str-eq? fname "+") "+"
