@@ -11,6 +11,7 @@
 (require "compiler/ownership.brs" :as own)
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/llvm.brs" :as llvm)
+(require "compiler/pkg.brs" :as pkg)
 
 (extern "slurp" [path i64] -> i64)
 (extern "spit" [path i64 content i64] -> i64)
@@ -110,21 +111,51 @@
       (let [ast (reader/bars-read-at src path)]
         (if (= ast 0) 0 ast)))))
 
-;; Search order (host-like): exact, relative to base, lib/<path>.
-(defn find-module [base path-raw]
+;; Pack found module as [ast path] or 0.
+(defn found [ast path]
+  (let [out (vector)]
+    (do (push out ast) (push out path) out)))
+
+;; Search package path-deps: name → src/lib.brs, or dep/src/<path>.
+(defn find-in-deps [deps path-raw]
+  (let [bare (pkg/strip-brs path-raw)
+        root (pkg/dep-root-by-name deps bare)]
+    (if (> (count root) 0)
+      (let [lib1 (join-path root "src/lib.brs")
+            a (try-read lib1)]
+        (if (!= a 0) (found a lib1)
+          (let [lib2 (join-path root "src/main.brs")
+                b (try-read lib2)]
+            (if (!= b 0) (found b lib2) 0))))
+      ;; Search each dep's src/ for the path
+      (let [n (count deps)
+            path (ensure-brs-path path-raw)]
+        (loop [i 0]
+          (if (>= i n) 0
+            (let [droot (get (get deps i) 1)
+                  cand (join-path (join-path droot "src") path)
+                  c (try-read cand)]
+              (if (!= c 0) (found c cand)
+                (recur (+ i 1))))))))))
+
+;; Search order: exact, relative to base, lib/, Bars.toml path-deps, bars-deps.
+(defn find-module [base path-raw deps]
   (let [path (ensure-brs-path path-raw)
         a (try-read path)]
-    (if (!= a 0)
-      (let [out (vector)] (do (push out a) (push out path) out))
+    (if (!= a 0) (found a path)
       (let [rel (join-path base path)
             b (try-read rel)]
-        (if (!= b 0)
-          (let [out (vector)] (do (push out b) (push out rel) out))
+        (if (!= b 0) (found b rel)
           (let [libp (join-path "lib" path)
                 c (try-read libp)]
-            (if (!= c 0)
-              (let [out (vector)] (do (push out c) (push out libp) out))
-              0)))))))
+            (if (!= c 0) (found c libp)
+              (let [d (find-in-deps deps path-raw)]
+                (if (!= d 0) d
+                  ;; target/bars-deps/<name>/src/lib.brs (host clone layout)
+                  (let [bare (pkg/strip-brs path-raw)
+                        dep-lib (join-path (join-path (join-path "target/bars-deps" bare) "src") "lib.brs")
+                        e (try-read dep-lib)]
+                    (if (!= e 0) (found e dep-lib) 0)))))))))))
 
 (defn path-in? [visited path]
   (let [n (count visited)]
@@ -136,8 +167,9 @@
 ;; Resolve all requires in an AST (recursive).
 ;; base = directory of the current file (for relative requires).
 ;; visited = paths currently/already loading (cycle + single-load).
+;; deps = Bars.toml path-deps [[name root] ...]
 ;; Returns [flat-ast alias-pairs] or 0 on error.
-(defn resolve-requires-at [ast base visited]
+(defn resolve-requires-at [ast base visited deps]
   (if (= ast 0) 0
     (let [n (count ast)
           result (vector)
@@ -154,10 +186,10 @@
               (let [path-raw (get req 0)
                     alias (get req 1)
                     prefix (mods/module-prefix alias)
-                    found (find-module base path-raw)]
+                    found (find-module base path-raw deps)]
                 (if (= found 0)
                   (do (err "module" (str-concat "cannot find `" (str-concat path-raw "`")))
-                      (note (str-concat "searched from base `" (str-concat base "` and lib/")))
+                      (note (str-concat "searched base `" (str-concat base "`, lib/, Bars.toml path-deps")))
                       0)
                   (let [mod-raw (get found 0)
                         mod-path (get found 1)]
@@ -167,7 +199,7 @@
                           0)
                       (do (push visited mod-path)
                           (let [mod-base (dirname mod-path)
-                                mod-resolved (resolve-requires-at mod-raw mod-base visited)]
+                                mod-resolved (resolve-requires-at mod-raw mod-base visited deps)]
                             (if (= mod-resolved 0) 0
                               (let [mod-ast (get mod-resolved 0)
                                     mod-pairs (get mod-resolved 1)
@@ -183,14 +215,19 @@
                   (recur (+ i 1))))))))))
 
 (defn resolve-requires [ast]
-  (resolve-requires-at ast "." (vector)))
+  (resolve-requires-at ast "." (vector) (vector)))
 
-;; Resolve from a main file: seed visited with the main path and use its dir as base.
+;; Resolve from a main file: seed visited, load Bars.toml path-deps, use dirname base.
 (defn resolve-requires-main [ast main-path]
   (let [visited (vector)
-        base (dirname main-path)]
+        base (dirname main-path)
+        proj (pkg/find-manifest-dir base)
+        deps (if (= (count proj) 0) (vector) (pkg/load-path-deps proj))]
     (do (push visited main-path)
-        (resolve-requires-at ast base visited))))
+        (if (> (count deps) 0)
+          (println (str-concat "  note: Bars.toml path-deps from `" (str-concat proj "`")))
+          0)
+        (resolve-requires-at ast base visited deps))))
 
 (defn run-typecheck [ast path]
   (if (skip-typecheck?)

@@ -59,6 +59,7 @@ EXAMPLES=(
   examples/vector.brs
   examples/module_demo.brs
   examples/module_nested.brs
+  examples/pkg_app/src/main.brs
   examples/adt_demo.brs
   examples/adt_demo2.brs
   examples/string.brs
