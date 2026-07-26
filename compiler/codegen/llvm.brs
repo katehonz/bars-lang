@@ -164,6 +164,8 @@
         (lines-push lines "declare i64 @bars_args_get(i64)")
         (lines-push lines "declare i64 @bars_exit(i64)")
         (lines-push lines "declare i64 @bars_env_set(i64)")
+        (lines-push lines "declare i64 @bars_file_mtime(i64)")
+        (lines-push lines "declare i64 @bars_sleep_ms(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
@@ -208,7 +210,9 @@
             (if (str-eq? fname "println") "bars_print_any_i64"
               (if (str-eq? fname "bars_env_set") "bars_env_set"
                 (if (str-eq? fname "bars_system") "bars_system"
-                  "")))))))))
+                  (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
+                    (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
+                      "")))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

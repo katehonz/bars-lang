@@ -36,7 +36,11 @@ help:
 	@echo "     BARS_STRICT_TYPES=1                            hard-fail types"
 	@echo "     BARS_BACKEND_C=1     use C backend (.c + cc) instead of LLVM"
 	@echo "     BARS_SKIP_C_TEST=1   skip C suite inside self-test"
+	@echo "     BARS_FORCE=1         force rebuild (disable mtime skip)"
+	@echo "     BARS_NO_INCREMENTAL=1  always recompile"
 	@echo "     (self-host skips types only; ownership is light NLL)"
+	@echo ""
+	@echo "bars-self: ./bars-self <in.brs> <out>  |  ./bars-self watch <in.brs> <out>"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 

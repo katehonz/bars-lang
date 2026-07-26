@@ -165,4 +165,9 @@ int64_t bars_system(bars_string_t* cmd);
 /* 1 if env var is set and non-empty, else 0 */
 int64_t bars_env_set(bars_string_t* name);
 
+/* File mtime as Unix seconds (0 if missing/unreadable). For incremental builds. */
+int64_t bars_file_mtime(bars_string_t* path);
+/* Sleep for milliseconds (watch mode). Returns 0. */
+int64_t bars_sleep_ms(int64_t ms);
+
 #endif

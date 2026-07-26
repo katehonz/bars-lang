@@ -205,8 +205,15 @@ bars/
   - **Types:** warnings tagged with `[path]`; `type_check_at` / `check_ownership_at`
   - **Snippets:** host-style source line + caret under column for parse/ownership
   - **Type spans:** constraints store expr offset; mismatches print `at line:col` + snippet
-- [ ] **13.3** Incremental compilation
-- [ ] **13.4** Watch mode (`bars watch`)
+- [x] **13.3** Incremental compilation (light mtime skip)
+  - `bars_file_mtime` / `bars_sleep_ms` in runtime; wired through host + LLVM/C maps
+  - Resolve returns loaded source paths (main + requires + Bars.toml)
+  - Skip backend/link when output mtime ≥ max source mtime
+  - `BARS_FORCE=1` / `BARS_NO_INCREMENTAL=1` force full rebuild
+- [x] **13.4** Watch mode (`bars-self watch <in.brs> <out>`)
+  - Poll every 500ms; recompile when any loaded source changes
+  - On failure, wait for next source change (no spam)
+  - Ctrl+C to stop
 - [x] **13.5** C code generation backend (`compiler/codegen/c.brs`)
   - HIR → `.c` (int64_t temps, goto labels, runtime via bars_runtime.h)
   - Opt-in: `BARS_BACKEND_C=1 ./bars-self in.brs out` → `out.c` + `cc -I. … -lgc -lm`

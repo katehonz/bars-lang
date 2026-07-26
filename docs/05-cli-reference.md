@@ -97,6 +97,23 @@ Supported LSP features:
 
 Configure your editor to launch `bars lsp` as the language server for `.brs` files.
 
+## Self-hosted compiler (`bars-self`)
+
+Built with `make bars-self`. Day-to-day self-host entry point (Bars-first pipeline).
+
+```bash
+./bars-self <input.brs> <output_bin>
+./bars-self watch <input.brs> <output_bin>
+```
+
+| Feature | Behavior |
+|---------|----------|
+| **Incremental** | Skips codegen/link when the binary is newer than all loaded sources (main, requires, `Bars.toml`) |
+| **Watch** | Polls every 500ms; recompiles when any loaded source changes (Ctrl+C to stop) |
+| **Force** | `BARS_FORCE=1` or `BARS_NO_INCREMENTAL=1` always rebuilds |
+
+Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`, `BARS_BACKEND_C=1` (C backend).
+
 ## Options
 
 Global options (if any) are parsed by `clap`. Use `--help` for full usage.

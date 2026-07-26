@@ -602,3 +602,23 @@ int64_t bars_env_set(bars_string_t* name) {
     const char* v = getenv(name->data);
     return (v && v[0] != '\0') ? 1 : 0;
 }
+
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
+
+int64_t bars_file_mtime(bars_string_t* path) {
+    if (!path || !path->data) return 0;
+    struct stat st;
+    if (stat(path->data, &st) != 0) return 0;
+    return (int64_t)st.st_mtime;
+}
+
+int64_t bars_sleep_ms(int64_t ms) {
+    if (ms <= 0) return 0;
+    struct timespec ts;
+    ts.tv_sec = (time_t)(ms / 1000);
+    ts.tv_nsec = (long)((ms % 1000) * 1000000L);
+    nanosleep(&ts, NULL);
+    return 0;
+}

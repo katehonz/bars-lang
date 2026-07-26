@@ -91,7 +91,9 @@
           (if (str-eq? fname "args-get") "bars_args_get"
             (if (str-eq? fname "bars_env_set") "bars_env_set"
               (if (str-eq? fname "bars_system") "bars_system"
-                ""))))))))
+                (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"
+                  (if (str-eq? fname "bars_sleep_ms") "bars_sleep_ms"
+                    ""))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

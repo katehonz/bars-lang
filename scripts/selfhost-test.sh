@@ -189,6 +189,53 @@ else
   echo "SKIP git-dep smoke (git not found)"
 fi
 
+# --- incremental mtime skip (Phase 13.3) ---
+run_incremental_smoke() {
+  local src="examples/math.brs"
+  local out="$TMP/inc_math"
+  local log1="$TMP/inc1.log"
+  local log2="$TMP/inc2.log"
+  local log3="$TMP/inc3.log"
+  if ! "$CC_BIN" "$src" "$out" >"$log1" 2>&1; then
+    echo "FAIL compile  incremental first build"
+    tail -5 "$log1" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! "$CC_BIN" "$src" "$out" >"$log2" 2>&1; then
+    echo "FAIL compile  incremental second build"
+    fail=$((fail + 1))
+    return
+  fi
+  if ! grep -q 'up to date' "$log2"; then
+    echo "FAIL incremental: expected 'up to date' on second build"
+    cat "$log2" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log3" 2>&1; then
+    echo "FAIL compile  incremental force rebuild"
+    fail=$((fail + 1))
+    return
+  fi
+  if grep -q 'up to date' "$log3"; then
+    echo "FAIL incremental: BARS_FORCE=1 should not skip"
+    fail=$((fail + 1))
+    return
+  fi
+  local stdout
+  stdout="$("$out" 2>/dev/null || true)"
+  if [[ "$stdout" == *"120"* ]]; then
+    echo "OK   incremental skip + BARS_FORCE rebuild"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      incremental binary (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+}
+
+run_incremental_smoke
+
 # --- C backend suite (BARS_BACKEND_C=1 → .c + cc) ---
 # Same examples as LLVM; set BARS_SKIP_C_TEST=1 to skip.
 C_EXAMPLES=(

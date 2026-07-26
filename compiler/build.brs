@@ -1,8 +1,10 @@
-;; Self-hosted build pipeline — Stage 10d / Phase 13.2
-;; reader → modules → macros → types → ownership → HIR → LLVM → clang
+;; Self-hosted build pipeline — Stage 10d / Phase 13.2–13.4
+;; reader → modules → macros → types → ownership → HIR → LLVM|C → link
 ;;
 ;; Exit codes: 0 ok, 1 usage/input/parse, 2 link (clang), 3 typecheck, 4 ownership
 ;; Skip: BARS_SKIP_TYPECHECK / BARS_SKIP_OWNERSHIP (non-empty env)
+;; Incremental: skip link if output newer than all loaded sources (BARS_FORCE=1 to rebuild)
+;; Watch: bars-self watch <in.brs> <out>
 
 (require "compiler/reader.brs" :as reader)
 (require "compiler/modules.brs" :as mods)
@@ -18,6 +20,8 @@
 (extern "spit" [path i64 content i64] -> i64)
 (extern "bars_system" [cmd i64] -> i64)
 (extern "bars_env_set" [name i64] -> i64)
+(extern "bars_file_mtime" [path i64] -> i64)
+(extern "bars_sleep_ms" [ms i64] -> i64)
 
 ;; ---- diagnostics (Phase 13.2) ----
 
@@ -32,10 +36,13 @@
 
 (defn usage []
   (do (println "Usage: bars-self <input.brs> <output_bin>")
+      (println "       bars-self watch <input.brs> <output_bin>")
       (println "  Stages: parse → modules → macros → types → ownership → HIR → backend → link")
       (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership")
       (println "  Env:    BARS_SKIP_TYPECHECK=1  BARS_SKIP_OWNERSHIP=1  BARS_STRICT_TYPES=1")
       (println "          BARS_BACKEND=llvm|c   (default llvm; c → .c + cc)")
+      (println "          BARS_FORCE=1          rebuild even if up to date")
+      (println "          BARS_NO_INCREMENTAL=1 always recompile")
       1))
 
 ;; Types ON by default (soft warnings). Ownership ON by default (light NLL).
@@ -51,6 +58,10 @@
 
 (defn strict-types? []
   (= (bars_env_set "BARS_STRICT_TYPES") 1))
+
+(defn force-rebuild? []
+  (if (= (bars_env_set "BARS_FORCE") 1) true
+    (= (bars_env_set "BARS_NO_INCREMENTAL") 1)))
 
 ;; Load a .brs file to AST. slurp returns 0 if file missing.
 ;; bars-read returns 0 on parse error.
@@ -220,16 +231,42 @@
   (resolve-requires-at ast "." (vector) (vector)))
 
 ;; Resolve from a main file: seed visited, load Bars.toml path-deps, use dirname base.
+;; Returns [flat-ast alias-pairs source-paths] or 0.
+;; source-paths = main + all required modules (for incremental mtime checks).
 (defn resolve-requires-main [ast main-path]
   (let [visited (vector)
         base (dirname main-path)
         proj (pkg/find-manifest-dir base)
         deps (if (= (count proj) 0) (vector) (pkg/load-path-deps proj))]
     (do (push visited main-path)
+        (if (> (count proj) 0)
+          (push visited (join-path proj "Bars.toml"))
+          0)
         (if (> (count deps) 0)
           (println (str-concat "  note: Bars.toml path-deps from `" (str-concat proj "`")))
           0)
-        (resolve-requires-at ast base visited deps))))
+        (let [resolved (resolve-requires-at ast base visited deps)]
+          (if (= resolved 0) 0
+            (let [out (vector)]
+              (do (push out (get resolved 0))
+                  (push out (get resolved 1))
+                  (push out visited)
+                  out)))))))
+
+;; ---- incremental (Phase 13.3) ----
+
+(defn max-mtime [paths]
+  (let [n (count paths)]
+    (loop [i 0 m 0]
+      (if (>= i n) m
+        (let [t (bars_file_mtime (get paths i))]
+          (recur (+ i 1) (if (> t m) t m)))))))
+
+;; True when output exists and is at least as new as every loaded source.
+(defn up-to-date? [sources output-path]
+  (let [out-m (bars_file_mtime output-path)]
+    (if (= out-m 0) false
+      (>= out-m (max-mtime sources)))))
 
 (defn run-typecheck [ast path text]
   (if (skip-typecheck?)
@@ -306,18 +343,72 @@
               1
               (let [flat (get resolved 0)
                     pairs (get resolved 1)
-                    with-quals (mods/subst-qualified flat pairs)
-                    expanded (macros/expand-program with-quals)
-                    tc (run-typecheck expanded input-path src)]
-                (if (!= tc 0)
-                  3
-                  (let [oc (run-ownership expanded input-path src)]
-                    (if (!= oc 0)
-                      4
-                      (emit-and-link (hir/lower-program expanded) output-path))))))))))))
+                    sources (get resolved 2)]
+                (if (if (force-rebuild?) false (up-to-date? sources output-path))
+                  (do (note (str-concat "up to date: `" (str-concat output-path "`")))
+                      0)
+                  (let [with-quals (mods/subst-qualified flat pairs)
+                        expanded (macros/expand-program with-quals)
+                        tc (run-typecheck expanded input-path src)]
+                    (if (!= tc 0)
+                      3
+                      (let [oc (run-ownership expanded input-path src)]
+                        (if (!= oc 0)
+                          4
+                          (emit-and-link (hir/lower-program expanded) output-path))))))))))))))
+
+;; ---- watch (Phase 13.4) ----
+;; Poll source mtimes; recompile when any source is newer than the binary.
+;; Interval fixed at 500ms (no getenv value API yet).
+
+;; int to string for watch status
+(defn int-str? [n]
+  (let [d "0123456789"]
+    (if (< n 0) (str-concat "-" (int-str? (- 0 n)))
+      (if (< n 10) (str-slice d n (+ n 1))
+        (str-concat (int-str? (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+
+;; Poll source mtimes; recompile when any loaded source is newer than last attempt.
+;; On failure, wait for the next source change (no spam every tick).
+(defn watch-mode [input-path output-path]
+  (do (println (str-concat "watch: `" (str-concat input-path
+                (str-concat "` → `" (str-concat output-path "` (Ctrl+C to stop)")))))
+      (loop [last-src 0]
+        (let [pack (read-file-pack input-path)]
+          (if (= pack 0)
+            (do (note "waiting for input file…")
+                (bars_sleep_ms 500)
+                (recur last-src))
+            (let [raw (get pack 0)
+                  resolved (resolve-requires-main raw input-path)]
+              (if (= resolved 0)
+                (do (bars_sleep_ms 500)
+                    (recur last-src))
+                (let [sources (get resolved 2)
+                      src-m (max-mtime sources)
+                      out-m (bars_file_mtime output-path)
+                      changed (if (= last-src 0) true (> src-m last-src))
+                      stale (if (= out-m 0) true (> src-m out-m))
+                      need (if changed true stale)]
+                  (if need
+                    (do (println (str-concat "watch: compiling `" (str-concat input-path "`…")))
+                        (let [code (compile-file input-path output-path)]
+                          (if (= code 0)
+                            (println "watch: ok")
+                            (println (str-concat "watch: failed (exit "
+                                      (str-concat (int-str? code) ")"))))
+                          (bars_sleep_ms 500)
+                          (recur src-m)))
+                    (do (bars_sleep_ms 500)
+                        (recur last-src)))))))))))
 
 (defn main []
   (let [n (args-count)]
     (if (< n 3)
       (usage)
-      (compile-file (args-get 1) (args-get 2)))))
+      (let [a1 (args-get 1)]
+        (if (str-eq? a1 "watch")
+          (if (< n 4)
+            (usage)
+            (watch-mode (args-get 2) (args-get 3)))
+          (compile-file a1 (args-get 2)))))))
