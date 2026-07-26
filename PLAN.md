@@ -206,7 +206,10 @@ bars/
   - **Type spans:** constraints store expr offset; mismatches print `at line:col` + snippet
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)
-- [ ] **13.5** C code generation backend (като Nim) — за максимална портабилност
+- [x] **13.5** C code generation backend (`compiler/codegen/c.brs`)
+  - HIR → `.c` (int64_t temps, goto labels, runtime via bars_runtime.h)
+  - Opt-in: `BARS_BACKEND_C=1 ./bars-self in.brs out` → `out.c` + `cc -I. … -lgc -lm`
+  - Default remains LLVM (`.ll` + clang)
 
 ---
 

@@ -33,6 +33,7 @@ help:
 	@echo "Env: types + ownership ON by default"
 	@echo "     BARS_SKIP_TYPECHECK=1 / BARS_SKIP_OWNERSHIP=1  force off"
 	@echo "     BARS_STRICT_TYPES=1                            hard-fail types"
+	@echo "     BARS_BACKEND_C=1     use C backend (.c + cc) instead of LLVM"
 	@echo "     (self-host skips types only; ownership is light NLL)"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────

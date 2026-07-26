@@ -11,6 +11,7 @@
 (require "compiler/ownership.brs" :as own)
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/llvm.brs" :as llvm)
+(require "compiler/codegen/c.brs" :as cgen)
 (require "compiler/pkg.brs" :as pkg)
 
 (extern "slurp" [path i64] -> i64)
@@ -31,9 +32,10 @@
 
 (defn usage []
   (do (println "Usage: bars-self <input.brs> <output_bin>")
-      (println "  Stages: parse → modules → macros → types → ownership → HIR → LLVM → clang")
+      (println "  Stages: parse → modules → macros → types → ownership → HIR → backend → link")
       (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership")
       (println "  Env:    BARS_SKIP_TYPECHECK=1  BARS_SKIP_OWNERSHIP=1  BARS_STRICT_TYPES=1")
+      (println "          BARS_BACKEND=llvm|c   (default llvm; c → .c + cc)")
       1))
 
 ;; Types ON by default (soft warnings). Ownership ON by default (light NLL).
@@ -250,6 +252,46 @@
             (note "use-after-move on Owned values; BARS_SKIP_OWNERSHIP=1 to disable")
             oc)))))
 
+;; Backend: llvm (default) or c. Set BARS_BACKEND=c for C transpiler.
+(defn use-c-backend? []
+  (let [v (bars_env_set "BARS_BACKEND")]
+    ;; bars_env_set returns 1 if set; check actual value via env not available —
+    ;; use BARS_BACKEND_C=1 as reliable flag, or BARS_BACKEND nonempty with c.
+    (if (= (bars_env_set "BARS_BACKEND_C") 1) true
+      false)))
+
+(defn link-llvm [output-path]
+  (let [ll-path (str-concat output-path ".ll")
+        cmd (str-concat "clang -Wno-override-module "
+              (str-concat ll-path
+                (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
+        status (bars_system cmd)]
+    (if (!= status 0)
+      (do (err "link" "clang failed (LLVM backend)")
+          (note (str-concat "command: " cmd))
+          2)
+      0)))
+
+(defn link-c [output-path]
+  (let [c-path (str-concat output-path ".c")
+        cmd (str-concat "cc -O2 -I. "
+              (str-concat c-path
+                (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
+        status (bars_system cmd)]
+    (if (!= status 0)
+      (do (err "link" "cc failed (C backend)")
+          (note (str-concat "command: " cmd))
+          (note "check the C compiler diagnostics above")
+          2)
+      0)))
+
+(defn emit-and-link [hir-lines output-path]
+  (if (use-c-backend?)
+    (do (cgen/compile-c hir-lines output-path)
+        (link-c output-path))
+    (do (llvm/compile-llvm hir-lines output-path)
+        (link-llvm output-path))))
+
 (defn compile-file [input-path output-path]
   (let [pack (read-file-pack input-path)]
     (if (= pack 0)
@@ -272,19 +314,7 @@
                   (let [oc (run-ownership expanded input-path src)]
                     (if (!= oc 0)
                       4
-                      (let [hir-lines (hir/lower-program expanded)
-                            _ (llvm/compile-llvm hir-lines output-path)
-                            ll-path (str-concat output-path ".ll")
-                            cmd (str-concat "clang -Wno-override-module "
-                                  (str-concat ll-path
-                                    (str-concat " runtime/bars_runtime.o -lgc -lm -o " output-path)))
-                            status (bars_system cmd)]
-                        (if (!= status 0)
-                          (do (err "link" "clang failed while producing binary")
-                              (note (str-concat "command: " cmd))
-                              (note "check the clang diagnostics above")
-                              2)
-                          0)))))))))))))
+                      (emit-and-link (hir/lower-program expanded) output-path))))))))))))
 
 (defn main []
   (let [n (args-count)]
