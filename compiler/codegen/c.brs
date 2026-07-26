@@ -66,7 +66,9 @@
         (if (str-eq? fname "str-count") "bars_string_length"
           (if (str-eq? fname "str-starts-with?") "bars_string_starts_with"
             (if (str-eq? fname "str-index-of") "bars_string_index_of"
-              "")))))))
+              (if (str-eq? fname "code-char") "bars_code_char"
+                (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                  "")))))))))
 
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"
@@ -110,7 +112,8 @@
           (if (str-eq? fname "bars_re_is_match") "bars_re_is_match"
             (if (str-eq? fname "bars_re_find") "bars_re_find"
               (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
-                ""))))))))
+                (if (str-eq? fname "code-char") "bars_code_char"
+                  "")))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

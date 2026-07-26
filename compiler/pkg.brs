@@ -312,8 +312,7 @@
     (do (println "error: pkg: name required") 1)
     (let [src (join-path pkg-name "src")
           toml (str-concat "[package]\nname = \""
-                  (str-concat pkg-name
-                    (str-concat "\"\nversion = \"0.1.0\"\n\n[dependencies]\n")))
+                  (str-concat pkg-name "\"\nversion = \"0.1.0\"\n\n[dependencies]\n"))
           lib-body (str-concat ";; " (str-concat pkg-name " library\n\n(defn hello []\n  42)\n"))
           main-body (str-concat ";; " (str-concat pkg-name " binary\n\n(defn main []\n  (println 0)\n  0)\n"))]
       (do (bars_system (str-concat "mkdir -p " (shell-quote src)))

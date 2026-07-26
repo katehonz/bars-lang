@@ -447,6 +447,7 @@
         (env_insert env "bars_re_is_match" bin)
         (env_insert env "bars_re_find" bin)
         (env_insert env "str-from-i64" unary)
+        (env_insert env "code-char" unary)
         (env_insert env "args-count" (mono_scheme (T_Fun (empty_vec) (T_I64))))
         (env_insert env "args-get" unary)
         (env_insert env "nil" i64-t)

@@ -177,6 +177,7 @@
         (lines-push lines "declare i64 @bars_re_is_match(i64, i64)")
         (lines-push lines "declare i64 @bars_re_find(i64, i64)")
         (lines-push lines "declare i64 @bars_string_from_i64(i64)")
+        (lines-push lines "declare i64 @bars_code_char(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
@@ -195,7 +196,9 @@
         (if (str-eq? fname "str-count") "bars_string_length"
           (if (str-eq? fname "str-starts-with?") "bars_string_starts_with"
             (if (str-eq? fname "str-index-of") "bars_string_index_of"
-              "")))))))
+              (if (str-eq? fname "code-char") "bars_code_char"
+                (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                  "")))))))))
 
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"
@@ -240,7 +243,8 @@
           (if (str-eq? fname "bars_re_is_match") "bars_re_is_match"
             (if (str-eq? fname "bars_re_find") "bars_re_find"
               (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
-                ""))))))))
+                (if (str-eq? fname "code-char") "bars_code_char"
+                  "")))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
@@ -388,35 +392,48 @@
         o1 (get ir 0)
         g1 (get ir 1)
         handled (get ir 2)]
-    (if (= handled 1) [o1 g1]
-      (if (str-eq? fname "println")
-        (let [r (if (<= n 3)
-                  ["0" o1 g1]
-                  (pair-resolve words 3 o1 env g1))
-              arg (get r 0)
+    (if (= handled 1)
+      [o1 g1]
+      ;; str-concat with one arg is identity (host/cranelift does this too)
+      ;; HIR: call dest str-concat var x  → n = 5
+      (if (if (str-eq? fname "str-concat") (= n 5) false)
+        (let [r (pair-resolve words 3 o1 env g1)
+              a (get r 0)
               o2 (get r 1)
               g2 (get r 2)]
           (do (lines-push o2
                 (str-concat "  " (str-concat (llvm-local dest)
-                  (str-concat " = call i64 @bars_print_any_i64(i64 " (str-concat arg ")")))))
-              (lines-push o2 "  call i64 @bars_print_newline()")
+                  (str-concat " = add i64 " (str-concat a ", 0")))))
               [o2 g2]))
-        (let [mapped (map-fname fname)
-              gname (llvm-global mapped)]
-          (if (<= n 3)
-            (do (lines-push o1
+        (if (str-eq? fname "println")
+          (let [r (if (<= n 3)
+                    ["0" o1 g1]
+                    (pair-resolve words 3 o1 env g1))
+                arg (get r 0)
+                o2 (get r 1)
+                g2 (get r 2)]
+            (do (lines-push o2
                   (str-concat "  " (str-concat (llvm-local dest)
-                    (str-concat " = call i64 " (str-concat gname "()")))))
-                [o1 g1])
-            (let [ra (emit-call-args words n o1 env g1)
-                  arglist (get ra 0)
-                  o2 (get ra 1)
-                  g2 (get ra 2)]
-              (do (lines-push o2
+                    (str-concat " = call i64 @bars_print_any_i64(i64 " (str-concat arg ")")))))
+                (lines-push o2 "  call i64 @bars_print_newline()")
+                [o2 g2]))
+          (let [mapped (map-fname fname)
+                gname (llvm-global mapped)]
+            (if (<= n 3)
+              (do (lines-push o1
                     (str-concat "  " (str-concat (llvm-local dest)
-                      (str-concat " = call i64 " (str-concat gname
-                        (str-concat "(" (str-concat arglist ")")))))))
-                  [o2 g2]))))))))
+                      (str-concat " = call i64 " (str-concat gname "()")))))
+                  [o1 g1])
+              (let [ra (emit-call-args words n o1 env g1)
+                    arglist (get ra 0)
+                    o2 (get ra 1)
+                    g2 (get ra 2)
+                    call (str-concat " = call i64 "
+                            (str-concat gname
+                              (str-concat "(" (str-concat arglist ")"))))]
+                (do (lines-push o2
+                      (str-concat "  " (str-concat (llvm-local dest) call)))
+                    [o2 g2])))))))))
 
 ;; Returns [output reg]
 (defn emit-branch [output words env reg]
