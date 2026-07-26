@@ -53,6 +53,35 @@ Special characters are sanitized for the backends (`?` → `_Q`, `+` → `_plus`
   (+ a b))
 ```
 
+### Traits (Phase 14.4 v0)
+
+Static methods via naming convention (no dynamic dispatch yet):
+
+```clojure
+(deftrait Show [show])
+
+(impl Show for i64
+  (defn show [x] x))
+
+(trait-call Show show i64 7)   ;; → (Show_show_i64 7)
+```
+
+### `defconst`
+
+```clojure
+(defconst ANSWER 42)
+(ANSWER)   ;; → 42  (zero-arg function)
+```
+
+### Async (package, not core)
+
+```clojure
+(require "lib/async" :as async)
+(async/ready 1)
+(async/pending)
+(async/unwrap fut)
+```
+
 Type annotations in parameters use the `^type` syntax. Supported types:
 - `^i64` — 64-bit integer
 - `^f64` — 64-bit float

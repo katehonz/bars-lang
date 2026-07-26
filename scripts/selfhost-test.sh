@@ -475,6 +475,62 @@ EOF
 echo "=== Phase 14.3 ecosystem ==="
 run_registry_smoke
 
+# --- Phase 14.4 language (traits, async stub, wasm wat) ---
+run_lang_smoke() {
+  local out log stdout
+
+  out="$TMP/trait_demo"
+  if ! "$CC_BIN" examples/trait_demo.brs "$out" >"$TMP/trait.log" 2>&1; then
+    echo "FAIL compile  examples/trait_demo.brs"
+    tail -8 "$TMP/trait.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    if echo "$stdout" | head -1 | grep -qx '7' && echo "$stdout" | tail -1 | grep -qx '42'; then
+      echo "OK   examples/trait_demo.brs (deftrait/impl/defconst)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      trait_demo"
+      echo "$stdout" | sed 's/^/     | /'
+      fail=$((fail + 1))
+    fi
+  fi
+
+  out="$TMP/async_demo"
+  if ! "$CC_BIN" examples/async_demo.brs "$out" >"$TMP/async.log" 2>&1; then
+    echo "FAIL compile  examples/async_demo.brs"
+    tail -8 "$TMP/async.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    if echo "$stdout" | sed -n '4p' | grep -qx '99'; then
+      echo "OK   examples/async_demo.brs (Future poll stub)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      async_demo"
+      echo "$stdout" | sed 's/^/     | /'
+      fail=$((fail + 1))
+    fi
+  fi
+
+  out="$TMP/wasm_math"
+  if ! BARS_FORCE=1 BARS_BACKEND_WASM=1 "$CC_BIN" examples/math.brs "$out" >"$TMP/wasm.log" 2>&1; then
+    echo "FAIL compile  wasm math"
+    cat "$TMP/wasm.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif [[ ! -f "$out.wat" ]] || ! grep -q 'i64.add' "$out.wat"; then
+    echo "FAIL wasm     missing .wat / i64.add"
+    cat "$TMP/wasm.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    echo "OK   BARS_BACKEND_WASM=1 → .wat (experimental)"
+    pass=$((pass + 1))
+  fi
+}
+
+echo "=== Phase 14.4 language ==="
+run_lang_smoke
+
 # --- C backend suite (BARS_BACKEND_C=1 → .c + cc) ---
 # Same examples as LLVM; set BARS_SKIP_C_TEST=1 to skip.
 C_EXAMPLES=(

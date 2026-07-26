@@ -142,7 +142,8 @@ mylib = { version = "0.1.0" }   # from local registry
 # remote = { git = "https://…", branch = "main" }
 ```
 
-Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`, `BARS_BACKEND_C=1` (C backend).
+Other env flags: `BARS_SKIP_TYPECHECK`, `BARS_SKIP_OWNERSHIP`, `BARS_STRICT_TYPES`,
+`BARS_BACKEND_C=1` (C backend), `BARS_BACKEND_WASM=1` (experimental `.wat` emit).
 
 ## Options
 

@@ -273,11 +273,21 @@ bars/
 
 ### 14.4 Езикови Фичъри (еволюция)
 
-- [ ] Trait/Interface система (като Rust traits или Haskell typeclasses)
-- [ ] Const generics
-- [ ] Async/await (ако екосистемата го изисква — НЕ в core, а като пакет)
-- [ ] Compile-time execution (като Nim VM или Rust const fn)
-- [ ] WASM target
+- [x] Trait system (v0) — macros in `compiler/macros.brs`
+  - `(deftrait Show [show])` — erased declaration
+  - `(impl Show for Type (defn show [x] …))` → `Show_show_Type`
+  - `(trait-call Show show Type args…)` → call mangled method
+  - Example: `examples/trait_demo.brs`
+- [x] `defconst Name value` → zero-arg `(defn Name [] value)`
+- [ ] Const generics (deferred — needs richer type system)
+- [x] Async as package (not core) — `lib/async.brs` Future `[Pending|Ready]`
+  - Example: `examples/async_demo.brs`
+  - No HOF poll runtime yet (self-host safe)
+- [ ] Compile-time VM / `const fn` (deferred)
+- [x] WASM target (experimental WAT emitter)
+  - `BARS_BACKEND_WASM=1` → `.wat` via `compiler/codegen/wasm.brs`
+  - i64-oriented; control-flow incomplete (no full branch/jump yet)
+  - Optional `wat2wasm` / `wasm-tools` for `.wasm`
 
 ---
 

@@ -14,6 +14,7 @@
 (require "compiler/hir.brs" :as hir)
 (require "compiler/codegen/llvm.brs" :as llvm)
 (require "compiler/codegen/c.brs" :as cgen)
+(require "compiler/codegen/wasm.brs" :as wasm)
 (require "compiler/pkg.brs" :as pkg)
 (require "compiler/fmt.brs" :as fmt)
 (require "compiler/lint.brs" :as lint)
@@ -51,7 +52,8 @@
       (println "  Stages: parse → modules → macros → types → ownership → HIR → backend → link")
       (println "  Exit:   0 ok | 1 input/parse | 2 link | 3 types | 4 ownership | 5 lint")
       (println "  Env:    BARS_SKIP_TYPECHECK=1  BARS_SKIP_OWNERSHIP=1  BARS_STRICT_TYPES=1")
-      (println "          BARS_BACKEND=llvm|c   (default llvm; c → .c + cc)")
+      (println "          BARS_BACKEND=llvm|c|wasm  (default llvm)")
+      (println "          BARS_BACKEND_C=1 / BARS_BACKEND_WASM=1")
       (println "          BARS_FORCE=1          rebuild even if up to date")
       (println "          BARS_NO_INCREMENTAL=1 always recompile")
       (println "          BARS_REGISTRY=path    local package registry (default ~/.bars/registry)")
@@ -301,13 +303,12 @@
             (note "use-after-move on Owned values; BARS_SKIP_OWNERSHIP=1 to disable")
             oc)))))
 
-;; Backend: llvm (default) or c. Set BARS_BACKEND=c for C transpiler.
+;; Backend: llvm (default), c, or experimental wasm/wat.
 (defn use-c-backend? []
-  (let [v (bars_env_set "BARS_BACKEND")]
-    ;; bars_env_set returns 1 if set; check actual value via env not available —
-    ;; use BARS_BACKEND_C=1 as reliable flag, or BARS_BACKEND nonempty with c.
-    (if (= (bars_env_set "BARS_BACKEND_C") 1) true
-      false)))
+  (= (bars_env_set "BARS_BACKEND_C") 1))
+
+(defn use-wasm-backend? []
+  (= (bars_env_set "BARS_BACKEND_WASM") 1))
 
 (defn link-llvm [output-path]
   (let [ll-path (str-concat output-path ".ll")
@@ -334,12 +335,43 @@
           2)
       0)))
 
+;; WASM: emit .wat only (no link). Optional wat2wasm if present.
+(defn link-wasm [output-path]
+  (let [wat (str-concat output-path ".wat")
+        wasm-out (str-concat output-path ".wasm")
+        has-w2w (= (bars_system "command -v wat2wasm >/dev/null 2>&1") 0)
+        has-tools (= (bars_system "command -v wasm-tools >/dev/null 2>&1") 0)]
+    (if has-w2w
+      (let [st (bars_system (str-concat "wat2wasm " (str-concat wat (str-concat " -o " wasm-out))))]
+        (if (!= st 0)
+          (do (err "link" "wat2wasm failed")
+              (note (str-concat "wat: " wat))
+              2)
+          (do (note (str-concat "wrote `" (str-concat wasm-out "`")))
+              0)))
+      (if has-tools
+        (let [st (bars_system (str-concat "wasm-tools parse " (str-concat wat (str-concat " -o " wasm-out))))]
+          (if (!= st 0)
+            (do (err "link" "wasm-tools parse failed") 2)
+            (do (note (str-concat "wrote `" (str-concat wasm-out "`")))
+                0)))
+        (do (note (str-concat "wrote `" (str-concat wat "` (install wat2wasm to emit .wasm)")))
+            ;; Touch empty binary path so incremental sees an artifact
+            (spit output-path "#!/bin/sh\necho 'Bars WASM: run with wasmtime on .wat/.wasm'\n")
+            (bars_system (str-concat "chmod +x " output-path))
+            0)))))
+
 (defn emit-and-link [hir-lines output-path]
-  (if (use-c-backend?)
-    (do (cgen/compile-c hir-lines output-path)
-        (link-c output-path))
-    (do (llvm/compile-llvm hir-lines output-path)
-        (link-llvm output-path))))
+  (if (use-wasm-backend?)
+    (do (note "backend: wasm (WAT)")
+        (wasm/compile-wasm hir-lines output-path)
+        (link-wasm output-path))
+    (if (use-c-backend?)
+      (do (note "backend: c")
+          (cgen/compile-c hir-lines output-path)
+          (link-c output-path))
+      (do (llvm/compile-llvm hir-lines output-path)
+          (link-llvm output-path)))))
 
 (defn compile-file [input-path output-path]
   (let [pack (read-file-pack input-path)]
