@@ -6,3 +6,11 @@ string_lit
 struct_demo
 *.ssa
 *.qbe
+
+# Self-hosted compiler binaries and LLVM IR dumps
+bars-self
+bars-self2
+bars-self3
+bars-self4
+bars-self*.ll
+*.ll

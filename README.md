@@ -36,32 +36,38 @@ Hello, World!
 
 ### Prerequisites
 
-- Rust 1.70+ (for building the compiler)
+- Rust 1.70+ (bootstrap host only — like Nim `csources`)
 - `libgc-dev` (Boehm GC for the runtime)
-- `cc` / `gcc` (for linking)
+- `clang` / `cc` (link self-hosted LLVM output)
+- `make`
 
 ### Build
 
 ```bash
 git clone https://codeberg.org/bars-lang/bars-lang.git
 cd bars-lang
-cargo build --release
+
+# Host bootstrap (Rust) + C runtime + self-hosted compiler
+make host
+make runtime
+make bars-self          # → ./bars-self  (Gen1, written in Bars)
+
+make self-test          # example suite via ./bars-self
+make identity           # Gen3/Gen4 LLVM IR fixed point
 ```
+
+Language development is **Bars-first** in `compiler/*.brs`.  
+The Rust tree under `bootstrap/` is frozen for bring-up only — see `bootstrap/FROZEN.md`.
 
 ### Run
 
 ```bash
-# Read and print AST
-bars read examples/hello.brs
+# Self-hosted compiler: .brs → native binary
+./bars-self examples/math.brs /tmp/math && /tmp/math
 
-# Compile and run (default Cranelift backend)
-bars run examples/math.brs
-
-# Compile and run with Cranelift backend
-bars run --backend cranelift examples/math.brs
-
-# REPL (Cranelift JIT)
-bars repl
+# Host (Rust) — REPL / typecheck / alternative backends
+./target/release/bars run examples/math.brs
+./target/release/bars repl
 ```
 
 ---

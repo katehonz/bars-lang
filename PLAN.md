@@ -108,7 +108,7 @@ compiler/
 - [x] **12.23b** Gen2 binary: `bars-self` compiles `compiler/build.brs` → `bars-self2` (~120KB, 190 funcs)
 - [x] **12.23c** Gen2 correctness: fixed `special-tag` hash collision (`mk-if`/`mk-do` ≡ `match`); const match patterns; polymorphic count; dominate allocas
 - [x] **12.24** Identity test (IR): Gen3.ll == Gen4.ll fixed point; Gen3 compiles math/match/loop/cond
-- [ ] **12.25** Rust компилаторът става само bootstrap tool (като Nim `csources`)
+- [x] **12.25** Rust = bootstrap only (Nim `csources`): `bootstrap/FROZEN.md`, `make bars-self|identity|self-test`
 
 **HIR Stage 10+ features (2026-07-26):**
 - deftype → constructors as vectors `[disc, fields…]`
@@ -173,7 +173,8 @@ bars/
 
 ### Задачи на Фаза 13:
 
-- [ ] **13.1** Преместване на компилатора от `lib/` в `compiler/`
+- [x] **13.0** Bars-first entry: `make bars-self`, `scripts/selfhost-test.sh`, frozen bootstrap note
+- [x] **13.1** Компилаторът е в `compiler/` (не `lib/`) — reader/hir/macros/modules/llvm/build
 - [ ] **13.2** Подобряване на error messages (compiler написан на Bars → може да използва собствените си абстракции)
 - [ ] **13.3** Incremental compilation
 - [ ] **13.4** Watch mode (`bars watch`)

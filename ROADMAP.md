@@ -163,24 +163,28 @@ Bars е работещ компилатор за системен Lisp с owners
 - [ ] Debugger интеграция
 - [ ] Cross-compilation
 
-## Фаза 12: Self-Hosting 🚧
+## Фаза 12: Self-Hosting ✅
 
 - [x] Stage 0–5: Reader, HIR, Build, bootstrap via Rust host ✅
 - [x] Stage 6: Ownership checker (`compiler/ownership.brs`) ✅ — не е в pipeline
 - [x] Stage 7: LLVM backend (`compiler/codegen/llvm.brs`) ✅
 - [x] Stage 8: Macro system (`compiler/macros.brs`) ✅ — в pipeline
-- [x] Stage 9: Module framework (`compiler/modules.brs`) ✅ — частично
+- [x] Stage 9: Module framework (`compiler/modules.brs`) ✅ — require + rename + `.brs` paths
 - [x] Stage 10: `.brs` → HIR → `.ll` → clang → binary ✅
-  - HIR SSA temp counter fix; bare LLVM names; real stringlit; println+newline
-- [ ] Stage 10b: Self-compilation (self-hosted компилира `compiler/build.brs`)
-- [ ] Stage 10c: Identity test vs Rust host
-- [ ] Stage 10d: types/ownership/modules в pipeline; CI на Bars self-hosted
+- [x] Stage 10b: Self-compilation Gen1→Gen2→Gen3→Gen4 ✅
+- [x] Stage 10c: Identity test — Gen3.ll == Gen4.ll fixed point ✅
+- [x] Stage 10e: Rust bootstrap frozen (`bootstrap/FROZEN.md`, `make bars-self`) ✅
+- [ ] Stage 10d: types/ownership в pipeline; CI green on self-hosted only
 
-**Текущо състояние:**  
+**Bars-first workflow:**  
 ```
-BARS_SKIP_TYPECHECK=1 bars build --backend cranelift compiler/build.brs -o bars-self
-./bars-self examples/math.brs /tmp/math && /tmp/math   # → 7\n120\n
+make host && make runtime && make bars-self   # Gen1
+make self-test                               # examples suite
+make identity                                # Gen3.ll == Gen4.ll
+./bars-self examples/math.brs /tmp/m && /tmp/m
 ```
+
+New language work goes in `compiler/*.brs`, not `bootstrap/`.
 
 ---
 
@@ -194,4 +198,4 @@ BARS_SKIP_TYPECHECK=1 bars build --backend cranelift compiler/build.brs -o bars-
 
 ---
 
-*Версия: 5.0 | Актуализирано: 2026-06-03*
+*Версия: 6.0 | Актуализирано: 2026-07-26*
