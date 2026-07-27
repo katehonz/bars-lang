@@ -478,6 +478,76 @@ run_net_smoke() {
 
 run_net_smoke
 
+# --- Phase 15.1 HTTP client smoke (loopback GET + POST) ---
+run_http_smoke() {
+  local log="$TMP/http.log"
+  local hs="$TMP/http_srv" hc="$TMP/http_cli"
+  local es="$TMP/http_echo" pc="$TMP/http_post"
+
+  if [[ ! -f examples/http_server.brs ]] || [[ ! -f examples/http_client.brs ]]; then
+    echo "SKIP http smoke (examples missing)"
+    return
+  fi
+
+  if ! "$CC_BIN" examples/http_server.brs "$hs" >"$log" 2>&1; then
+    echo "FAIL compile  http_server"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! "$CC_BIN" examples/http_client.brs "$hc" >"$log" 2>&1; then
+    echo "FAIL compile  http_client"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  "$hs" >/dev/null 2>&1 &
+  local spid=$!
+  sleep 0.25
+  local stdout
+  stdout="$(timeout 3 "$hc" 2>/dev/null || true)"
+  wait "$spid" 2>/dev/null || true
+  if echo "$stdout" | grep -qx '200' && echo "$stdout" | grep -qx 'hello'; then
+    echo "OK   http GET  (127.0.0.1:18766 → hello)"
+    echo "$stdout" | sed 's/^/     | /'
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      http GET (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+
+  if [[ ! -f examples/http_echo_server.brs ]] || [[ ! -f examples/http_post_client.brs ]]; then
+    return
+  fi
+  if ! "$CC_BIN" examples/http_echo_server.brs "$es" >"$log" 2>&1; then
+    echo "FAIL compile  http_echo_server"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! "$CC_BIN" examples/http_post_client.brs "$pc" >"$log" 2>&1; then
+    echo "FAIL compile  http_post_client"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  "$es" >/dev/null 2>&1 &
+  spid=$!
+  sleep 0.25
+  stdout="$(timeout 3 "$pc" 2>/dev/null || true)"
+  wait "$spid" 2>/dev/null || true
+  if echo "$stdout" | grep -qx '200' && echo "$stdout" | grep -qx 'ping'; then
+    echo "OK   http POST (127.0.0.1:18767 → ping)"
+    echo "$stdout" | sed 's/^/     | /'
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      http POST (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+}
+
+run_http_smoke
+
 # --- Phase 14.1 stdlib smoke (io / json / random+time+regex) ---
 run_stdlib_smoke() {
   local out log stdout

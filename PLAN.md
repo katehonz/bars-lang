@@ -324,6 +324,28 @@ bars/
 
 ---
 
+## Фаза 15: Екосистема (basic libs) 🔮
+
+> Bars-first stdlib packages on top of runtime + Phase 14 foundations.
+
+### 15.1 HTTP client ✅
+
+- [x] `lib/http.brs` — HTTP/1.1 client over `lib/net` (sync, no TLS)
+  - `request` / `get-req` / `post`
+  - Response `[status body]`; parse status line + `Content-Length`
+  - Named `get-req` (not `get`) to avoid shadowing vector `get` in the module
+- [x] Examples: `http_server` / `http_client` (GET :18766 → `hello`)
+  - `http_echo_server` / `http_post_client` (POST body echo :18767)
+- [x] self-test smoke for GET + POST loopback
+
+### 15.2 Next (candidates)
+
+- [ ] TLS / HTTPS (deferred — needs crypto + OpenSSL or similar)
+- [ ] Crypto hashes (SHA-256) in runtime + `lib/crypto`
+- [ ] HTTP server helper package (routing beyond one-shot examples)
+
+---
+
 ## Сравнение с Nim и Rust (за ориентир)
 
 | Аспект | Nim | Rust | Bars (цел) |
@@ -349,4 +371,4 @@ bars/
 
 ---
 
-*План версия: 6.5 | Актуализиран: 2026-07-27*
+*План версия: 6.6 | Актуализиран: 2026-07-27*

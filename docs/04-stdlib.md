@@ -225,6 +225,27 @@ Sync TCP over the C runtime. File descriptors are `i64` (`-1` = error).
 /tmp/cli     # → ping
 ```
 
+### `lib/http.brs` — HTTP/1.1 client (Phase 15.1)
+
+Pure Bars client on top of `lib/net`. Sync only; **no TLS**.
+
+Response is a vector `[status-code body-string]`, or `0` on connect/send failure.
+
+| Function | Description |
+|----------|-------------|
+| `request` | `(http/request method host port path body)` |
+| `get-req` | GET (named so it does not shadow vector `get`) |
+| `post` | POST with body string |
+| `status` / `body` | Accessors on a response vector |
+| `ok?` | Status in `200..299` |
+
+```bash
+./bars-self examples/http_server.brs /tmp/hs
+./bars-self examples/http_client.brs /tmp/hc
+/tmp/hs &    # :18766
+/tmp/hc      # → 200 / hello
+```
+
 ## `lib/map.brs`
 
 | Function | Signature | Description |

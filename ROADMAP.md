@@ -1,7 +1,7 @@
 # Bars — Пътна Карта (v6.0)
 
 > Актуална към: 2026-07-27  
-> Състояние: Фази 0–13 готови. Фаза 14 — stdlib/tooling/traits/WASM; debugger+profiler ON.  
+> Състояние: Фази 0–14 готови. Фаза 15.1 — HTTP client; debugger+profiler ON.  
 > Философия: Следващите версии на компилатора се пишат на Bars.
 > 
 > Структура: `bootstrap/` — Rust bootstrap (замразен), `compiler/` — компилатор на Bars, `lib/` — stdlib
@@ -164,6 +164,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Cross-compilation — `BARS_TARGET` / `--target` (host uname, aarch64, wasm32; auto runtime)
 - [x] `bars-self check` + `BARS_RELEASE=1` (QoL 14.6)
 - [x] TCP networking — `lib/net.brs` + runtime sockets (14.7)
+- [x] HTTP/1.1 client — `lib/http.brs` over TCP (15.1; no TLS)
 
 ## Фаза 12: Self-Hosting ✅
 
