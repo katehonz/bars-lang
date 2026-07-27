@@ -437,6 +437,47 @@ run_check_release_smoke() {
 
 run_check_release_smoke
 
+# --- Phase 14.7 TCP net smoke (loopback echo) ---
+run_net_smoke() {
+  local srv_src="examples/net_echo_server.brs"
+  local cli_src="examples/net_client.brs"
+  local srv="$TMP/net_srv"
+  local cli="$TMP/net_cli"
+  local log="$TMP/net.log"
+  if [[ ! -f "$srv_src" ]] || [[ ! -f "$cli_src" ]]; then
+    echo "SKIP net smoke (examples missing)"
+    return
+  fi
+  if ! "$CC_BIN" "$srv_src" "$srv" >"$log" 2>&1; then
+    echo "FAIL compile  net_echo_server"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! "$CC_BIN" "$cli_src" "$cli" >"$log" 2>&1; then
+    echo "FAIL compile  net_client"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  "$srv" >/dev/null 2>&1 &
+  local spid=$!
+  sleep 0.2
+  local stdout
+  stdout="$("$cli" 2>/dev/null || true)"
+  wait "$spid" 2>/dev/null || true
+  if echo "$stdout" | grep -q 'ping'; then
+    echo "OK   net TCP echo (127.0.0.1:18765)"
+    echo "     | $stdout"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      net echo (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+}
+
+run_net_smoke
+
 # --- Phase 14.1 stdlib smoke (io / json / random+time+regex) ---
 run_stdlib_smoke() {
   local out log stdout

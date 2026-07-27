@@ -698,3 +698,102 @@ int64_t bars_re_find(bars_string_t* text, bars_string_t* pattern) {
     regfree(&re);
     return idx;
 }
+
+/* --- TCP sockets (Phase 14.7) --- */
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+
+int64_t bars_tcp_connect(bars_string_t* host, int64_t port) {
+    if (!host || !host->data || port <= 0 || port > 65535) return -1;
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    char portbuf[16];
+    snprintf(portbuf, sizeof(portbuf), "%lld", (long long)port);
+    struct addrinfo* res = NULL;
+    if (getaddrinfo(host->data, portbuf, &hints, &res) != 0) return -1;
+    int fd = -1;
+    for (struct addrinfo* p = res; p; p = p->ai_next) {
+        fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd < 0) continue;
+        if (connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
+        close(fd);
+        fd = -1;
+    }
+    freeaddrinfo(res);
+    return (int64_t)fd;
+}
+
+int64_t bars_tcp_listen(int64_t port) {
+    if (port <= 0 || port > 65535) return -1;
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+    if (listen(fd, 16) != 0) {
+        close(fd);
+        return -1;
+    }
+    return (int64_t)fd;
+}
+
+int64_t bars_tcp_accept(int64_t listen_fd) {
+    if (listen_fd < 0) return -1;
+    int cfd = accept((int)listen_fd, NULL, NULL);
+    return (int64_t)cfd;
+}
+
+int64_t bars_tcp_send(int64_t fd, bars_string_t* data) {
+    if (fd < 0 || !data || !data->data) return -1;
+    size_t left = data->len;
+    const char* p = data->data;
+    while (left > 0) {
+        ssize_t n = send((int)fd, p, left, 0);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) break;
+        p += (size_t)n;
+        left -= (size_t)n;
+    }
+    return (int64_t)(data->len - left);
+}
+
+int64_t bars_tcp_recv(int64_t fd, int64_t max_len) {
+    if (fd < 0) return 0;
+    size_t cap = 4096;
+    if (max_len > 0 && max_len < (1 << 20)) cap = (size_t)max_len;
+    char* buf = (char*)malloc(cap + 1);
+    if (!buf) return 0;
+    ssize_t n;
+    do {
+        n = recv((int)fd, buf, cap, 0);
+    } while (n < 0 && errno == EINTR);
+    if (n < 0) {
+        free(buf);
+        return 0;
+    }
+    buf[n] = '\0';
+    bars_string_t* s = bars_string_new(buf);
+    free(buf);
+    return (int64_t)(uintptr_t)s;
+}
+
+int64_t bars_tcp_close(int64_t fd) {
+    if (fd < 0) return -1;
+    return (close((int)fd) == 0) ? 0 : -1;
+}

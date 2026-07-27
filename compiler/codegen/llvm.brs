@@ -179,6 +179,12 @@
         (lines-push lines "declare i64 @bars_re_find(i64, i64)")
         (lines-push lines "declare i64 @bars_string_from_i64(i64)")
         (lines-push lines "declare i64 @bars_code_char(i64)")
+        (lines-push lines "declare i64 @bars_tcp_connect(i64, i64)")
+        (lines-push lines "declare i64 @bars_tcp_listen(i64)")
+        (lines-push lines "declare i64 @bars_tcp_accept(i64)")
+        (lines-push lines "declare i64 @bars_tcp_send(i64, i64)")
+        (lines-push lines "declare i64 @bars_tcp_recv(i64, i64)")
+        (lines-push lines "declare i64 @bars_tcp_close(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "")
         lines)))
@@ -247,6 +253,15 @@
                 (if (str-eq? fname "code-char") "bars_code_char"
                   "")))))))))
 
+(defn map-net-ops [fname]
+  (if (str-eq? fname "bars_tcp_connect") "bars_tcp_connect"
+    (if (str-eq? fname "bars_tcp_listen") "bars_tcp_listen"
+      (if (str-eq? fname "bars_tcp_accept") "bars_tcp_accept"
+        (if (str-eq? fname "bars_tcp_send") "bars_tcp_send"
+          (if (str-eq? fname "bars_tcp_recv") "bars_tcp_recv"
+            (if (str-eq? fname "bars_tcp_close") "bars_tcp_close"
+              "")))))))
+
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
     (if (> (count a) 0) a
@@ -259,7 +274,9 @@
                   (let [e (map-file-ops fname)]
                     (if (> (count e) 0) e
                       (let [f (map-time-rand-ops fname)]
-                        (if (> (count f) 0) f fname)))))))))))))
+                        (if (> (count f) 0) f
+                          (let [g (map-net-ops fname)]
+                            (if (> (count g) 0) g fname)))))))))))))))
 
 ;; ---- operators (small groups = fewer closing parens) ----
 

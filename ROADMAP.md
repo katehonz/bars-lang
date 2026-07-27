@@ -163,6 +163,7 @@ Bars е работещ компилатор за системен Lisp с owners
 - [x] Debugger интеграция — `BARS_DEBUG=1` (DWARF + GDB/LLDB); `BARS_PROFILE=1` / `BARS_TIMINGS=1`
 - [x] Cross-compilation — `BARS_TARGET` / `--target` (host uname, aarch64, wasm32; auto runtime)
 - [x] `bars-self check` + `BARS_RELEASE=1` (QoL 14.6)
+- [x] TCP networking — `lib/net.brs` + runtime sockets (14.7)
 
 ## Фаза 12: Self-Hosting ✅
 

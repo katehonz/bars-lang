@@ -192,4 +192,13 @@ int64_t bars_re_find(bars_string_t* text, bars_string_t* pattern);     /* start 
 /* i64 → decimal string (JSON / formatting) */
 /* bars_string_from_i64 already declared above */
 
+/* TCP sockets (Phase 14.7) — fd as i64; -1 / 0 on error where noted */
+int64_t bars_tcp_connect(bars_string_t* host, int64_t port); /* fd or -1 */
+int64_t bars_tcp_listen(int64_t port);                       /* fd or -1 */
+int64_t bars_tcp_accept(int64_t listen_fd);                  /* fd or -1 */
+int64_t bars_tcp_send(int64_t fd, bars_string_t* data);      /* bytes or -1 */
+/* recv: new string pointer as i64, or 0 on error; empty string on EOF */
+int64_t bars_tcp_recv(int64_t fd, int64_t max_len);
+int64_t bars_tcp_close(int64_t fd);                          /* 0 ok, -1 err */
+
 #endif

@@ -115,6 +115,15 @@
                 (if (str-eq? fname "code-char") "bars_code_char"
                   "")))))))))
 
+(defn map-net-ops [fname]
+  (if (str-eq? fname "bars_tcp_connect") "bars_tcp_connect"
+    (if (str-eq? fname "bars_tcp_listen") "bars_tcp_listen"
+      (if (str-eq? fname "bars_tcp_accept") "bars_tcp_accept"
+        (if (str-eq? fname "bars_tcp_send") "bars_tcp_send"
+          (if (str-eq? fname "bars_tcp_recv") "bars_tcp_recv"
+            (if (str-eq? fname "bars_tcp_close") "bars_tcp_close"
+              "")))))))
+
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
     (if (> (count a) 0) a
@@ -127,7 +136,9 @@
                   (let [e (map-file-ops fname)]
                     (if (> (count e) 0) e
                       (let [f (map-time-rand-ops fname)]
-                        (if (> (count f) 0) f (map-user-fname fname))))))))))))))
+                        (if (> (count f) 0) f
+                          (let [g (map-net-ops fname)]
+                            (if (> (count g) 0) g (map-user-fname fname))))))))))))))))
 
 (defn binop-c [fname]
   (if (str-eq? fname "+") "+"

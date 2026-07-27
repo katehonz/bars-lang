@@ -204,6 +204,27 @@ Tagged values: `[0]` null, `[1 b]` bool, `[2 n]` number, `[3 s]` string,
 | `flag-value` | Token after flag |
 | `positionals` | Non-flag args |
 
+### `lib/net.brs` — TCP sockets (Phase 14.7)
+
+Sync TCP over the C runtime. File descriptors are `i64` (`-1` = error).
+
+| Function | Description |
+|----------|-------------|
+| `connect` | `(net/connect host port)` → fd or `-1` |
+| `listen` | `(net/listen port)` → listen fd or `-1` |
+| `accept` | `(net/accept listen-fd)` → client fd or `-1` |
+| `send` | `(net/send fd data)` → bytes sent or `-1` |
+| `recv` | `(net/recv fd max-len)` → string, `0` on error, `""` on EOF |
+| `close` | `(net/close fd)` → `0` ok |
+| `ok?` | `(net/ok? fd)` → true if `fd >= 0` |
+
+```bash
+./bars-self examples/net_echo_server.brs /tmp/srv
+./bars-self examples/net_client.brs /tmp/cli
+/tmp/srv &   # listens on 18765
+/tmp/cli     # → ping
+```
+
 ## `lib/map.brs`
 
 | Function | Signature | Description |

@@ -315,6 +315,13 @@ bars/
 - [x] Auto-build missing `runtime/bars_runtime*.o` via host `cc` or cross-gcc / `clang --target`
 - [x] self-test smoke for `check` + `BARS_RELEASE`
 
+### 14.7 Networking (basic) ✅
+
+- [x] C runtime TCP: `bars_tcp_{connect,listen,accept,send,recv,close}`
+- [x] `lib/net.brs` — thin wrappers + `ok?`
+- [x] Examples: `net_echo_server.brs`, `net_client.brs` (loopback echo on port 18765)
+- [x] LLVM/C maps + type env; self-test smoke (server & client)
+
 ---
 
 ## Сравнение с Nim и Rust (за ориентир)
@@ -342,4 +349,4 @@ bars/
 
 ---
 
-*План версия: 6.4 | Актуализиран: 2026-07-27*
+*План версия: 6.5 | Актуализиран: 2026-07-27*
