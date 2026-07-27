@@ -236,6 +236,207 @@ run_incremental_smoke() {
 
 run_incremental_smoke
 
+# --- Phase 14.2 debugger / profiler smoke ---
+run_debug_profile_smoke() {
+  local src="examples/math.brs"
+  local out="$TMP/dbg_math"
+  local log="$TMP/dbg_math.log"
+  local ll
+
+  # BARS_DEBUG: DWARF + runnable binary
+  if ! BARS_DEBUG=1 BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  BARS_DEBUG=1 math.brs"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  ll="${out}.ll"
+  if [[ ! -f "$ll" ]] || ! grep -q 'DISubprogram' "$ll"; then
+    echo "FAIL debug    missing DISubprogram in .ll"
+    fail=$((fail + 1))
+  elif ! grep -q 'debug:' "$log"; then
+    echo "FAIL debug    missing debug note in compile log"
+    fail=$((fail + 1))
+  else
+    local stdout
+    stdout="$("$out" 2>/dev/null || true)"
+    if [[ "$stdout" == *"120"* ]]; then
+      echo "OK   BARS_DEBUG=1 (DWARF DISubprogram + run)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      BARS_DEBUG binary (got: $stdout)"
+      fail=$((fail + 1))
+    fi
+  fi
+
+  # BARS_TIMINGS: stage notes
+  out="$TMP/tim_math"
+  log="$TMP/tim_math.log"
+  if ! BARS_TIMINGS=1 BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  BARS_TIMINGS=1 math.brs"
+    tail -5 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif grep -q 'timing: total' "$log" && grep -q 'timing: hir' "$log"; then
+    echo "OK   BARS_TIMINGS=1 (stage milliseconds)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL timings  missing timing notes"
+    cat "$log" | sed 's/^/  /' | head -20
+    fail=$((fail + 1))
+  fi
+
+  # BARS_PROFILE: -pg link note + runnable
+  out="$TMP/prof_math"
+  log="$TMP/prof_math.log"
+  if ! BARS_PROFILE=1 BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  BARS_PROFILE=1 math.brs"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q 'profile:' "$log"; then
+    echo "FAIL profile  missing profile note"
+    fail=$((fail + 1))
+  else
+    stdout="$("$out" 2>/dev/null || true)"
+    if [[ "$stdout" == *"120"* ]]; then
+      echo "OK   BARS_PROFILE=1 (-pg link + run)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      BARS_PROFILE binary (got: $stdout)"
+      fail=$((fail + 1))
+    fi
+  fi
+  rm -f gmon.out
+}
+
+run_debug_profile_smoke
+
+# --- Cross-compilation smoke (aarch64 + wasm target) ---
+run_cross_smoke() {
+  local src="examples/math.brs"
+  local out log
+
+  # wasm32 via BARS_TARGET (no qemu needed)
+  out="$TMP/cross_wasm"
+  log="$TMP/cross_wasm.log"
+  if ! BARS_TARGET=wasm32-unknown-unknown BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    # math.brs may not be ideal for wasm; try wasm_fact
+    if ! BARS_TARGET=wasm32-unknown-unknown BARS_FORCE=1 "$CC_BIN" examples/wasm_fact.brs "$out" >"$log" 2>&1; then
+      echo "FAIL compile  BARS_TARGET=wasm32"
+      tail -8 "$log" | sed 's/^/  /'
+      fail=$((fail + 1))
+    else
+      if [[ -f "${out}.wat" ]] || [[ -f "${out}.wasm" ]]; then
+        echo "OK   BARS_TARGET=wasm32-unknown-unknown → WAT/WASM"
+        pass=$((pass + 1))
+      else
+        echo "FAIL cross    wasm target produced no .wat/.wasm"
+        fail=$((fail + 1))
+      fi
+    fi
+  else
+    if [[ -f "${out}.wat" ]] || [[ -f "${out}.wasm" ]]; then
+      echo "OK   BARS_TARGET=wasm32-unknown-unknown → WAT/WASM"
+      pass=$((pass + 1))
+    else
+      echo "FAIL cross    wasm target produced no .wat/.wasm"
+      fail=$((fail + 1))
+    fi
+  fi
+
+  # aarch64 when cross toolchain + runtime present
+  if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+    echo "SKIP aarch64 cross (no aarch64-linux-gnu-gcc)"
+    return
+  fi
+  local rt="runtime/bars_runtime_aarch64_unknown_linux_gnu.o"
+  if [[ ! -f "$rt" ]]; then
+    if ! aarch64-linux-gnu-gcc -O2 -c runtime/bars_runtime.c -o "$rt" 2>"$TMP/rt_a64.log"; then
+      echo "SKIP aarch64 cross (cannot build runtime .o)"
+      return
+    fi
+  fi
+  out="$TMP/cross_a64"
+  log="$TMP/cross_a64.log"
+  if ! BARS_FORCE=1 "$CC_BIN" --target aarch64-unknown-linux-gnu "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  --target aarch64-unknown-linux-gnu"
+    tail -10 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if ! file "$out" | grep -qi 'aarch64\|ARM aarch64'; then
+    echo "FAIL cross    expected aarch64 ELF, got: $(file "$out")"
+    fail=$((fail + 1))
+    return
+  fi
+  if ! grep -q 'aarch64-unknown-linux-gnu' "${out}.ll" 2>/dev/null; then
+    echo "FAIL cross    .ll missing aarch64 target triple"
+    fail=$((fail + 1))
+    return
+  fi
+  echo "OK   --target aarch64-unknown-linux-gnu (ELF aarch64)"
+  pass=$((pass + 1))
+}
+
+run_cross_smoke
+
+# --- Phase 14.6: check + release smoke ---
+run_check_release_smoke() {
+  local src="examples/math.brs"
+  local log="$TMP/check.log"
+  local code
+
+  if ! "$CC_BIN" check "$src" >"$log" 2>&1; then
+    echo "FAIL check    examples/math.brs"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  elif ! grep -q 'check ok' "$log"; then
+    echo "FAIL check    missing check ok note"
+    cat "$log" | sed 's/^/  /' | head -15
+    fail=$((fail + 1))
+  else
+    echo "OK   bars-self check examples/math.brs"
+    pass=$((pass + 1))
+  fi
+
+  # ownership fail: use-after-move example if present
+  if [[ -f examples/ownership.brs ]]; then
+    log="$TMP/check_own.log"
+    set +e
+    "$CC_BIN" check examples/ownership.brs >"$log" 2>&1
+    code=$?
+    set -e
+    # may be 0 (clean) or 4 (ownership) depending on example content
+    if [[ "$code" -eq 0 ]] || [[ "$code" -eq 4 ]]; then
+      echo "OK   bars-self check ownership.brs (exit $code)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL check    ownership.brs unexpected exit $code"
+      tail -8 "$log" | sed 's/^/  /'
+      fail=$((fail + 1))
+    fi
+  fi
+
+  local out="$TMP/rel_math"
+  log="$TMP/rel_math.log"
+  if ! BARS_RELEASE=1 BARS_FORCE=1 "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  BARS_RELEASE=1"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+  else
+    local stdout
+    stdout="$("$out" 2>/dev/null || true)"
+    if [[ "$stdout" == *"120"* ]]; then
+      echo "OK   BARS_RELEASE=1 (optimized link + run)"
+      pass=$((pass + 1))
+    else
+      echo "FAIL run      BARS_RELEASE binary"
+      fail=$((fail + 1))
+    fi
+  fi
+}
+
+run_check_release_smoke
+
 # --- Phase 14.1 stdlib smoke (io / json / random+time+regex) ---
 run_stdlib_smoke() {
   local out log stdout

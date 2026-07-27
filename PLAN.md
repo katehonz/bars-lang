@@ -1,6 +1,6 @@
 # Bars — План за Разработка v6.0
 
-> Актуален към: 2026-07-26
+> Актуален към: 2026-07-27
 > Философия: Следващите версии на компилатора се пишат на Bars. Като Nim и Rust.
 
 ---
@@ -250,8 +250,13 @@ bars/
   - structure: defn name/params shape
 - [x] Documentation — `bars-self doc <file> [out.md]`
   - extracts `defn`/`defmacro` + leading `;;` comments → Markdown
-- [ ] Debugger интеграция (GDB/LLDB)
-- [ ] Profiler интеграция
+- [x] Debugger интеграция (GDB/LLDB)
+  - `BARS_DEBUG=1` → clang/cc `-g -O0`
+  - LLVM: DWARF via `!dbg` + `DICompileUnit` / `DIFile` / `DISubprogram` / `DILocation`
+  - Symbols map to source file (`DIFile`); `gdb ./bin` → `break _bars_main` / `break factorial`
+- [x] Profiler интеграция
+  - `BARS_PROFILE=1` → `-pg -g -O0` (gprof; `gprof bin gmon.out`)
+  - `BARS_TIMINGS=1` → compile-stage ms (parse+modules, macros, types, ownership, hir, codegen+link, total)
 
 ### 14.3 Екосистема
 
@@ -290,6 +295,26 @@ bars/
   - i64-oriented; **WASI `fd_write`** → `$bars_println_i64` (decimal + newline)
   - Verified: `wasm_fact` → 120, `wasm_loop` → 45, `wasm_print` → `7\n120` under `wasmtime`
 
+### 14.5 Cross-compilation ✅
+
+- [x] `BARS_TARGET=<triple>` and `bars-self --target <triple> <in> <out>`
+- [x] `compiler/target.brs` — triple helpers, runtime path, cross-cc discovery
+- [x] LLVM IR `target triple = "…"` per target
+- [x] Host: `x86_64-unknown-linux-gnu` (default) — single clang link
+- [x] `aarch64-unknown-linux-gnu` — clang `--target` -c + `aarch64-linux-gnu-gcc` link
+  - Runtime: `runtime/bars_runtime_aarch64_unknown_linux_gnu.o` (`make runtime-aarch64`)
+- [x] `wasm32-unknown-unknown` → existing WASM backend
+- [x] Clear error + rebuild hint when cross runtime `.o` is missing
+- [x] self-test smoke for wasm target + aarch64 ELF (when toolchain present)
+
+### 14.6 QoL — check, release, cross polish ✅
+
+- [x] `bars-self check <file>` — parse → modules → macros → types → ownership (no codegen)
+- [x] `BARS_RELEASE=1` → link with `-O2` (debug/profile still win)
+- [x] Host triple from `uname -m` (x86_64 / aarch64 / arm64)
+- [x] Auto-build missing `runtime/bars_runtime*.o` via host `cc` or cross-gcc / `clang --target`
+- [x] self-test smoke for `check` + `BARS_RELEASE`
+
 ---
 
 ## Сравнение с Nim и Rust (за ориентир)
@@ -317,4 +342,4 @@ bars/
 
 ---
 
-*План версия: 6.1 | Актуализиран: 2026-07-26*
+*План версия: 6.4 | Актуализиран: 2026-07-27*

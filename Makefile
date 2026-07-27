@@ -6,7 +6,7 @@
 # Day-to-day language work happens in compiler/*.brs (Bars-first).
 # bootstrap/ is frozen like Nim csources — only rebuild for bring-up.
 
-.PHONY: all build host runtime bars-self self gen2 gen3 identity \
+.PHONY: all build host runtime runtime-aarch64 bars-self self gen2 gen3 identity \
         self-test self-test-c test clean install examples help
 
 HOST     := ./target/release/bars
@@ -21,7 +21,8 @@ all: bars-self
 help:
 	@echo "Bars targets:"
 	@echo "  make host        - build Rust bootstrap (target/release/bars)"
-	@echo "  make runtime     - compile C runtime object"
+	@echo "  make runtime     - compile C runtime object (host)"
+	@echo "  make runtime-aarch64 - cross runtime for aarch64-unknown-linux-gnu"
 	@echo "  make bars-self   - Gen1: host compiles $(BUILD_BRS) → ./bars-self"
 	@echo "  make gen2        - Gen2: bars-self recompiles itself → ./bars-self2"
 	@echo "  make gen3        - Gen3: bars-self2 recompiles → ./bars-self3"
@@ -38,10 +39,17 @@ help:
 	@echo "     BARS_SKIP_C_TEST=1   skip C suite inside self-test"
 	@echo "     BARS_FORCE=1         force rebuild (disable mtime skip)"
 	@echo "     BARS_NO_INCREMENTAL=1  always recompile"
+	@echo "     BARS_DEBUG=1         DWARF (-g -O0); gdb/lldb ready"
+	@echo "     BARS_PROFILE=1       gprof (-pg -g); then gprof/perf"
+	@echo "     BARS_TIMINGS=1       print compile-stage milliseconds"
+	@echo "     BARS_TARGET=triple   cross-compile (or --target <triple>)"
+	@echo "       host from uname -m; aarch64-unknown-linux-gnu | wasm32-unknown-unknown"
+	@echo "     BARS_RELEASE=1       optimize link (-O2)"
 	@echo "     (self-host skips types only; ownership is light NLL)"
 	@echo ""
 	@echo "bars-self: ./bars-self <in.brs> <out>"
-	@echo "           ./bars-self watch|fmt|lint|doc …"
+	@echo "           ./bars-self --target <triple> <in.brs> <out>"
+	@echo "           ./bars-self check|watch|fmt|lint|doc …"
 
 # ── Host (Rust bootstrap, frozen) ──────────────────────────────────────────
 
@@ -59,6 +67,14 @@ install:
 runtime $(RUNTIME): runtime/bars_runtime.c runtime/bars_runtime.h
 	$(CC) -O2 -c runtime/bars_runtime.c -o runtime/bars_runtime.o
 	ar rcs runtime/libbars_runtime.a runtime/bars_runtime.o
+
+# Cross-compiled runtime for aarch64 (requires aarch64-linux-gnu-gcc)
+RUNTIME_AARCH64 := runtime/bars_runtime_aarch64_unknown_linux_gnu.o
+AARCH64_CC ?= aarch64-linux-gnu-gcc
+
+runtime-aarch64 $(RUNTIME_AARCH64): runtime/bars_runtime.c runtime/bars_runtime.h
+	$(AARCH64_CC) -O2 -c runtime/bars_runtime.c -o $(RUNTIME_AARCH64)
+	@echo "→ $(RUNTIME_AARCH64) ready"
 
 # ── Self-hosted compiler ───────────────────────────────────────────────────
 

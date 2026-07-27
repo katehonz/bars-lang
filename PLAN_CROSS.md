@@ -1,42 +1,69 @@
-# Фаза 12: Cross-Compilation
+# Cross-Compilation (self-hosted)
+
+> Bars-first: implemented in `compiler/target.brs` + `compiler/build.brs`.  
+> Host (Rust) also has partial `--target` via `bootstrap/src/target.rs`.
 
 ## Цел
-Компилиране на Bars програми за различни архитектури чрез `--target <triple>`.
 
-## Поддържани target-и (първа итерация)
-| Triple | QBE | Cranelift | LLVM | Забележка |
-|--------|-----|-----------|------|-----------|
-| `x86_64-unknown-linux-gnu` | amd64_sysv | x86_64 | x86_64 | host, работи веднага |
-| `aarch64-unknown-linux-gnu` | arm64 | aarch64 | aarch64 | изисква cross gcc |
-| `wasm32-unknown-unknown` | — | — | wasm32 | изисква wasm-ld |
+Компилиране на Bars програми за различни архитектури чрез:
 
-## Архитектура
-
-### 1. CLI
-- Нов флаг `--target <triple>` за `build` и `run`
-- Ако липсва → host target (native)
-
-### 2. Target Triple абстракция
-- `src/target.rs` — `TargetTriple` struct с parsing и validation
-- Mapping към backend-specific target names
-
-### 3. Backend промени
-- **QBE**: `-t <target>` флаг при извикване на `qbe`
-- **Cranelift**: `isa::lookup(triple)` вместо `cranelift_native::builder()`
-- **LLVM**: `module.set_triple()`, `Target::from_triple()` вместо `initialize_native()`
-
-### 4. C Runtime
-- Cross-компилиране на `runtime/bars_runtime.c` за target
-- Търсене на `runtime/bars_runtime_<target>.o` или fallback към `bars_runtime.o` ако target == host
-- Ако cross runtime липсва → error с инструкции за компилация
-
-### 5. Linker
-- Използване на cross linker (`<triple>-gcc` или `<triple>-ld`)
-- При `--target wasm32-unknown-unknown` → `wasm-ld` + различен pipeline (няма C runtime)
-
-## Критерий за приемане
 ```bash
-bars build examples/hello.brs --target aarch64-unknown-linux-gnu -o hello_arm64
-file hello_arm64
-# → ELF 64-bit LSB executable, ARM aarch64
+./bars-self --target <triple> <in.brs> <out>
+# or
+BARS_TARGET=<triple> ./bars-self <in.brs> <out>
 ```
+
+## Поддържани target-и
+
+| Triple | Backend | Runtime / linker | Забележка |
+|--------|---------|------------------|-----------|
+| `x86_64-unknown-linux-gnu` | LLVM (default) | `runtime/bars_runtime.o` + `clang` | host |
+| `aarch64-unknown-linux-gnu` | LLVM | `runtime/bars_runtime_aarch64_unknown_linux_gnu.o` + `aarch64-linux-gnu-gcc` | cross |
+| `wasm32-unknown-unknown` | WASM/WAT | no C runtime | same as `BARS_BACKEND_WASM=1` |
+
+C backend (`BARS_BACKEND_C=1`) uses the same runtime `.o` and cross-cc for aarch64.
+
+## Архитектура (self-host)
+
+1. **Target resolve** — CLI `--target` or `BARS_TARGET`, else host default  
+2. **LLVM IR** — `target triple = "<triple>"` in `compiler/codegen/llvm.brs`  
+3. **Runtime** — `runtime/bars_runtime.o` (host) or `runtime/bars_runtime_<triple_underscored>.o`  
+4. **Link**  
+   - host: `clang … file.ll runtime.o -lgc -lm -o out`  
+   - aarch64: `clang --target=aarch64-linux-gnu -c file.ll -o file.o` then  
+     `aarch64-linux-gnu-gcc file.o runtime_aarch64.o -lgc -lm -o out`  
+   - wasm: WAT emitter + optional wat2wasm / wasm-tools  
+
+## Build cross runtime
+
+```bash
+make runtime-aarch64
+# equivalent:
+# aarch64-linux-gnu-gcc -O2 -c runtime/bars_runtime.c \
+#   -o runtime/bars_runtime_aarch64_unknown_linux_gnu.o
+```
+
+## Acceptance
+
+```bash
+make runtime-aarch64
+./bars-self --target aarch64-unknown-linux-gnu examples/math.brs /tmp/math_arm
+file /tmp/math_arm
+# → ELF 64-bit LSB pie executable, ARM aarch64
+```
+
+## Host detection
+
+Default triple comes from `uname -m` (`x86_64` / `amd64` / `aarch64` / `arm64` → `*-unknown-linux-gnu`).
+
+## Auto-build runtime
+
+If the runtime `.o` for a target is missing and `runtime/bars_runtime.c` exists, the compiler runs:
+
+- host: `cc -O2 -c runtime/bars_runtime.c -o runtime/bars_runtime.o`
+- cross: `<cross-gcc> -O2 -c … -o runtime/bars_runtime_<triple>.o`  
+  (or `clang --target=…` if no `*-gcc` is found)
+
+## Future
+
+- More triples (riscv64, musl) when runtime + cross-cc available  

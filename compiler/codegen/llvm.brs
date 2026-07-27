@@ -133,9 +133,10 @@
 
 ;; ---- header with correct C runtime names ----
 
-(defn llvm-header []
-  (let [lines (vector)]
-    (do (lines-push lines "target triple = \"x86_64-unknown-linux-gnu\"")
+(defn llvm-header [triple]
+  (let [t (if (> (count triple) 0) triple "x86_64-unknown-linux-gnu")
+        lines (vector)]
+    (do (lines-push lines (str-concat "target triple = \"" (str-concat t "\"")))
         (lines-push lines "")
         (lines-push lines "declare i64 @bars_string_new(i64)")
         (lines-push lines "declare i64 @bars_print_any_i64(i64)")
@@ -597,6 +598,9 @@
                   (recur (+ i 1) done)))))))))
 
 (defn hir-to-llvm [hir-lines]
+  (hir-to-llvm-at hir-lines "x86_64-unknown-linux-gnu"))
+
+(defn hir-to-llvm-at [hir-lines triple]
   (let [n (count hir-lines)]
     (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env (vector) reg 0
            all-body (vector)]
@@ -606,7 +610,7 @@
                             inj (inject-allocas-after-define closed env)]
                         (do (append-vec all-body inj) all-body))
                       all-body)
-              out (llvm-header)
+              out (llvm-header triple)
               wrap (c-main-wrapper)]
           (do (append-vec out strs)
               (if (> (count strs) 0) (lines-push out "") 0)
@@ -631,9 +635,140 @@
       (if (>= i n) text
         (recur (+ i 1) (str-concat (str-concat text (get ll-lines i)) "\n"))))))
 
-(defn compile-llvm [hir-lines out-path]
-  (let [ll-lines (hir-to-llvm hir-lines)
+;; ---- Debug info (Phase 14.2): BARS_DEBUG=1 → DWARF via LLVM metadata ----
+;; Function-level DISubprogram + DILocation on instructions so GDB/LLDB
+;; can break on Bars fn names and step through generated IR.
+
+(defn debug-mode? []
+  (= (bars_env_set "BARS_DEBUG") 1))
+
+;; Last path component ("a/b/c.brs" → "c.brs")
+(defn path-basename [path]
+  (let [n (count path)]
+    (loop [i (- n 1)]
+      (if (< i 0) path
+        (if (= (str-get path i) 47)
+          (str-slice path (+ i 1) n)
+          (recur (- i 1)))))))
+
+;; Parent directory ("a/b/c.brs" → "a/b", "c.brs" → ".")
+(defn path-dirname [path]
+  (let [n (count path)]
+    (loop [i (- n 1)]
+      (if (< i 0) "."
+        (if (= (str-get path i) 47)
+          (if (= i 0) "/" (str-slice path 0 i))
+          (recur (- i 1)))))))
+
+;; define i64 @"name"(…) {  →  name   |  define i32 @main(…) { → main
+(defn extract-define-name [line]
+  (let [at (str-index-of line "@")]
+    (if (< at 0) "fn"
+      (let [rest (str-slice line (+ at 1) (count line))]
+        (if (str-starts-with? rest "\"")
+          (let [q (str-index-of (str-slice rest 1 (count rest)) "\"")]
+            (if (< q 0) "fn" (str-slice rest 1 (+ q 1))))
+          (let [lp (str-index-of rest "(")]
+            (if (< lp 0) rest (str-slice rest 0 lp))))))))
+
+;; Insert ` !dbg !N` before the opening `{` of a define line.
+(defn add-dbg-to-define [line sp-id]
+  (let [n (count line)]
+    (loop [i (- n 1)]
+      (if (< i 0) line
+        (if (= (str-get line i) 123)
+          (str-concat (str-slice line 0 i)
+            (str-concat " !dbg !" (str-concat (int-str sp-id) " {")))
+          (recur (- i 1)))))))
+
+(defn has-dbg? [line]
+  (>= (str-index-of line "!dbg") 0))
+
+;; Instruction lines: two-space indent, not labels (…:), not comments.
+(defn is-llvm-instr? [line]
+  (if (< (count line) 3) false
+    (if (str-starts-with? line "  ")
+      (if (str-starts-with? line "  ;") false
+        (if (str-eq? (str-slice line (- (count line) 1) (count line)) ":") false
+          true))
+      false)))
+
+(defn attach-dbg-loc [line loc-id]
+  (if (has-dbg? line) line
+    (str-concat line (str-concat ", !dbg !" (int-str loc-id)))))
+
+(defn dbg-meta-header [file dir]
+  (let [v (vector)]
+    (do (lines-push v "")
+        (lines-push v "!llvm.dbg.cu = !{!0}")
+        (lines-push v "!llvm.module.flags = !{!1, !2}")
+        (lines-push v "!llvm.ident = !{!3}")
+        (lines-push v (str-concat
+          "!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !4, producer: \"bars\", "
+          "isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !5)"))
+        (lines-push v "!1 = !{i32 2, !\"Debug Info Version\", i32 3}")
+        (lines-push v "!2 = !{i32 7, !\"Dwarf Version\", i32 4}")
+        (lines-push v "!3 = !{!\"bars compiler\"}")
+        (lines-push v (str-concat "!4 = !DIFile(filename: \""
+          (str-concat file (str-concat "\", directory: \"" (str-concat dir "\")")))))
+        (lines-push v "!5 = !{}")
+        (lines-push v "!6 = !DIBasicType(name: \"i64\", size: 64, encoding: DW_ATE_signed)")
+        (lines-push v "!7 = !DISubroutineType(types: !8)")
+        (lines-push v "!8 = !{!6}")
+        v)))
+
+(defn dbg-subprogram [sp-id name]
+  (str-concat "!" (str-concat (int-str sp-id)
+    (str-concat " = distinct !DISubprogram(name: \"" (str-concat name
+      "\", scope: !4, file: !4, line: 1, type: !7, scopeLine: 1, spFlags: DISPFlagDefinition, unit: !0, retainedNodes: !5)")))))
+
+(defn dbg-location [loc-id sp-id]
+  (str-concat "!" (str-concat (int-str loc-id)
+    (str-concat " = !DILocation(line: 1, column: 1, scope: !" (str-concat (int-str sp-id) ")")))))
+
+;; Rewrite body with !dbg attachments; append DI metadata. source-path for DIFile.
+(defn attach-debug-info [ll-lines source-path]
+  (let [file (if (> (count source-path) 0) (path-basename source-path) "program.brs")
+        dir (if (> (count source-path) 0) (path-dirname source-path) ".")
+        n (count ll-lines)
+        out (vector)
+        meta (vector)]
+    (do (append-vec meta (dbg-meta-header file dir))
+        (loop [i 0 cur-sp 0 cur-loc 0 next-id 20]
+          (if (>= i n)
+            (do (append-vec out meta) out)
+            (let [line (get ll-lines i)]
+              (if (str-starts-with? line "define ")
+                (let [sp next-id
+                      loc (+ sp 1)
+                      name (extract-define-name line)
+                      def (add-dbg-to-define line sp)
+                      next2 (+ sp 2)]
+                  (do (push out def)
+                      (lines-push meta (dbg-subprogram sp name))
+                      (lines-push meta (dbg-location loc sp))
+                      (recur (+ i 1) sp loc next2)))
+                (if (if (> cur-loc 0) (is-llvm-instr? line) false)
+                  (do (push out (attach-dbg-loc line cur-loc))
+                      (recur (+ i 1) cur-sp cur-loc next-id))
+                  (if (str-eq? line "}")
+                    (do (push out line)
+                        (recur (+ i 1) 0 0 next-id))
+                    (do (push out line)
+                        (recur (+ i 1) cur-sp cur-loc next-id)))))))))))
+
+;; source-path: DWARF DIFile when BARS_DEBUG=1.
+;; triple: LLVM target triple (cross-compilation).
+(defn compile-llvm-at [hir-lines out-path source-path]
+  (compile-llvm-target hir-lines out-path source-path "x86_64-unknown-linux-gnu"))
+
+(defn compile-llvm-target [hir-lines out-path source-path triple]
+  (let [raw (hir-to-llvm-at hir-lines triple)
+        ll-lines (if (debug-mode?) (attach-debug-info raw source-path) raw)
         text (join-lines ll-lines)
         ll-path (str-concat out-path ".ll")]
     (do (spit ll-path text)
         0)))
+
+(defn compile-llvm [hir-lines out-path]
+  (compile-llvm-at hir-lines out-path ""))
