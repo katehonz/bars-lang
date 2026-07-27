@@ -65,13 +65,15 @@
         (parse-int rest)))))
 
 (defn find-content-length [headers]
-  (let [p1 (str-index-of headers "Content-Length: ")
-        p2 (str-index-of headers "content-length: ")
+  (let [p1 (str-index-of headers "Content-Length")
+        p2 (str-index-of headers "content-length")
         p (if (>= p1 0) p1 p2)]
     (if (< p 0) -1
-      (let [start (+ p 16)
-            rest (str-slice headers start (count headers))]
-        (parse-int rest)))))
+      (let [rest (str-slice headers (+ p 14) (count headers))
+            after-colon (str-trim rest)]
+        (if (if (> (count after-colon) 0) (= (str-get after-colon 0) 58) false)
+          (parse-int (str-trim (str-slice after-colon 1 (count after-colon))))
+          (parse-int after-colon))))))
 
 (defn mk-response [status body]
   (let [v (vector)]
@@ -89,12 +91,14 @@
       (if (>= s 200) (< s 300) false))))
 
 ;; Read until EOF (empty chunk) or error; concat into acc.
+;; Capped at 10MB to prevent memory exhaustion from malicious servers.
 (defn recv-until-close [fd acc0]
   (loop [acc acc0]
-    (let [chunk (net/recv fd 8192)]
-      (if (= chunk 0) acc
-        (if (= (count chunk) 0) acc
-          (recur (str-concat acc chunk)))))))
+    (if (>= (count acc) 10485760) acc
+      (let [chunk (net/recv fd 8192)]
+        (if (= chunk 0) acc
+          (if (= (count chunk) 0) acc
+            (recur (str-concat acc chunk))))))))
 
 ;; After headers, read body until Content-Length or connection close.
 (defn finish-body [fd headers body0]

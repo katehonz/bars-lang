@@ -371,4 +371,63 @@ bars/
 
 ---
 
-*План версия: 6.6 | Актуализиран: 2026-07-27*
+---
+
+## Фаза 16: Бъгфиксове и Стабилизация 🪲
+
+> Актуално към: 2026-07-28 | Открити чрез пълен код ревю на bootstrap + self-hosted + runtime
+
+### 🔴 Критични
+
+| # | Бъг | Файл | Статус |
+|---|-----|------|--------|
+| 1 | LLVM backend: `map-set` губи ключа — декларация с 2 параметъра вместо 3 | `bootstrap/src/backends/llvm/mod.rs` | ✅ |
+| 2 | LLVM backend: `panic!()` вместо `Err` при unknown func/var | `bootstrap/src/backends/llvm/mod.rs` | ✅ |
+| 3 | Type inference: hardcoded `vars: vec![0]` в `print_poly` схемата | `bootstrap/src/types/mod.rs` | ✅ |
+| 4 | `recur` извън `loop` мълчаливо връща 0 вместо compile error | `compiler/hir.brs` | ✅ |
+| 5 | `type_eq?` смята всички не-var/fun типове за равни (bool == i64 == str) | `compiler/types.brs` | ✅ |
+| 6 | Thread макроси: nested `loop`/`recur` scope бъг | `compiler/macros.brs` | ✅ |
+
+### 🟠 Средни
+
+| # | Бъг | Файл | Статус |
+|---|-----|------|--------|
+| 7 | Unterminated string literal се приема без грешка | `bootstrap/src/reader/lexer.rs` | ✅ |
+| 8 | REPL отрицателен depth води до безкрайно чакане | `bootstrap/src/main.rs` | ✅ |
+| 9 | Lambda extraction не save/restore-ва `current_params` | `bootstrap/src/hir/lowering.rs` | ☐ |
+| 10 | Ownership checker branch средите не са изолирани (env-copy не се вика) | `compiler/ownership.brs` | ✅ |
+| 11 | Linter крашва при файл започващ с нов ред (OOB достъп) | `compiler/lint.brs` | ✅ |
+
+### 🟡 Леки
+
+| # | Бъг | Файл | Статус |
+|---|-----|------|--------|
+| 12 | Debug `eprintln!` в production код | `types/mod.rs`, `cranelift/mod.rs` | ✅ |
+| 13 | `build.rs` ползва `panic!()` вместо `exit(1)` | `bootstrap/build.rs` | ✅ |
+| 14 | Ownership checker третира непознати променливи като `Owned` | `bootstrap/src/ownership/checker.rs` | ✅ |
+| 15 | `bars_env_set` се ползва като getter (объркващо име) | `compiler/build.brs` | ☐ |
+| 16 | `int-str` helper дублиран в ~10 файла | multiple `.brs` | ☐ |
+| 17 | JSON parser не поддържа `\b`, `\f` escape-ове | `lib/json.brs` | ✅ |
+| 18 | Hash map не се преразмерява (cap започва от 16, не расте) | `runtime/bars_runtime.c` | ✅ |
+| 19 | `recv-until-close` няма лимит на размера | `lib/http.brs` | ✅ |
+| 20 | `w-ident`/`c-ident` може да върне празен идентификатор | `codegen/wasm.brs`, `codegen/c.brs` | ✅ |
+| 21 | `find-content-length` не обработва вариации в whitespace на HTTP хедъра | `lib/http.brs` | ✅ |
+| 22 | `join-path`/`dirname` дублирани в `pkg.brs` и `build.brs` | `compiler/{pkg, build}.brs` | ☐ |
+| 23 | Няма unit тестове за parser, type checker, ownership | `bootstrap/src/` | ☐ |
+| 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `runtime/bars_runtime.c` | ☐ |
+
+### 💡 Идеи за подобрения
+1. Същински test framework (deftest макрос + test runner)
+2. Error recovery в парсера
+3. Pattern matching в `let` (destructuring)
+4. Keyword arguments за функции
+5. Persistent/immutable data structures
+6. Автоматично TCO за рекурсивни функции
+7. Documentation strings за `defn`
+8. Истински typeclass/protocol механизъм (не само macros)
+9. По-добри compile-time грешки вместо `panic!()`/`unwrap()`
+10. Incremental compilation с dependency graph (не само mtime)
+
+---
+
+*План версия: 6.7 | Актуализиран: 2026-07-28*

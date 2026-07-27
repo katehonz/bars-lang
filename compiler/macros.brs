@@ -248,25 +248,25 @@
     (if (< n 2)
       (mk-nil)
       (let [result (expand-expr (get expr 1))]
-        (loop [i 2 res result]
+        (loop [i 2 res result phase 0 j 1 new-expr (vector)]
           (if (>= i n)
             res
-            (let [form (get expr i)
-                  new-expr (vector)]
-              (if (is-atom? form)
-                ;; Just a symbol: (sym x)
-                (do (push new-expr form)
-                    (push new-expr res)
-                    (recur (+ i 1) new-expr))
-                ;; Compound: (fun args...) or (fun)
-                (let [head (get form 0)]
-                  (do (push new-expr head)
-                      (push new-expr res)
-                      (loop [j 1]
-                        (if (>= j (count form))
-                          (recur (+ i 1) new-expr)
-                          (do (push new-expr (get form j))
-                              (recur (+ j 1)))))))))))))))
+            (if (= phase 0)
+              (let [form (get expr i)]
+                (if (is-atom? form)
+                  (let [v (vector)]
+                    (do (push v form) (push v res)
+                        (recur (+ i 1) v 0 1 (vector))))
+                  (let [head (get form 0)
+                        v (vector)]
+                    (do (push v head)
+                        (push v res)
+                        (recur i res 1 1 v)))))
+              (let [form (get expr i)]
+                (if (>= j (count form))
+                  (recur (+ i 1) new-expr 0 1 (vector))
+                  (do (push new-expr (get form j))
+                      (recur i res 1 (+ j 1) new-expr)))))))))))
 
 ;; (->> x (f a) (g b))  =>  (g b (f a x))
 (defn expand-thread-last [expr]
@@ -274,24 +274,25 @@
     (if (< n 2)
       (mk-nil)
       (let [result (expand-expr (get expr 1))]
-        (loop [i 2 res result]
+        (loop [i 2 res result phase 0 j 1 new-expr (vector)]
           (if (>= i n)
             res
-            (let [form (get expr i)
-                  new-expr (vector)]
-              (if (is-atom? form)
-                (do (push new-expr form)
-                    (push new-expr res)
-                    (recur (+ i 1) new-expr))
-                (let [head (get form 0)]
-                  (do (push new-expr head)
-                      (loop [j 1]
-                        (if (>= j (count form))
-                          0
-                          (do (push new-expr (get form j))
-                              (recur (+ j 1)))))
-                      (push new-expr res)
-                      (recur (+ i 1) new-expr)))))))))))
+            (if (= phase 0)
+              (let [form (get expr i)]
+                (if (is-atom? form)
+                  (let [v (vector)]
+                    (do (push v form) (push v res)
+                        (recur (+ i 1) v 0 1 (vector))))
+                  (let [head (get form 0)
+                        v (vector)]
+                    (do (push v head)
+                        (recur i res 1 1 v)))))
+              (let [form (get expr i)]
+                (if (>= j (count form))
+                  (do (push new-expr res)
+                      (recur (+ i 1) new-expr 0 1 (vector)))
+                  (do (push new-expr (get form j))
+                      (recur i res 1 (+ j 1) new-expr)))))))))))
 
 ;; ===========================================================================
 ;; Phase 14.4+ — traits & const

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,10 +112,12 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>> {
                 chars.next(); // skip opening quote
                 col += 1;
                 let mut string = String::new();
+                let mut closed = false;
                 while let Some(&c) = chars.peek() {
                     if c == '"' {
                         chars.next();
                         col += 1;
+                        closed = true;
                         break;
                     }
                     if c == '\\' {
@@ -138,6 +140,9 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>> {
                         chars.next();
                         col += 1;
                     }
+                }
+                if !closed {
+                    bail!("unterminated string literal at line {}, col {}", start_line, start_col);
                 }
                 tokens.push(SpannedToken {
                     token: Token::String(string),

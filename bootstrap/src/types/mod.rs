@@ -483,8 +483,9 @@ impl InferCtx {
 
         // I/O: polymorphic print (any type → i64)
         let a = self.fresh_var();
+        let a_id = match a { Type::Var(id) => id, _ => unreachable!() };
         let print_poly = TypeScheme {
-            vars: vec![0],
+            vars: vec![a_id],
             ty: Type::Fun(vec![a.clone()], Box::new(Type::I64)),
         };
         let print_none = TypeScheme::mono(Type::Fun(vec![], Box::new(Type::I64)));
@@ -595,11 +596,10 @@ impl InferCtx {
     /// Solve accumulated constraints via unification
     pub fn solve(&mut self) -> Result<Substitution, TypeError> {
         let mut subst: Substitution = HashMap::new();
-        for (i, Constraint(a, b)) in std::mem::take(&mut self.constraints).into_iter().enumerate() {
+        for (_i, Constraint(a, b)) in std::mem::take(&mut self.constraints).into_iter().enumerate() {
             let a_sub = apply_subst(&subst, &a);
             let b_sub = apply_subst(&subst, &b);
             if let Err(e) = unify(&a_sub, &b_sub, &mut subst) {
-                eprintln!("DEBUG constraint #{} FAILED: {} == {}", i, a_sub, b_sub);
                 return Err(e);
             }
         }

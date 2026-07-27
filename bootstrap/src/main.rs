@@ -550,6 +550,13 @@ fn run_repl_jit() -> Result<()> {
             }
         }
 
+        if depth < 0 {
+            eprintln!("Грешка: неочаквана затваряща скоба");
+            input.clear();
+            depth = 0;
+            continue;
+        }
+
         input.push_str(&line);
         input.push('\n');
 

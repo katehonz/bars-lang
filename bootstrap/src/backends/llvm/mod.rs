@@ -128,7 +128,10 @@ impl<'ctx> LlvmCompiler<'ctx> {
         // void f(i8*, i64)
         let void_ptr_i64 = self.void_type.fn_type(&[i8_ptr.into(), self.i64_type.into()], false);
         self.module.add_function("bars_vector_push_i64", void_ptr_i64, None);
-        self.module.add_function("bars_map_set_i64", void_ptr_i64, None);
+
+        // void f(i8*, i64, i64)
+        let void_ptr_i64_i64 = self.void_type.fn_type(&[i8_ptr.into(), self.i64_type.into(), self.i64_type.into()], false);
+        self.module.add_function("bars_map_set_i64", void_ptr_i64_i64, None);
 
         // i64 f(i8*, i64)
         let i64_ptr_i64 = self.i64_type.fn_type(&[i8_ptr.into(), self.i64_type.into()], false);
@@ -257,8 +260,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                     continue;
                 }
                 if let hir::Instr::Assign { dest, value } = instr {
-                    // Store value to variable's alloca
-                    let val = self.operand_to_int(value);
+                    let val = self.operand_to_int(value)?;
                     if let Some(&alloca) = self.allocas.get(dest) {
                         let _ = self.builder.build_store(alloca, val).unwrap();
                     }
@@ -286,15 +288,15 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 self.values.insert(dest.clone(), val);
             }
             hir::Instr::Store { addr, value } => {
-                let addr_val = self.operand_to_int(addr);
-                let val = self.operand_to_int(value);
+                let addr_val = self.operand_to_int(addr)?;
+                let val = self.operand_to_int(value)?;
                 let ptr = self.builder.build_int_to_ptr(
                     addr_val, self.i64_type.ptr_type(AddressSpace::default()), "store_ptr",
                 ).unwrap();
                 let _ = self.builder.build_store(ptr, val).unwrap();
             }
             hir::Instr::Load { dest, addr } => {
-                let addr_val = self.operand_to_int(addr);
+                let addr_val = self.operand_to_int(addr)?;
                 let ptr = self.builder.build_int_to_ptr(
                     addr_val, self.i64_type.ptr_type(AddressSpace::default()), "load_ptr",
                 ).unwrap();
@@ -303,7 +305,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 self.values.insert(dest.clone(), val);
             }
             hir::Instr::FieldLoad { dest, base, offset } => {
-                let base_val = self.operand_to_int(base);
+                let base_val = self.operand_to_int(base)?;
                 let offset_val = self.i64_type.const_int(*offset as u64, false);
                 let addr = self.builder.build_int_add(base_val, offset_val, "field_addr").unwrap();
                 let ptr = self.builder.build_int_to_ptr(
@@ -314,18 +316,18 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 self.values.insert(dest.clone(), val);
             }
             hir::Instr::FieldStore { base, offset, value } => {
-                let base_val = self.operand_to_int(base);
+                let base_val = self.operand_to_int(base)?;
                 let offset_val = self.i64_type.const_int(*offset as u64, false);
                 let addr = self.builder.build_int_add(base_val, offset_val, "field_addr").unwrap();
                 let ptr = self.builder.build_int_to_ptr(
                     addr, self.i64_type.ptr_type(AddressSpace::default()), "field_store_ptr",
                 ).unwrap();
-                let val = self.operand_to_int(value);
+                let val = self.operand_to_int(value)?;
                 let _ = self.builder.build_store(ptr, val).unwrap();
             }
             hir::Instr::BinOp { dest, op, lhs, rhs } => {
-                let lhs_val = self.operand_to_int(lhs);
-                let rhs_val = self.operand_to_int(rhs);
+                let lhs_val = self.operand_to_int(lhs)?;
+                let rhs_val = self.operand_to_int(rhs)?;
                 let result = match op {
                     hir::BinOp::Add => self.builder.build_int_add(lhs_val, rhs_val, "add").unwrap(),
                     hir::BinOp::Sub => self.builder.build_int_sub(lhs_val, rhs_val, "sub").unwrap(),
@@ -360,7 +362,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 self.values.insert(dest.clone(), result);
             }
             hir::Instr::UnOp { dest, op, operand } => {
-                let val = self.operand_to_int(operand);
+                let val = self.operand_to_int(operand)?;
                 match op {
                     hir::UnOp::Not => {
                         let zero = self.i64_type.const_int(0, false);
@@ -373,7 +375,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
             hir::Instr::Call { dest, func: func_name, args } => {
                 let arg_vals: Vec<IntValue<'ctx>> = args.iter()
                     .map(|a| self.operand_to_int(a))
-                    .collect();
+                    .collect::<Result<Vec<_>>>()?;
 
                 // Struct constructor
                 if let Some(fields) = struct_registry.get(func_name) {
@@ -474,7 +476,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                     }
                     "map_set" | "map-set" if arg_vals.len() == 3 => {
                         let ptr = self.i64_to_ptr(arg_vals[0]);
-                        self.call_runtime_void_ptr_i64("bars_map_set_i64", ptr, arg_vals[2])?;
+                        self.call_runtime_void_ptr_i64_i64("bars_map_set_i64", ptr, arg_vals[1], arg_vals[2])?;
                         self.i64_type.const_int(0, false)
                     }
                     "map_get" | "map-get" if arg_vals.len() == 2 => {
@@ -644,7 +646,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 let _ = self.builder.build_unconditional_branch(target);
             }
             hir::Terminator::Branch { cond, then_block, else_block } => {
-                let cond_val = self.operand_to_int(cond);
+                let cond_val = self.operand_to_int(cond)?;
                 let zero = self.i64_type.const_int(0, false);
                 let cond_bool = self.builder.build_int_compare(
                     IntPredicate::NE, cond_val, zero, "branch_cond",
@@ -654,7 +656,7 @@ impl<'ctx> LlvmCompiler<'ctx> {
                 let _ = self.builder.build_conditional_branch(cond_bool, then_bb, else_bb);
             }
             hir::Terminator::Return(val) => {
-                let ret_val = self.operand_to_int(val);
+                let ret_val = self.operand_to_int(val)?;
                 let _ = self.builder.build_return(Some(&ret_val));
             }
             hir::Terminator::Unreachable => {
@@ -662,15 +664,15 @@ impl<'ctx> LlvmCompiler<'ctx> {
             }
             hir::Terminator::TailCall { func: func_name, args } => {
                 let arg_vals: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = args.iter()
-                    .map(|a| self.operand_to_int(a).into())
-                    .collect();
+                    .map(|a| self.operand_to_int(a).map(|v| v.into()))
+                    .collect::<Result<Vec<_>>>()?;
                 if let Some(func_val) = self.module.get_function(func_name) {
                     let call = self.builder.build_call(func_val, &arg_vals, "tailcall").unwrap();
                     call.set_tail_call(true);
                     let ret_val = call.try_as_basic_value().left().unwrap().into_int_value();
                     let _ = self.builder.build_return(Some(&ret_val));
                 } else {
-                    panic!("Unknown function in LLVM backend: {}", func_name);
+                    bail!("Unknown function in LLVM backend: {}", func_name);
                 }
             }
         }
@@ -679,20 +681,19 @@ impl<'ctx> LlvmCompiler<'ctx> {
 
     // --- Helpers ---
 
-    fn operand_to_int(&self, op: &hir::Operand) -> IntValue<'ctx> {
+    fn operand_to_int(&self, op: &hir::Operand) -> Result<IntValue<'ctx>> {
         match op {
             hir::Operand::Var(v) => {
-                // If variable has an alloca, load from it
                 if let Some(&alloca) = self.allocas.get(v) {
                     let loaded = self.builder.build_load(alloca, "load").unwrap();
-                    loaded.into_int_value()
+                    Ok(loaded.into_int_value())
                 } else if let Some(&val) = self.values.get(v) {
-                    val
+                    Ok(val)
                 } else {
-                    panic!("Undefined variable in LLVM backend: {}", v)
+                    bail!("Undefined variable in LLVM backend: {}", v)
                 }
             }
-            hir::Operand::Const(c) => self.i64_type.const_int(*c as u64, true),
+            hir::Operand::Const(c) => Ok(self.i64_type.const_int(*c as u64, true)),
         }
     }
 
@@ -731,6 +732,12 @@ impl<'ctx> LlvmCompiler<'ctx> {
     fn call_runtime_void_ptr_i64(&self, name: &str, ptr: PointerValue<'ctx>, val: IntValue<'ctx>) -> Result<()> {
         let func = self.module.get_function(name).unwrap();
         let _ = self.builder.build_call(func, &[ptr.into(), val.into()], "").unwrap();
+        Ok(())
+    }
+
+    fn call_runtime_void_ptr_i64_i64(&self, name: &str, ptr: PointerValue<'ctx>, val1: IntValue<'ctx>, val2: IntValue<'ctx>) -> Result<()> {
+        let func = self.module.get_function(name).unwrap();
+        let _ = self.builder.build_call(func, &[ptr.into(), val1.into(), val2.into()], "").unwrap();
         Ok(())
     }
 

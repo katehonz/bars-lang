@@ -82,9 +82,8 @@ impl CraneliftBackend {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
         flag_builder.set("is_pic", "false").unwrap();
-        let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
-            panic!("host machine is not supported: {}", msg);
-        });
+        let isa_builder = cranelift_native::builder()
+            .map_err(|msg| anyhow::anyhow!("host machine is not supported: {}", msg))?;
         let isa = isa_builder.finish(settings::Flags::new(flag_builder)).unwrap();
 
         let mut jit_builder = cranelift_jit::JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
@@ -631,7 +630,6 @@ fn compile_instr<M: Module>(
                         let call = builder.ins().call(func_ref, &arg_vals);
                         builder.inst_results(call)[0]
                     } else {
-                        eprintln!("DEBUG: Unknown func_name='{}' arg_count={}", func_name, arg_vals.len());
                         bail!("Unknown function in Cranelift backend: {}", func_name)
                     }
                 }
@@ -703,7 +701,7 @@ fn compile_terminator<M: Module>(
                 let ret_val = builder.inst_results(call)[0];
                 builder.ins().return_(&[ret_val]);
             } else {
-                panic!("Unknown function in Cranelift backend: {}", func_name)
+                bail!("Unknown function in Cranelift backend: {}", func_name)
             }
         }
     }
@@ -789,9 +787,9 @@ pub fn compile_hir_to_object(
         isa_builder.finish(settings::Flags::new(flag_builder))
             .map_err(|e| anyhow::anyhow!("Cranelift ISA finish failed: {}", e))?
     } else {
-        cranelift_native::builder().unwrap_or_else(|msg| {
-            panic!("host machine is not supported: {}", msg);
-        }).finish(settings::Flags::new(flag_builder))
+        cranelift_native::builder()
+            .map_err(|msg| anyhow::anyhow!("host machine is not supported: {}", msg))?
+            .finish(settings::Flags::new(flag_builder))
             .map_err(|e| anyhow::anyhow!("Cranelift ISA finish failed: {}", e))?
     };
 

@@ -176,16 +176,19 @@
           (if (= c 34)
             (let [out (vector)]
               (do (push out (j-str acc)) (push out (+ j 1)) out))
-            (if (= c 92)
-              (if (>= (+ j 1) n) 0
-                (let [e (str-get s (+ j 1))
-                      ch (if (= e 110) "\n"
-                           (if (= e 116) "\t"
-                             (if (= e 114) "\r"
-                               (if (= e 34) "\""
-                                 (if (= e 92) "\\"
-                                   (str-slice s (+ j 1) (+ j 2)))))))]
-                  (recur (+ j 2) (str-concat acc ch))))
+             (if (= c 92)
+               (if (>= (+ j 1) n) 0
+                 (let [e (str-get s (+ j 1))
+                       ch (if (= e 110) "\n"
+                            (if (= e 116) "\t"
+                              (if (= e 114) "\r"
+                                (if (= e 34) "\""
+                                  (if (= e 92) "\\"
+                                    (if (= e 98) (code-char 8)
+                                      (if (= e 102) (code-char 12)
+                                        (if (= e 47) "/"
+                                          (str-slice s (+ j 1) (+ j 2)))))))))))]
+                   (recur (+ j 2) (str-concat acc ch))))
               (recur (+ j 1) (str-concat acc (str-slice s j (+ j 1)))))))))))
 
 (defn parse-array [s i0]

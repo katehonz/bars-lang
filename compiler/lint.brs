@@ -44,7 +44,7 @@
         (let [c (str-get src i)]
           (if (= c 10)
             ;; end of line: trailing spaces?
-            (let [tr (if (if (> col 0)
+            (let [tr (if (if (if (> i 0) (> col 0) false)
                             (if (= (str-get src (- i 1)) 32) true
                               (= (str-get src (- i 1)) 9))
                             false)

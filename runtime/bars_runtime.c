@@ -264,6 +264,24 @@ bars_map_t* bars_map_new(void) {
 }
 
 void bars_map_set(bars_map_t* map, bars_value_t key, bars_value_t val) {
+    if (map->size >= map->cap * 3 / 4) {
+        size_t new_cap = map->cap * 2;
+        bars_map_entry_t** new_buckets = (bars_map_entry_t**)bars_alloc(sizeof(bars_map_entry_t*) * new_cap);
+        memset(new_buckets, 0, sizeof(bars_map_entry_t*) * new_cap);
+        for (size_t i = 0; i < map->cap; i++) {
+            bars_map_entry_t* entry = map->buckets[i];
+            while (entry) {
+                bars_map_entry_t* next = entry->next;
+                uint64_t h = bars_hash_value(entry->key);
+                size_t idx = h & (new_cap - 1);
+                entry->next = new_buckets[idx];
+                new_buckets[idx] = entry;
+                entry = next;
+            }
+        }
+        map->buckets = new_buckets;
+        map->cap = new_cap;
+    }
     uint64_t h = bars_hash_value(key);
     size_t idx = h & (map->cap - 1);
     bars_map_entry_t* entry = map->buckets[idx];

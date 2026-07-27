@@ -86,7 +86,9 @@
                 (if (type_eq? (get (fun_params a) i) (get (fun_params b) i))
                   (recur (+ i 1))
                   false)))))
-        true)))
+        (if (= (type_tag a) 7)
+          (str-eq? (named_name a) (named_name b))
+          true))))
 )
 
 (defn type_str [t]

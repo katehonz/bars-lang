@@ -17,10 +17,11 @@ fn main() {
         .expect("Failed to compile runtime");
 
     if !output.status.success() {
-        panic!(
+        eprintln!(
             "Failed to compile C runtime: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        std::process::exit(1);
     }
 
     // Create static library
@@ -31,10 +32,11 @@ fn main() {
         .expect("Failed to create static library");
 
     if !output.status.success() {
-        panic!(
+        eprintln!(
             "Failed to create static library: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        std::process::exit(1);
     }
 
     println!("cargo:rustc-link-search=native={}", runtime_dir);

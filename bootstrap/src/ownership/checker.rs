@@ -249,7 +249,7 @@ fn check_expr(
             Ok(OwnershipState::Owned)
         }
 
-        Expr::Symbol(sym, _) => {
+        Expr::Symbol(sym, span) => {
             let name = &sym.0;
             match env.get(name) {
                 Some(OwnershipState::Moved) => {
@@ -260,7 +260,7 @@ fn check_expr(
                 Some(OwnershipState::Borrowed { .. }) => Ok(OwnershipState::Owned),
                 Some(OwnershipState::Owned) => Ok(OwnershipState::Owned),
 
-                None => Ok(OwnershipState::Owned),
+                None => Ok(OwnershipState::Copy),
             }
         }
 

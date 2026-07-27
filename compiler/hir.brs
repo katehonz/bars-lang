@@ -477,7 +477,7 @@
 
 (defn lower-recur [ast t l lines loops adt]
   (if (< (count loops) 1)
-    (mk-ret "0" t l)
+    (do (println "error: hir: recur used outside loop") (mk-ret "0" t l))
     (let [frame (loops-top loops)
           label (get frame 0)
           vars  (get frame 1)

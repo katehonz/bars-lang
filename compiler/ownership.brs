@@ -323,7 +323,8 @@
             (let [n (count expr)]
               (loop [i 1 err 0]
                 (if (>= i n) err
-                  (let [e (check-expr env (get expr i) diag)]
+                  (let [arm-env (env-copy env)
+                        e (check-expr arm-env (get expr i) diag)]
                     (recur (+ i 1) (if (> e 0) e err))))))
           (check-call env expr diag)))))))))))))))
 
@@ -377,8 +378,10 @@
         else-branch (get expr 3)
         e0 (check-expr env cond diag)
         _ (env-release-borrows env)
-        e1 (check-expr env then-branch diag)
-        e2 (check-expr env else-branch diag)]
+        then-env (env-copy env)
+        else-env (env-copy env)
+        e1 (check-expr then-env then-branch diag)
+        e2 (check-expr else-env else-branch diag)]
     (do (env-release-borrows env)
         (if (> e0 0) e0 (if (> e1 0) e1 e2)))))
 

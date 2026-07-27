@@ -48,7 +48,8 @@
 (defn w-ident [s]
   (let [n (count s)]
     (loop [i 0 acc ""]
-      (if (>= i n) acc
+      (if (>= i n)
+        (if (= (count acc) 0) "_id" acc)
         (let [c (str-get s i)
               ok (if (if (>= c 48) (<= c 57) false) true
                    (if (if (>= c 65) (<= c 90) false) true
