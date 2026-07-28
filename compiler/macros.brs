@@ -1,5 +1,6 @@
 ;; Bars Macro Expander — Stage 8 of self-hosting
-;; Built-in macro expansion: when, unless, cond, ->, ->>
+;; Built-in + user defmacro expansion (syntax-quote templates)
+;; Built-ins: when, unless, cond, ->, ->>, traits, defconst
 ;; Transforms AST before HIR lowering.
 ;;
 ;; AST format:
@@ -60,6 +61,166 @@
         (push v else)
         v)))
 
+;; ===========================================================================
+;; User defmacro (Phase 17.2)
+;; Registry entry: [name param-names-vec body-ast]
+;; Body is usually [23 template] (syntax-quote). Expansion is template-only
+;; (unquote / splice) — enough for typical macros like twice/unless/assert.
+;; ===========================================================================
+
+(defn is-reader-form? [x tag]
+  (if (not (is-atom? x)) false
+    (= (ast-tag x) tag)))
+
+(defn is-defmacro-form? [expr]
+  (if (is-atom? expr) false
+    (let [h (get expr 0)]
+      (if (not (is-atom? h)) false
+        (if (= (ast-tag h) 21) true
+          (if (= (ast-tag h) 1) (str-eq? (ast-val h) "defmacro") false))))))
+
+(defn parse-macro-params [params-ast]
+  (let [plain (unwrap-vec params-ast)
+        n (count plain)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [p (get plain i)]
+              (if (if (is-atom? p) (= (ast-tag p) 1) false)
+                (do (push out (ast-val p))
+                    (recur (+ i 1)))
+                (recur (+ i 1))))))
+        out)))
+
+(defn parse-defmacro-form [expr]
+  ;; (defmacro name [params...] body) → [name params body] or 0
+  (if (< (count expr) 4) 0
+    (let [name-a (get expr 1)
+          params-a (get expr 2)
+          body (get expr 3)]
+      (if (not (is-atom? name-a)) 0
+        (let [name (ast-val name-a)
+              params (parse-macro-params params-a)
+              entry (vector)]
+          (do (push entry name)
+              (push entry params)
+              (push entry body)
+              entry))))))
+
+(defn collect-macros [ast-list]
+  (let [n (count ast-list)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [expr (get ast-list i)]
+              (if (is-defmacro-form? expr)
+                (let [e (parse-defmacro-form expr)]
+                  (if (= e 0)
+                    (recur (+ i 1))
+                    (do (push out e)
+                        (recur (+ i 1)))))
+                (recur (+ i 1))))))
+        out)))
+
+(defn macro-lookup [macs name]
+  (let [n (count macs)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [e (get macs i)]
+          (if (str-eq? (get e 0) name) e
+            (recur (+ i 1))))))))
+
+(defn env-lookup [env name]
+  ;; env: vector of [name-str ast]
+  (let [n (count env)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [p (get env i)]
+          (if (str-eq? (get p 0) name) (get p 1)
+            (recur (+ i 1))))))))
+
+(defn env-bind [params args]
+  (let [n (count params)
+        env (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [pair (vector)
+                  arg (if (< i (count args)) (get args i) (mk-nil))]
+              (do (push pair (get params i))
+                  (push pair arg)
+                  (push env pair)
+                  (recur (+ i 1))))))
+        env)))
+
+;; Expand syntax-quote template with unquote/splice under env.
+(defn expand-synquote [expr env]
+  (if (is-atom? expr)
+    (let [tag (ast-tag expr)]
+      (if (= tag 24)
+        ;; ~x — if symbol, lookup; else recurse
+        (let [inner (ast-val expr)]
+          (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
+            (let [found (env-lookup env (ast-val inner))]
+              (if (= found 0) inner found))
+            (expand-synquote inner env)))
+        (if (= tag 25)
+          ;; bare splice outside list — treat as unquote
+          (let [inner (ast-val expr)]
+            (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
+              (let [found (env-lookup env (ast-val inner))]
+                (if (= found 0) inner found))
+              (expand-synquote inner env)))
+          (if (= tag 23)
+            (expand-synquote (ast-val expr) env)
+            expr))))
+    ;; compound / vector form
+    (let [n (count expr)
+          out (vector)]
+      (do (loop [i 0]
+            (if (>= i n) out
+              (let [child (get expr i)]
+                (if (is-reader-form? child 25)
+                  ;; splice elements of looked-up list/vector into out
+                  (let [inner (ast-val child)
+                        val (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
+                              (let [found (env-lookup env (ast-val inner))]
+                                (if (= found 0) inner found))
+                              (expand-synquote inner env))]
+                    (if (is-atom? val)
+                      (do (push out val)
+                          (recur (+ i 1)))
+                      (let [vn (count val)
+                            start (if (is-vec-marker? val) 1 0)]
+                        (do (loop [j start]
+                              (if (>= j vn) 0
+                                (do (push out (get val j))
+                                    (recur (+ j 1)))))
+                            (recur (+ i 1))))))
+                  (do (push out (expand-synquote child env))
+                      (recur (+ i 1)))))))
+          out))))
+
+(defn apply-user-macro [entry args]
+  (let [params (get entry 1)
+        body (get entry 2)
+        env (env-bind params args)]
+    (if (is-reader-form? body 23)
+      (expand-synquote (ast-val body) env)
+      ;; Non-template body: if symbol param, return binding; else leave
+      (if (if (is-atom? body) (= (ast-tag body) 1) false)
+        (let [found (env-lookup env (ast-val body))]
+          (if (= found 0) body found))
+        (expand-synquote body env)))))
+
+(defn expand-call-args [expr macs]
+  ;; expand args of (f a b c) → vector of expanded args (skip head)
+  (let [n (count expr)
+        out (vector)]
+    (do (loop [i 1]
+          (if (>= i n) out
+            (do (push out (expand-expr (get expr i) macs))
+                (recur (+ i 1))))))))
+
 ;; ---- expand helpers for special forms ----
 ;; Vector marker tag 28: [[28] e0 e1 ...] from reader
 
@@ -91,7 +252,7 @@
                 (recur (+ i 1))))))))
 
 ;; let/loop bindings: [name1 val1 name2 val2 ...] — expand only values
-(defn expand-bindings [binds]
+(defn expand-bindings [binds macs]
   (let [plain (unwrap-vec binds)
         n (count plain)
         new-b (vector)]
@@ -99,11 +260,11 @@
       (if (>= i n) (wrap-vec new-b)
         (do (push new-b (get plain i))
             (if (< (+ i 1) n)
-              (push new-b (expand-expr (get plain (+ i 1))))
+              (push new-b (expand-expr (get plain (+ i 1)) macs))
               0)
             (recur (+ i 2)))))))
 
-(defn expand-children-from [expr start]
+(defn expand-children-from [expr start macs]
   (let [n (count expr)
         new-expr (vector)]
     (do (push new-expr (get expr 0))
@@ -112,16 +273,16 @@
             (if (< i start)
               (do (push new-expr (get expr i))
                   (recur (+ i 1)))
-              (do (push new-expr (expand-expr (get expr i)))
+              (do (push new-expr (expand-expr (get expr i) macs))
                   (recur (+ i 1)))))))))
 
-(defn expand-special [expr tag]
+(defn expand-special [expr tag macs]
   ;; 10=defn: keep name+params (unwrap params), expand body
   ;; 11=let / 14=loop: expand binding values + body
   ;; 28=vector literal: expand elements
   ;; 12=if / 13=do / others: expand all children
   (if (= tag 28)
-    (expand-children-from expr 1)
+    (expand-children-from expr 1 macs)
   (if (= tag 10)
     (let [n (count expr)
           new-expr (vector)]
@@ -130,93 +291,98 @@
           (push new-expr (get expr 2))
           (loop [i 3]
             (if (>= i n) new-expr
-              (do (push new-expr (expand-expr (get expr i)))
+              (do (push new-expr (expand-expr (get expr i) macs))
                   (recur (+ i 1)))))))
     (if (if (= tag 11) true (= tag 14))
       (let [n (count expr)
             new-expr (vector)]
         (do (push new-expr (get expr 0))
-            (push new-expr (expand-bindings (get expr 1)))
+            (push new-expr (expand-bindings (get expr 1) macs))
             (loop [i 2]
               (if (>= i n) new-expr
-                (do (push new-expr (expand-expr (get expr i)))
+                (do (push new-expr (expand-expr (get expr i) macs))
                     (recur (+ i 1)))))))
-      (expand-children-from expr 1)))))
+      (expand-children-from expr 1 macs)))))
 
 ;; ---- expand an expression ----
 
-(defn expand-expr [expr]
+(defn expand-symbol-call [expr name macs]
+  ;; Built-in macros, then user defmacro, else plain call.
+  (if (str-eq? name "when")
+    (expand-when expr macs)
+    (if (str-eq? name "unless")
+      (expand-unless expr macs)
+      (if (str-eq? name "cond")
+        (expand-cond expr macs)
+        (if (str-eq? name "->")
+          (expand-thread expr macs)
+          (if (str-eq? name "->>")
+            (expand-thread-last expr macs)
+            (if (str-eq? name "deftrait")
+              (expand-deftrait expr)
+              (if (str-eq? name "impl")
+                (expand-impl expr (vector) macs)
+                (if (str-eq? name "defconst")
+                  (expand-defconst expr macs)
+                  (if (str-eq? name "trait-call")
+                    (expand-trait-call expr macs)
+                    (if (str-eq? name "tcall")
+                      (expand-trait-call expr macs)
+                      (let [entry (macro-lookup macs name)]
+                        (if (= entry 0)
+                          (expand-children-from expr 0 macs)
+                          (let [args (expand-call-args expr macs)
+                                expanded (apply-user-macro entry args)]
+                            (expand-expr expanded macs)))))))))))))))
+
+(defn expand-expr [expr macs]
   (if (is-atom? expr)
     expr
-    (let [head (get expr 0)
-          n (count expr)]
+    (let [head (get expr 0)]
       (if (is-atom? head)
         (let [tag (ast-tag head)
               name (ast-val head)]
           (if (= tag 1)
-            ;; Symbol head — macros or plain call
-            (if (str-eq? name "when")
-              (expand-when expr)
-              (if (str-eq? name "unless")
-                (expand-unless expr)
-                (if (str-eq? name "cond")
-                  (expand-cond expr)
-                  (if (str-eq? name "->")
-                    (expand-thread expr)
-                    (if (str-eq? name "->>")
-                      (expand-thread-last expr)
-                      (if (str-eq? name "deftrait")
-                        (expand-deftrait expr)
-                        (if (str-eq? name "impl")
-                          (expand-impl expr (vector))
-                          (if (str-eq? name "defconst")
-                            (expand-defconst expr)
-                            (if (str-eq? name "trait-call")
-                              (expand-trait-call expr)
-                              (if (str-eq? name "tcall")
-                                (expand-trait-call expr)
-                                (expand-children-from expr 0)))))))))))
-            ;; Special form tags (>=10) or vector marker (28)
+            (expand-symbol-call expr name macs)
             (if (if (>= tag 10) true (= tag 28))
-              (expand-special expr tag)
-              (expand-children-from expr 0))))
-        ;; Head is compound — data vector, expand elements
-        (expand-children-from expr 0)))))
+              (expand-special expr tag macs)
+              (expand-children-from expr 0 macs))))
+        (expand-children-from expr 0 macs)))))
 
 ;; ---- built-in macro expansions ----
 
 ;; (when cond body...) => (if cond (do body...) nil)
-(defn expand-when [expr]
+(defn expand-when [expr macs]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
-      (let [cond (expand-expr (get expr 1))]
+      (let [cond (expand-expr (get expr 1) macs)]
         (if (<= n 2)
           (mk-if cond (mk-nil) (mk-nil))
           ;; Build do body from args[1..]
           (let [body-exprs (vector)]
             (do (loop [i 2]
                   (if (>= i n) 0
-                    (do (push body-exprs (expand-expr (get expr i)))
+                    (do (push body-exprs (expand-expr (get expr i) macs))
                         (recur (+ i 1)))))
                 (mk-if cond (mk-do body-exprs) (mk-nil)))))))))
 
 ;; (unless cond body...) => (if (not cond) (do body...) nil)
-(defn expand-unless [expr]
+(defn expand-unless [expr macs]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
       (let [cond-expr (get expr 1)
             not-call (vector)]
         (do (push not-call (mk-sym "not"))
-            (push not-call (expand-expr cond-expr))
+            (push not-call (expand-expr cond-expr macs))
             (let [cond not-call]
               (if (<= n 2)
                 (mk-if cond (mk-nil) (mk-nil))
                 (let [body-exprs (vector)]
                   (do (loop [i 2]
                         (if (>= i n) 0
-                          (do (push body-exprs (expand-expr (get expr i)))
+                          (do (push body-exprs (expand-expr (get expr i) macs))
                               (recur (+ i 1)))))
                       (mk-if cond (mk-do body-exprs) (mk-nil)))))))))))
 
@@ -227,7 +393,7 @@
   (if (not (is-atom? x)) false
     (if (str-eq? (ast-val x) "else") true false)))
 
-(defn expand-cond [expr]
+(defn expand-cond [expr macs]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
@@ -238,16 +404,16 @@
           (let [test (get expr i)
                 body (get expr (+ i 1))]
             (if (is-else-atom? test)
-              (recur (- i 2) (expand-expr body))
+              (recur (- i 2) (expand-expr body macs))
               (recur (- i 2)
-                (mk-if (expand-expr test) (expand-expr body) res)))))))))
+                (mk-if (expand-expr test macs) (expand-expr body macs) res)))))))))
 
 ;; (-> x (f a) (g b))  =>  (g (f x a) b)
-(defn expand-thread [expr]
+(defn expand-thread [expr macs]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
-      (let [result (expand-expr (get expr 1))]
+      (let [result (expand-expr (get expr 1) macs)]
         (loop [i 2 res result phase 0 j 1 new-expr (vector)]
           (if (>= i n)
             res
@@ -269,11 +435,11 @@
                       (recur i res 1 (+ j 1) new-expr)))))))))))
 
 ;; (->> x (f a) (g b))  =>  (g b (f a x))
-(defn expand-thread-last [expr]
+(defn expand-thread-last [expr macs]
   (let [n (count expr)]
     (if (< n 2)
       (mk-nil)
-      (let [result (expand-expr (get expr 1))]
+      (let [result (expand-expr (get expr 1) macs)]
         (loop [i 2 res result phase 0 j 1 new-expr (vector)]
           (if (>= i n)
             res
@@ -457,8 +623,8 @@
       (if (is-atom? name-a) (ast-val name-a) ""))))
 
 ;; Rewrite a defn's name to Trait_method_Type; leave body expanded.
-(defn mangle-impl-defn [defn-form trait type-name]
-  (if (not (is-defn-form? defn-form)) (expand-expr defn-form)
+(defn mangle-impl-defn [defn-form trait type-name macs]
+  (if (not (is-defn-form? defn-form)) (expand-expr defn-form macs)
     (let [n (count defn-form)]
       (if (< n 3) defn-form
         (let [method (defn-method-name defn-form)
@@ -469,11 +635,11 @@
               (push out (get defn-form 2))
               (loop [i 3]
                 (if (>= i n) out
-                  (do (push out (expand-expr (get defn-form i)))
+                  (do (push out (expand-expr (get defn-form i) macs))
                       (recur (+ i 1)))))))))))
 
 ;; Instantiate a default method for Type: subst Self, mangle, expand body.
-(defn instantiate-default [default trait type-name]
+(defn instantiate-default [default trait type-name macs]
   (let [method (get default 0)
         params (get default 1)
         bodies (get default 2)
@@ -485,11 +651,11 @@
         (push out (subst-self params type-name))
         (loop [i 0]
           (if (>= i nb) out
-            (do (push out (expand-expr (subst-self (get bodies i) type-name)))
+            (do (push out (expand-expr (subst-self (get bodies i) type-name) macs))
                 (recur (+ i 1))))))))
 
 ;; (impl Trait for Type method-defns...) + fill defaults from registry
-(defn expand-impl [expr traits]
+(defn expand-impl [expr traits macs]
   (let [n (count expr)]
     (if (< n 5)
       (mk-num 0)
@@ -510,9 +676,9 @@
                     (let [el (get expr i)]
                       (if (is-defn-form? el)
                         (do (push provided (defn-method-name el))
-                            (push defs (mangle-impl-defn el trait type-name))
+                            (push defs (mangle-impl-defn el trait type-name macs))
                             (recur (+ i 1)))
-                        (do (push defs (expand-expr el))
+                        (do (push defs (expand-expr el macs))
                             (recur (+ i 1)))))))
                 ;; fill defaults not provided
                 (if (= entry 0) 0
@@ -524,7 +690,7 @@
                               m (get d 0)]
                           (if (name-in-vec? provided m)
                             (recur (+ j 1))
-                            (do (push defs (instantiate-default d trait type-name))
+                            (do (push defs (instantiate-default d trait type-name macs))
                                 (recur (+ j 1)))))))))
                 (if (= (count defs) 0)
                   (mk-num 0)
@@ -541,12 +707,12 @@
         v)))
 
 ;; (defconst Name value) → (defn Name [] value)
-(defn expand-defconst [expr]
+(defn expand-defconst [expr macs]
   (let [n (count expr)]
     (if (< n 3)
       (mk-num 0)
       (let [name-a (get expr 1)
-            val (expand-expr (get expr 2))
+            val (expand-expr (get expr 2) macs)
             name (if (is-atom? name-a) (ast-val name-a) "CONST")
             out (vector)]
         (do (push out (mk-special 10 "defn"))
@@ -556,7 +722,7 @@
             out)))))
 
 ;; (trait-call Trait method Type args...) / (tcall ...) → (Trait_method_Type args...)
-(defn expand-trait-call [expr]
+(defn expand-trait-call [expr macs]
   (let [n (count expr)]
     (if (< n 4)
       (mk-num 0)
@@ -571,7 +737,7 @@
         (do (push out (mk-sym fname))
             (loop [i 4]
               (if (>= i n) out
-                (do (push out (expand-expr (get expr i)))
+                (do (push out (expand-expr (get expr i) macs))
                     (recur (+ i 1))))))))))
 
 ;; ---- top-level: expand a program (list of expressions) ----
@@ -591,19 +757,23 @@
     (do (push new-list e) new-list)))
 
 ;; Two-pass: collect deftrait defaults, then expand (impl fills defaults).
+;; Multi-pass: collect deftrait + defmacro, skip defmacro forms, expand rest.
 (defn expand-program [ast-list]
   (let [traits (collect-traits ast-list)
+        macs (collect-macros ast-list)
         new-list (vector)
         n (count ast-list)]
     (loop [i 0]
       (if (>= i n)
         new-list
-        (let [raw (get ast-list i)
-              head (form-head-name raw)
-              e (if (str-eq? head "impl")
-                  (expand-impl raw traits)
-                  (if (str-eq? head "deftrait")
-                    (expand-deftrait raw)
-                    (expand-expr raw)))]
-          (do (push-expanded new-list e)
-              (recur (+ i 1))))))))
+        (let [raw (get ast-list i)]
+          (if (is-defmacro-form? raw)
+            (recur (+ i 1))
+            (let [head (form-head-name raw)
+                  e (if (str-eq? head "impl")
+                      (expand-impl raw traits macs)
+                      (if (str-eq? head "deftrait")
+                        (expand-deftrait raw)
+                        (expand-expr raw macs)))]
+              (do (push-expanded new-list e)
+                  (recur (+ i 1))))))))))

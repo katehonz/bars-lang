@@ -72,6 +72,12 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
                     // Recursively expand the macro result (to unwrap quoted funcs, etc.)
                     return expand_expr(&expanded, macro_env);
                 }
+                // Template macros may yield (defn name [params] body) as FnCall — reify.
+                if sym.0 == "defn" {
+                    if let Some(defn) = reify_defn_call(&expanded_args, span) {
+                        return expand_expr(&defn, macro_env);
+                    }
+                }
             }
 
             Ok(Expr::FnCall {
@@ -96,7 +102,12 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
                 };
                 if let Expr::Symbol(sym, _) = &func {
                     if let Some(expanded) = try_expand_macro(&sym.0, &args, span, macro_env)? {
-                        return Ok(expanded);
+                        return expand_expr(&expanded, macro_env);
+                    }
+                    if sym.0 == "defn" {
+                        if let Some(defn) = reify_defn_call(&args, span) {
+                            return expand_expr(&defn, macro_env);
+                        }
                     }
                 }
                 Ok(Expr::FnCall {
@@ -203,6 +214,56 @@ fn expand_expr(expr: &Expr, macro_env: &HashMap<String, Expr>) -> Result<Expr, M
         // Atoms — nothing to expand
         other => Ok(other.clone()),
     }
+}
+
+/// Turn `(defn name [p…] body…)` FnCall args into `Expr::Defn` after template expansion.
+fn reify_defn_call(args: &[Expr], span: &Span) -> Option<Expr> {
+    if args.len() < 2 {
+        return None;
+    }
+    let name = match &args[0] {
+        Expr::Symbol(s, _) => s.clone(),
+        Expr::Quote(inner, _) => match inner.as_ref() {
+            Expr::Symbol(s, _) => s.clone(),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let params = match &args[1] {
+        Expr::Vector(items, _) => {
+            let mut params = Vec::new();
+            for it in items {
+                match it {
+                    Expr::Symbol(s, _) => params.push((s.clone(), None)),
+                    Expr::Quote(inner, _) => {
+                        if let Expr::Symbol(s, _) = inner.as_ref() {
+                            params.push((s.clone(), None));
+                        } else {
+                            return None;
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+            params
+        }
+        _ => return None,
+    };
+    let body = if args.len() == 3 {
+        Box::new(args[2].clone())
+    } else {
+        Box::new(Expr::Do {
+            exprs: args[2..].to_vec(),
+            span: span.clone(),
+        })
+    };
+    Some(Expr::Defn {
+        name,
+        params,
+        body,
+        ret_type: None,
+        span: span.clone(),
+    })
 }
 
 /// Try to expand a macro call. Returns None if not a macro.

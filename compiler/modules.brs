@@ -54,7 +54,7 @@
       true
       false)))
 
-;; ---- collect public defn names (skip already-mangled nested modules) ----
+;; ---- collect public defn + defmacro names (skip already-mangled nested modules) ----
 
 (defn collect-names [ast-list]
   (let [n (count ast-list) names (vector)]
@@ -65,7 +65,8 @@
             (recur (+ i 1))
             (let [head (get expr 0)
                   tag (if (is-atom? head) (ast-tag head) 99)]
-              (if (= tag 10)
+              ;; 10=defn, 21=defmacro — both are public module exports
+              (if (if (= tag 10) true (= tag 21))
                 (let [name-atom (get expr 1)]
                   (if (is-atom? name-atom)
                     (let [nm (ast-val name-atom)]

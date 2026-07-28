@@ -253,6 +253,25 @@ impl<'a> Parser<'a> {
 
     fn parse_defn(&mut self, start_span: Span) -> Result<Expr> {
         self.advance(); // consume 'defn'
+
+        // Macro templates: `(defn ~name [params] ~body) — name is unquote, not a bare symbol.
+        // Parse as FnCall so syntax-quote can substitute; reified to Defn after expansion.
+        if matches!(
+            self.peek(),
+            Some(Token::Unquote) | Some(Token::Splicing) | Some(Token::SyntaxQuote) | Some(Token::Quote)
+        ) {
+            let mut args = Vec::new();
+            while !matches!(self.peek(), Some(Token::RParen) | Some(Token::Eof) | None) {
+                args.push(self.parse_expr()?);
+            }
+            self.expect(Token::RParen)?;
+            return Ok(Expr::FnCall {
+                func: Box::new(Expr::Symbol(Symbol("defn".to_string()), start_span.clone())),
+                args,
+                span: start_span,
+            });
+        }
+
         let name = match self.peek() {
             Some(Token::Symbol(s)) => {
                 let s = s.clone();

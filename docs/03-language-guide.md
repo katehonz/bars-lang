@@ -351,3 +351,39 @@ Search paths for `require`:
 3. `target/bars-deps/*/src/` (resolved package dependencies)
 
 If the path does not end in `.brs`, it is automatically appended.
+
+## Testing
+
+Use `lib/test` for suites (self-hosted and host):
+
+```clojure
+(require "lib/test" :as t)
+
+(t/deftest test-math
+  (do
+    (t/is ctx (= (+ 1 2) 3) "add")
+    (t/is-eq ctx 42 (* 6 7) "mul")))
+
+(defn main []
+  (let [ctx (t/suite "math")]
+    (test-math ctx)
+    (t/finish ctx)))   ;; non-zero exit if any assertion failed
+```
+
+See `docs/04-stdlib.md` (`lib/test.brs`) and `examples/deftest_demo.brs`.
+
+### User macros (`defmacro`)
+
+The self-hosted expander supports user `defmacro` with syntax-quote templates:
+
+```clojure
+(defmacro twice [x]
+  `(+ ~x ~x))
+
+(defmacro unless [cond body]
+  `(if (not ~cond) ~body nil))
+```
+
+Unquote (`~`) and splice (`~@`) work inside `` ` `` templates. Macro definitions
+are compile-time only (stripped after expansion). Modules rename `defmacro`
+names like `defn`, so `(require "lib/test" :as t)` + `(t/deftest …)` works.

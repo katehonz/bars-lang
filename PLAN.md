@@ -417,9 +417,9 @@ bars/
 | 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `GC_base` guard | ✅ |
 
 ### 💡 Идеи за подобрения
-1. Същински test framework (deftest макрос + test runner)
+1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
 2. Error recovery в парсера
-3. Pattern matching в `let` (destructuring)
+3. Pattern matching в `let` (destructuring) → ✅ (commit destructuring)
 4. Keyword arguments за функции
 5. Persistent/immutable data structures
 6. Автоматично TCO за рекурсивни функции
@@ -430,4 +430,55 @@ bars/
 
 ---
 
-*План версия: 6.8 | Актуализиран: 2026-07-28*
+## Фаза 17: Езиково качество и DX 🔮
+
+> Преглед (2026-07-28): езикът е self-host + stdlib-ready. Следващият лост е
+> **надеждност на екосистемата** и **дупки между host и bars-self**.
+
+### 17.0 Преглед — слабости (приоритет)
+
+| # | Област | Проблем | Въздействие |
+|---|--------|---------|-------------|
+| A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
+| B | Globals | Top-level `(def x …)` не е истински LLVM global — само local slot в lowering | няма споделено mutable state между defn без context map |
+| C | HOF | `map`/`filter`/`reduce` LLVM path счупен (`bars_map_new_i64` arity) | няма `run-tests` върху vector от функции |
+| D | Types | Soft string/void warnings; soft-by-default | шум, но не блокира |
+| E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
+| F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
+| G | Tests | До 17.1 — само soft `assert` macro | ✅ поправено |
+
+**Принцип за API-та:** предпочитай **context map + функции** пред `defmacro`, докато A не е готово.
+
+### 17.1 Test framework ✅
+
+- [x] `lib/test.brs` — `suite` / `section` / `is` / `is-eq` / `is-not` / `is-truthy` / `is-zero`
+- [x] `report` / `finish` (exit 1 on fail) / `assert` / `assert!`
+- [x] Examples: `test_demo.brs`, `test_fail_demo.brs`
+- [x] self-test + stdlib docs
+
+### 17.2 User `defmacro` in self-host ✅
+
+- [x] Collect `(defmacro name [params] body)` into registry; strip from program
+- [x] Expand calls: bind params to arg ASTs, expand `` ` `` templates (`~` / `~@`)
+- [x] Modules: `collect-names` includes tag 21 so `alias/macro` renames match
+- [x] `lib/test` — `(deftest name body)` → `(defn name [ctx] body)`
+- [x] Examples: `defmacro_demo`, `defmacro_demo2`, `deftest_demo`
+- [ ] Full macro interpreter (list/cons/if at expand-time) — later if needed
+
+### 17.3 Next language (queued)
+
+- [ ] Fix HOF in self-host LLVM (or document host-only)
+- [ ] Real top-level `def` globals (or ban and document)
+- [ ] Keyword args + docstrings
+- [ ] Parser error recovery
+- [ ] Docs: destructuring polish, fix DOCTRINE maps row
+
+### 17.3 Ecosystem (queued)
+
+- [ ] HTTP server helper (`lib/http-server` routing)
+- [ ] Crypto hashes (SHA-256) runtime + package
+- [ ] TLS / HTTPS (OpenSSL or similar) — later
+
+---
+
+*План версия: 6.10 | Актуализиран: 2026-07-28*

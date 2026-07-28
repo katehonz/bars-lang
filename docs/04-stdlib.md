@@ -253,6 +253,40 @@ Response is a vector `[status-code body-string]`, or `0` on connect/send failure
 | `map-empty?` | `(map-empty? m)` | `true` if map has 0 entries |
 | `map-has?` | `(map-has? m key)` | `true` if key exists in map |
 
+## `lib/test.brs` — Test framework (Phase 17.1)
+
+Context-based suite (works with `bars-self`; no user `defmacro` needed).
+
+```clojure
+(require "lib/test" :as t)
+
+(t/deftest test-math
+  (do
+    (t/is ctx (= (+ 1 2) 3) "add")
+    (t/is-eq ctx 42 (* 6 7) "mul")))
+
+(defn main []
+  (let [ctx (t/suite "math")]
+    (test-math ctx)
+    (t/finish ctx)))   ;; exit 1 if any failure
+```
+
+| Function / macro | Description |
+|------------------|-------------|
+| `deftest` | Macro: `(deftest name body)` → `(defn name [ctx] body)` |
+| `make` / `suite` | Fresh context; `suite` also prints `=== name` |
+| `section` | Print `-- name` (no counters) |
+| `is` | `(is ctx ok msg)` — pass/fail + counters |
+| `is-eq` | Equality; prints expected/actual on fail |
+| `is-not` / `is-truthy` / `is-zero` | Variants |
+| `passed` / `failed` / `total` | Counters |
+| `report` | Print summary; return failed count |
+| `finish` | `report` + `exit 1` if failed |
+| `assert` | Soft one-shot OK/FAIL (no suite) |
+| `assert!` | Hard fail: print + `exit 1` |
+
+See `examples/test_demo.brs`, `examples/deftest_demo.brs`.
+
 ## Higher-Order Functions (REPL/Cranelift Only)
 
 The AOT backend does not yet support function pointers, so `map-vec`, `filter-vec`, and `reduce-vec` are commented out in `lib/core.brs`. They work in the Cranelift JIT REPL.
