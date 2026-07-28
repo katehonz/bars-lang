@@ -236,6 +236,7 @@
         (lines-push lines "declare i64 @bars_tcp_send(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_recv(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_close(i64)")
+        (lines-push lines "declare i64 @bars_sha256(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "declare i8* @bars_alloc(i64)")
         (lines-push lines "")

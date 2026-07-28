@@ -185,6 +185,9 @@ int64_t bars_time_ms(void);    /* Unix milliseconds */
 int64_t bars_srand(int64_t seed);  /* returns 0 */
 int64_t bars_rand(void);           /* 0 .. RAND_MAX */
 
+/* Crypto (Phase 17.3) — SHA-256 hex digest (64 chars) of a string */
+bars_string_t* bars_sha256(bars_string_t* s);
+
 /* Minimal POSIX regex (Phase 14.1) */
 int64_t bars_re_is_match(bars_string_t* text, bars_string_t* pattern); /* full match 1/0 */
 int64_t bars_re_find(bars_string_t* text, bars_string_t* pattern);     /* start index or -1 */

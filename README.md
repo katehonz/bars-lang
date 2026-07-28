@@ -308,6 +308,7 @@ See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 - `lib/map.brs` — `map-empty?`, `map-has?`
 - `lib/adt.brs` — `Option`, `Result` типове с helper функции
 - `lib/test.brs` — `assert` макрос за тестове
+- `lib/crypto.brs` — `sha256` (hex digest)
 
 ### Built-in Runtime Functions
 

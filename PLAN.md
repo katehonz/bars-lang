@@ -517,9 +517,12 @@ bars/
 ### 17.3 Ecosystem
 
 - [x] HTTP server helper (`lib/http_server`) — 17.4
-- [ ] Crypto hashes (SHA-256) runtime + package
+- [x] Crypto hashes (SHA-256) runtime + package
+  - `bars_sha256` in C runtime (single-shot, hex digest; verified vs known vectors)
+  - `lib/crypto.brs` — `sha256`; LLVM declare + types env; C backend passthrough
+  - Example `crypto_demo.brs` ("" / "abc" / quick-brown-fox); self-test 84/84
 - [ ] TLS / HTTPS (OpenSSL or similar) — later
 
 ---
 
-*План версия: 6.15 | Актуализиран: 2026-07-28*
+*План версия: 6.16 | Актуализиран: 2026-07-28*

@@ -465,6 +465,7 @@
         (env_insert env "bars_tcp_send" bin)
         (env_insert env "bars_tcp_recv" bin)
         (env_insert env "bars_tcp_close" unary)
+        (env_insert env "bars_sha256" unary)
         (env_insert env "str-from-i64" unary)
         (env_insert env "code-char" unary)
         (env_insert env "args-count" (mono_scheme (T_Fun (empty_vec) (T_I64))))

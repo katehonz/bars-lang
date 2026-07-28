@@ -236,6 +236,16 @@ Use with the compiler built-in `(kwargs :k v …)` → flat vector of string key
 | `has?` | Key present? |
 | `count-pairs` | Number of pairs |
 
+### `lib/crypto.brs` — SHA-256 (Phase 17.3)
+
+SHA-256 in the C runtime; lowercase hex digest as a string.
+
+```clojure
+(require "lib/crypto" :as crypto)
+(crypto/sha256 "abc")
+;; → "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
 ### `lib/http_server.brs` — HTTP/1.1 server helpers (Phase 17.4)
 
 Sync one-shot helpers over TCP. Re-exports `listen` / `ok?` / `close` / `send` /
