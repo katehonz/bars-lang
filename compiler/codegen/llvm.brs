@@ -64,6 +64,47 @@
 (defn addr-name [name]
   (str-concat name ".addr"))
 
+;; ---- Top-level def globals (Phase 17.5) ----
+;; HIR "global <name>" lines declare storage @"__g_<name>".
+;; Function envs are seeded with "__g__:<name>" markers so reads/writes
+;; of the name resolve to the global cell instead of an alloca.
+
+(defn gmark [name]
+  (str-concat "__g__:" name))
+
+(defn is-gmark? [s]
+  (str-starts-with? s "__g__:"))
+
+(defn llvm-gstorage [name]
+  (str-concat "@\"__g_" (str-concat name "\"")))
+
+;; Pre-scan HIR for "global <name>" decl lines → vector of names.
+(defn scan-globals [hir-lines]
+  (let [n (count hir-lines) out (vector)]
+    (loop [i 0]
+      (if (>= i n) out
+        (let [line (get hir-lines i)]
+          (if (str-starts-with? line "global ")
+            (do (push out (str-slice line 7 (count line)))
+                (recur (+ i 1)))
+            (recur (+ i 1))))))))
+
+(defn gmarks-of [globs]
+  (let [n (count globs) out (vector)]
+    (loop [i 0]
+      (if (>= i n) out
+        (do (push out (gmark (get globs i)))
+            (recur (+ i 1)))))))
+
+;; Emit @"__g_<name>" = global i64 0 storage lines.
+(defn emit-gstorage [out globs]
+  (let [n (count globs)]
+    (loop [i 0]
+      (if (>= i n) out
+        (do (lines-push out
+              (str-concat (llvm-gstorage (get globs i)) " = global i64 0"))
+            (recur (+ i 1)))))))
+
 ;; Record that name needs an alloca (emitted later at function entry).
 ;; Returns [output env] — does not emit yet (avoids non-dominating allocas).
 (defn ensure-alloca [output env name]
@@ -71,25 +112,34 @@
     [output (env-add env name)]))
 
 ;; Emit all pending allocas (call after entry label / at start of body)
+;; Global markers never get allocas.
 (defn emit-allocas [output env]
   (let [n (count env)]
     (loop [i 0]
       (if (>= i n) output
-        (do (lines-push output
-              (str-concat "  " (str-concat (llvm-local (addr-name (get env i))) " = alloca i64")))
-            (recur (+ i 1)))))))
+        (if (is-gmark? (get env i))
+          (recur (+ i 1))
+          (do (lines-push output
+                (str-concat "  " (str-concat (llvm-local (addr-name (get env i))) " = alloca i64")))
+              (recur (+ i 1))))))))
 
 ;; Resolve operand: returns [llvm-str output reg]
-;; For slotted vars, emits a load.
+;; For slotted vars, emits a load. Globals load from @"__g_<name>".
 (defn resolve-operand [prefix val output env reg]
   (if (str-eq? prefix "var")
-    (if (env-has? env val)
+    (if (env-has? env (gmark val))
       (let [tmp (str-concat "ld" (int-str reg))]
         (do (lines-push output
               (str-concat "  " (str-concat (llvm-local tmp)
-                (str-concat " = load i64, i64* " (llvm-local (addr-name val))))))
+                (str-concat " = load i64, i64* " (llvm-gstorage val)))))
             [(llvm-local tmp) output (+ reg 1)]))
-      [(llvm-local val) output reg])
+      (if (env-has? env val)
+        (let [tmp (str-concat "ld" (int-str reg))]
+          (do (lines-push output
+                (str-concat "  " (str-concat (llvm-local tmp)
+                  (str-concat " = load i64, i64* " (llvm-local (addr-name val))))))
+              [(llvm-local tmp) output (+ reg 1)]))
+        [(llvm-local val) output reg]))
     [val output reg]))
 
 (defn pair-resolve [words i output env reg]
@@ -385,17 +435,27 @@
       [output env reg]
       (if (str-eq? raw "<done>")
         [output env reg]
-        (let [r1 (pair-resolve words 2 output env reg)
-              val (get r1 0)
-              o1 (get r1 1)
-              g1 (get r1 2)
-              r2 (ensure-alloca o1 env dest)
-              o2 (get r2 0)
-              env2 (get r2 1)]
-          (do (lines-push o2
-                (str-concat "  store i64 " (str-concat val
-                  (str-concat ", i64* " (llvm-local (addr-name dest))))))
-              [o2 env2 g1]))))))
+        (if (env-has? env (gmark dest))
+          ;; Global cell: store directly, no alloca.
+          (let [r1 (pair-resolve words 2 output env reg)
+                val (get r1 0)
+                o1 (get r1 1)
+                g1 (get r1 2)]
+            (do (lines-push o1
+                  (str-concat "  store i64 " (str-concat val
+                    (str-concat ", i64* " (llvm-gstorage dest)))))
+                [o1 env g1]))
+          (let [r1 (pair-resolve words 2 output env reg)
+                val (get r1 0)
+                o1 (get r1 1)
+                g1 (get r1 2)
+                r2 (ensure-alloca o1 env dest)
+                o2 (get r2 0)
+                env2 (get r2 1)]
+            (do (lines-push o2
+                  (str-concat "  store i64 " (str-concat val
+                    (str-concat ", i64* " (llvm-local (addr-name dest))))))
+                [o2 env2 g1])))))))
 
 ;; Returns [arglist-str output reg]
 (defn emit-call-args [words n output env reg]
@@ -670,13 +730,13 @@
                         [(get r 0) strs str-cnt (get r 1) (get r 2)])
                       [output strs str-cnt env reg])))))))))))
 
-(defn process-func [body line in-func strs str-cnt]
+(defn process-func [body line in-func strs str-cnt seed]
   (let [body2 (if (= in-func 1) (lines-push body "}") body)
         name (map-user-fname (extract-func-name line))
         params (split-words (extract-params-str line))
         nparams (count params)
         gname (llvm-global name)
-        empty (vector)]
+        empty seed]
     (if (= nparams 0)
       [(lines-push body2 (str-concat "define i64 " (str-concat gname "() {"))) 1 strs str-cnt empty 0]
       (let [plist (loop [i 0 acc ""]
@@ -694,7 +754,7 @@
   (if (< (count line) 1)
     [body in-func strs str-cnt env reg]
     (if (str-starts-with? line "func ")
-      (process-func body line in-func strs str-cnt)
+      (process-func body line in-func strs str-cnt env)
       (if (str-starts-with? line "    ")
         (let [trimmed (trim-left line)
               words (split-words trimmed)
@@ -716,6 +776,7 @@
     (do (lines-push lines "")
         (lines-push lines "define i32 @main(i32 %argc, i8** %argv) {")
         (lines-push lines "  call void @bars_set_args(i32 %argc, i8** %argv)")
+        (lines-push lines "  %ig = call i64 @\"__bars_init_globals\"()")
         (lines-push lines "  %r = call i64 @_bars_main()")
         (lines-push lines "  %r32 = trunc i64 %r to i32")
         (lines-push lines "  ret i32 %r32")
@@ -742,8 +803,10 @@
                 (if (if (= done 0) (is-label-line? line) false)
                   (do (loop [j 0]
                         (if (>= j (count env)) 0
-                          (do (push out (str-concat "  " (str-concat (llvm-local (addr-name (get env j))) " = alloca i64")))
-                              (recur (+ j 1)))))
+                          (if (is-gmark? (get env j))
+                            (recur (+ j 1))
+                            (do (push out (str-concat "  " (str-concat (llvm-local (addr-name (get env j))) " = alloca i64")))
+                                (recur (+ j 1))))))
                       (recur (+ i 1) 1))
                   (recur (+ i 1) done)))))))))
 
@@ -751,7 +814,9 @@
   (hir-to-llvm-at hir-lines "x86_64-unknown-linux-gnu"))
 
 (defn hir-to-llvm-at [hir-lines triple]
-  (let [n (count hir-lines)]
+  (let [n (count hir-lines)
+        globs (scan-globals hir-lines)
+        marks (gmarks-of globs)]
     (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env (vector) reg 0
            all-body (vector)]
       (if (>= i n)
@@ -764,6 +829,8 @@
               wrap (c-main-wrapper)]
           (do (append-vec out strs)
               (if (> (count strs) 0) (lines-push out "") 0)
+              (emit-gstorage out globs)
+              (if (> (count globs) 0) (lines-push out "") 0)
               (append-vec out body2)
               (append-vec out wrap)
               out))
@@ -774,7 +841,7 @@
                                   inj (inject-allocas-after-define closed env)]
                               (do (append-vec all-body inj) all-body))
                             all-body)
-                  res (process-line (vector) line 0 strs str-cnt (vector) 0)]
+                  res (process-line (vector) line 0 strs str-cnt (append-vec (vector) marks) 0)]
               (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) flushed))
             (let [res (process-line body line in-func strs str-cnt env reg)]
               (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) all-body))))))))

@@ -446,9 +446,14 @@
             (if (= res 0)
               0
               (let [expr (get res 0)
-                    np (get res 1)]
-                (do (push items expr)
-                    (recur items np)))))))))
+                    np (get res 1)
+                    tag0 (if (> (count expr) 0) (get expr 0) -1)]
+                (if (= tag0 99)
+                  (do (perr ctx pos "unexpected ']'")
+                      0)
+                  (do (push items expr)
+                      (recur items np)))))))))
+  )
 
 ;; --- parse-vector ---
 ;; open-off = byte offset of '['.
@@ -473,9 +478,13 @@
             (if (= res 0)
               0
               (let [expr (get res 0)
-                    np (get res 1)]
-                (do (push items expr)
-                    (recur items np)))))))))
+                    np (get res 1)
+                    tag0 (if (> (count expr) 0) (get expr 0) -1)]
+                (if (= tag0 99)
+                  (do (perr ctx pos "unexpected ')'")
+                      0)
+                  (do (push items expr)
+                      (recur items np))))))))))
 
 ;; --- parse-macro: ' ` ~ ~@ ^ @ ---
 (defn parse-macro [ctx pos tag]
@@ -486,27 +495,47 @@
             np (get res 1)]
         [(t1 tag expr) np]))))
 
+;; --- Error recovery ---
+;; Skip the (broken) form starting at pos so parsing can resume after it.
+;; Always advances at least one token; stops at EOF or once depth returns to 0.
+(defn skip-form [ctx pos]
+  (loop [p pos depth 0]
+    (let [t (peek-t ctx p)]
+      (match t
+        (TEof) p
+        (TLParen) (recur (+ p 1) (+ depth 1))
+        (TLBrack) (recur (+ p 1) (+ depth 1))
+        (TRParen) (if (<= depth 1) (+ p 1) (recur (+ p 1) (- depth 1)))
+        (TRBrack) (if (<= depth 1) (+ p 1) (recur (+ p 1) (- depth 1)))
+        _ (if (= depth 0) (+ p 1) (recur (+ p 1) depth))))))
+
 ;; --- parse-all: all top-level expressions; 0 on parse error ---
+;; Recovers after each error: reports it, skips the broken form, and
+;; continues so all syntax errors in the file surface in one run.
+;; Returns 0 if any error was reported (callers treat 0 as parse failure).
 (defn parse-all [ctx]
-  (loop [exprs (vector) pos 0]
+  (loop [exprs (vector) pos 0 errs 0]
     (let [t (peek-t ctx pos)]
       (match t
-        (TEof) exprs
+        (TEof) (if (> errs 0) 0 exprs)
         (TRParen)
-          (do (perr ctx pos "unexpected ')'") 0)
+          (do (perr ctx pos "unexpected ')'")
+              (recur exprs (+ pos 1) (+ errs 1)))
         (TRBrack)
-          (do (perr ctx pos "unexpected ']'") 0)
+          (do (perr ctx pos "unexpected ']'")
+              (recur exprs (+ pos 1) (+ errs 1)))
         _
           (let [res (parse-expr ctx pos)]
             (if (= res 0)
-              0
+              (recur exprs (skip-form ctx pos) (+ errs 1))
               (let [expr (get res 0)
                     np (get res 1)
                     tag0 (if (> (count expr) 0) (get expr 0) -1)]
                 (if (= tag0 99)
-                  (do (perr ctx pos "unexpected token") 0)
+                  (do (perr ctx pos "unexpected token")
+                      (recur exprs np (+ errs 1)))
                   (do (push exprs expr)
-                      (recur exprs np))))))))))
+                      (recur exprs np errs))))))))))
 
 ;; --- Public API ---
 ;; bars-read / bars-read-at → AST vector or 0 on parse error.

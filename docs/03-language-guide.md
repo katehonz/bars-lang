@@ -223,9 +223,29 @@ Returns the value of the last expression.
 
 ### `def` — Global Variable
 
+A top-level `(def name init)` creates a **real global**, initialized once
+before `main` runs and readable (and re-assignable) from every function:
+
 ```clojure
-(def pi 3.14159)
+(def max-items 42)
+(def nums (vector 1 2 3))
+
+(defn add-num [n]
+  (push nums n))          ;; shared mutable state via the container
+
+(defn main []
+  (do (println max-items) ;; 42
+      (add-num 4)
+      (println (count nums)))) ;; 4
 ```
+
+- Initializers run once, in source order, in `__bars_init_globals`
+  (called by the C main wrapper before `_bars_main`).
+- A later `def` may reference an earlier global.
+- Works in scripts without `main` as well as in programs with one.
+- Do **not** shadow a global name with a local binding of the same name,
+  and do not give a global the same name as a function.
+- `def` inside a function body stays a local mutable slot (unchanged).
 
 ## Data Structures
 

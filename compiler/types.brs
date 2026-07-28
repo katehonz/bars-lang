@@ -290,6 +290,17 @@
   (let [v (vector)]
     (do (push v (vector)) (push v ty) v)))
 
+;; Polymorphic identity scheme 'a -> 'a (one quantified var, id 100).
+(defn id_scheme []
+  (let [vs (vector)
+        args (vector)
+        s (vector)]
+    (do (push vs 100)
+        (push args (T_Var 100))
+        (push s vs)
+        (push s (T_Fun args (T_Var 100)))
+        s)))
+
 (defn instantiate [scheme counter]
   (let [vars (get scheme 0)
         ty (get scheme 1)
@@ -465,7 +476,7 @@
         (env_insert env "map-set" (mono_scheme (T_Fun (i64_i64-i64) (T_I64))))
         (env_insert env "map-get" (mono_scheme (T_Fun (i64_i64) (T_I64))))
         (env_insert env "map-count" unary)
-        (env_insert env "def" (mono_scheme (T_Fun (i64_i64) (T_I64))))
+        (env_insert env "def" (id_scheme))
         ;; do removed from builtin — it's a special form
         env))
 )

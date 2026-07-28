@@ -39,11 +39,26 @@
             (recur (+ i 1) (str-concat cur (str-slice s i (+ i 1))))))))))
 
 ;; Sanitize to C identifier (alnum + _).
+;; C reserved words — a Bars identifier named e.g. `default` must not
+;; reach the C compiler unrenamed.
+(defn c-keyword? [s]
+  (let [kws ["auto" "break" "case" "char" "const" "continue" "default" "do"
+             "double" "else" "enum" "extern" "float" "for" "goto" "if" "int"
+             "long" "register" "return" "short" "signed" "sizeof" "static"
+             "struct" "switch" "typedef" "union" "unsigned" "void" "volatile"
+             "while"]
+        n (count kws)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? s (get kws i)) true
+          (recur (+ i 1)))))))
+
 (defn c-ident [s]
   (let [n (count s)]
     (loop [i 0 acc ""]
       (if (>= i n)
-        (if (= (count acc) 0) "_id" acc)
+        (if (= (count acc) 0) "_id"
+          (if (c-keyword? acc) (str-concat acc "_") acc))
         (let [c (str-get s i)
               ok (if (if (>= c 48) (<= c 57) false) true
                    (if (if (>= c 65) (<= c 90) false) true
@@ -170,6 +185,42 @@
   (if (env-has? env name) env
     (do (push env name) env)))
 
+;; ---- Top-level def globals (Phase 17.5) ----
+;; HIR "global <name>" lines declare file-scope storage `static int64_t <c-ident>;`.
+;; Function envs are seeded with "__g__:<name>" markers so assigns to the
+;; name skip the local declaration and write the global directly. Reads of
+;; `var <name>` need no change — the C identifier is the same as a local's.
+
+(defn gmark [name]
+  (str-concat "__g__:" name))
+
+;; Pre-scan HIR for "global <name>" decl lines → vector of names.
+(defn scan-globals [hir-lines]
+  (let [n (count hir-lines) out (vector)]
+    (loop [i 0]
+      (if (>= i n) out
+        (let [line (get hir-lines i)]
+          (if (str-starts-with? line "global ")
+            (do (push out (str-slice line 7 (count line)))
+                (recur (+ i 1)))
+            (recur (+ i 1))))))))
+
+(defn gmarks-of [globs]
+  (let [n (count globs) out (vector)]
+    (loop [i 0]
+      (if (>= i n) out
+        (do (push out (gmark (get globs i)))
+            (recur (+ i 1)))))))
+
+;; Emit `static int64_t <c-ident name>;` file-scope storage lines.
+(defn emit-gstorage [out globs]
+  (let [n (count globs)]
+    (loop [i 0]
+      (if (>= i n) out
+        (do (lines-push out
+              (str-concat "static int64_t " (str-concat (c-ident (get globs i)) ";")))
+            (recur (+ i 1)))))))
+
 ;; Operand → C expression string (const or variable name).
 (defn resolve-op [prefix val]
   (if (str-eq? prefix "var") (c-ident val) val))
@@ -225,12 +276,17 @@
         raw (if (>= (count words) 4) (get words 3) (get words 2))]
     (if (if (str-eq? raw "<dead>") true (str-eq? raw "<done>"))
       [output env]
-      (let [val (pair-op words 2)
+      (if (env-has? env (gmark (get words 1)))
+        ;; Global cell: plain assignment, no local declaration.
+        (let [val (pair-op words 2)]
+          (do (lines-push output (str-concat "  " (str-concat dest (str-concat " = " (str-concat val ";")))))
+              [output env]))
+        (let [val (pair-op words 2)
             r (ensure-decl output env dest)
             o1 (get r 0)
             e1 (get r 1)]
         (do (lines-push o1 (str-concat "  " (str-concat dest (str-concat " = " (str-concat val ";")))))
-            [o1 e1])))))
+            [o1 e1]))))))
 
 ;; Emit args; cast each through (void*)(uintptr_t) so pointer APIs accept i64.
 (defn emit-call-args [words n]
@@ -293,8 +349,10 @@
                   er (ensure-decl output env dest)
                   o1 (get er 0)
                   e1 (get er 1)
+                  ;; Runtime fns that return void: call as statement, dest = 0.
                   is-void (if (str-eq? fname "map-set") true
-                            (if (str-eq? fname "spit") true false))]
+                            (if (str-eq? fname "spit") true
+                              (if (str-eq? fname "exit") true false)))]
               (if is-void
                 (do (lines-push o1 (str-concat "  " (str-concat mapped (str-concat "(" (str-concat args ");")))))
                     (lines-push o1 (str-concat "  " (str-concat dest " = 0;")))
@@ -409,16 +467,17 @@
     (do (lines-push lines "")
         (lines-push lines "int main(int argc, char **argv) {")
         (lines-push lines "  bars_set_args(argc, argv);")
+        (lines-push lines "  (void)__bars_init_globals();")
         (lines-push lines "  return (int)_bars_main();")
         (lines-push lines "}")
         lines)))
 
-(defn process-func [body line]
+(defn process-func [body line seed]
   (let [name (map-user-fname (extract-func-name line))
         params (split-words (extract-params-str line))
         nparams (count params)
-        ;; Seed env with params so we never redeclare them as locals.
-        env (vector)]
+        ;; Seed env with global markers + params so we never redeclare them.
+        env seed]
     (do (loop [i 0]
           (if (>= i nparams) 0
             (do (push env (c-ident (get params i)))
@@ -441,7 +500,7 @@
   (if (< (count line) 1)
     [body env]
     (if (str-starts-with? line "func ")
-      (process-func body line)
+      (process-func body line env)
       (if (str-starts-with? line "    ")
         (let [trimmed (trim-left line)
               words (split-words trimmed)
@@ -464,7 +523,9 @@
             (recur (+ i 1)))))))
 
 (defn hir-to-c [hir-lines]
-  (let [n (count hir-lines)]
+  (let [n (count hir-lines)
+        globs (scan-globals hir-lines)
+        marks (gmarks-of globs)]
     (loop [i 0 body (vector) in-func 0 env (vector) all (vector)]
       (if (>= i n)
         (let [flushed (if (= in-func 1)
@@ -474,7 +535,9 @@
                         all)
               out (c-header)
               wrap (c-main-wrapper)]
-          (do (append-vec out flushed)
+          (do (emit-gstorage out globs)
+              (if (> (count globs) 0) (lines-push out "") 0)
+              (append-vec out flushed)
               (append-vec out wrap)
               out))
         (let [line (get hir-lines i)]
@@ -484,7 +547,7 @@
                                 (append-vec all body)
                                 all)
                             all)
-                  res (process-line (vector) line (vector))]
+                  res (process-line (vector) line (append-vec (vector) marks))]
               (recur (+ i 1) (get res 0) 1 (get res 1) flushed))
             (let [res (process-line body line env)]
               (recur (+ i 1) (get res 0) in-func (get res 1) all))))))))

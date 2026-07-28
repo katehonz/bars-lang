@@ -1174,6 +1174,74 @@
                 (put lines (str-concat "    return " (op-fmt op))))]
         (mk-ret "<done>" t3 l3)))))
 
+;; ---- Top-level def → real globals (Phase 17.5) ----
+;; (def name init) at top level becomes a global cell. Backends emit the
+;; storage from "global <name>" decl lines; initializers run once in
+;; __bars_init_globals (called by the C main wrapper before _bars_main).
+;; Note: a global name must not be shadowed by a local of the same name.
+
+(defn is-def-form? [expr]
+  (if (is-atom? expr) false
+    (let [head (list-head expr)]
+      (if (is-atom? head)
+        (if (= (tag-of head) 1) (str-eq? (val-of head) "def") false)
+        false))))
+
+(defn name-in? [name names]
+  (let [n (count names)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get names i) name) true
+          (recur (+ i 1)))))))
+
+;; Collect [name init-ast] pairs from top-level def forms, in source order.
+(defn collect-gdefs [ast-list]
+  (let [n (count ast-list) out (vector)]
+    (loop [i 0]
+      (if (>= i n) out
+        (let [expr (get ast-list i)]
+          (if (is-def-form? expr)
+            (let [pair (vector)]
+              (do (push pair (val-of (get expr 1)))
+                  (push pair (get expr 2))
+                  (push out pair)
+                  (recur (+ i 1))))
+            (recur (+ i 1))))))))
+
+;; Emit "global <name>" decl lines (dedup by name; repeated def re-inits).
+(defn emit-global-decls [lines gdefs]
+  (let [n (count gdefs) seen (vector)]
+    (loop [i 0]
+      (if (>= i n) lines
+        (let [name (get (get gdefs i) 0)]
+          (if (name-in? name seen)
+            (recur (+ i 1))
+            (do (push seen name)
+                (put lines (str-concat "global " name))
+                (recur (+ i 1)))))))))
+
+;; Emit the init function: assigns each global in source order.
+;; Always emitted (even with no globals) so the C main wrapper can call it.
+;; Returns [t l] for counter threading.
+(defn lower-gdefs-init [gdefs t l lines adt structs]
+  (let [entry (fresh-label l "entry_")
+        l2 (+ l 1)
+        n (count gdefs)
+        _ (put lines "func __bars_init_globals []:")
+        _ (put lines (str-concat "  " (str-concat entry ":")))
+        r (loop [i 0 tcur t lcur l2]
+            (if (>= i n) (let [out (vector)] (do (push out tcur) (push out lcur) out))
+              (let [pair (get gdefs i)
+                    name (get pair 0)
+                    res (lower-expr (get pair 1) tcur lcur lines (vector) adt structs)
+                    op (ret-op res)
+                    t2 (st-t res)
+                    l3 (st-l res)
+                    _ (put lines (str-concat "    assign " (str-concat name (str-concat " " (op-fmt op)))))]
+                (recur (+ i 1) t2 l3))))]
+    (do (put lines "    return const 0")
+        r)))
+
 (defn lower-program [ast-list]
   (let [lines (vector)
         n (count ast-list)
@@ -1182,9 +1250,14 @@
         structs (collect-structs ast-list)
         _ (emit-all-ctors lines adt)
         _ (emit-all-struct-ctors lines structs)
+        gdefs (collect-gdefs ast-list)
+        _ (emit-global-decls lines gdefs)
+        init-r (lower-gdefs-init gdefs 0 0 lines adt structs)
+        t0 (get init-r 0)
+        l0 (get init-r 1)
         tops (vector)
         has-main (has-main-defn? ast-list)]
-    (loop [i 0 t 0 l 0]
+    (loop [i 0 t t0 l l0]
       (if (>= i n)
         (do (if (if has-main false (> (count tops) 0))
               (lower-toplevel-main tops t l lines empty adt structs)
@@ -1196,8 +1269,11 @@
               (recur (+ i 1) (st-t res) (st-l res)))
             (if (if (is-deftype-form? expr) true (is-defstruct-form? expr))
               (recur (+ i 1) t l)
-              (do (push tops expr)
-                  (recur (+ i 1) t l)))))))))
+              (if (is-def-form? expr)
+                ;; handled by __bars_init_globals
+                (recur (+ i 1) t l)
+                (do (push tops expr)
+                    (recur (+ i 1) t l))))))))))
 
 (defn print-hir [lines]
   (let [n (count lines)]

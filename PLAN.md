@@ -418,7 +418,7 @@ bars/
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
-2. Error recovery в парсера
+2. Error recovery в парсера → **17.5 ✅** (multi-error + skip-form sync)
 3. Pattern matching в `let` (destructuring) → ✅ (commit destructuring)
 4. Keyword arguments за функции
 5. Persistent/immutable data structures
@@ -440,7 +440,7 @@ bars/
 | # | Област | Проблем | Въздействие |
 |---|--------|---------|-------------|
 | A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
-| B | Globals | Top-level `(def x …)` не е истински LLVM global — само local slot в lowering | няма споделено mutable state между defn без context map |
+| B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
 | C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
 | D | Types | Soft string/void warnings; soft-by-default | шум, но не блокира |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
@@ -497,8 +497,22 @@ bars/
 
 ### 17.5 Next (queued)
 
-- [ ] Real top-level `def` globals (or ban and document)
-- [ ] Parser error recovery
+- [x] Real top-level `def` globals
+  - HIR: `global <name>` decl lines + `__bars_init_globals` (init in source order)
+  - LLVM: `@"__g_<name>"` storage; env seeded with `__g__:` markers; load/store intercept
+  - C: `static int64_t <name>;` file scope; same marker seeding; wrapper calls init
+  - Types: `def` gets polymorphic `'a -> 'a` scheme (no more str vs i64 noise)
+  - Rules: no shadowing a global with a local; no global/fn name collisions
+  - Example `globals_demo.brs` (LLVM + C suites); self-test 82/82
+- [x] Parser error recovery — multi-error + stray closer detection
+  - `parse-all` reports every top-level syntax error in one run (was: stop at first)
+  - `skip-form` synchronization: skip the broken balanced form, resume after it
+  - Stray `]` in list / `)` in vector now hard parse errors at the exact span
+    (was: silent tag-99 atom → cryptic `%<unk>` LLVM link error)
+- [x] C backend fixes — void `exit` + C reserved-word identifiers
+  - `exit` → `bars_exit` emitted as statement (void), `dest = 0` (was: invalid cast of void expr)
+  - `c-ident` renames C keywords (`default` → `default_`) — fixes `lib/kw` params
+  - C suite now green: `test_demo`, `deftest_demo`, `kwargs_demo` (self-test 80/80)
 
 ### 17.3 Ecosystem
 
@@ -508,4 +522,4 @@ bars/
 
 ---
 
-*План версия: 6.13 | Актуализиран: 2026-07-28*
+*План версия: 6.15 | Актуализиран: 2026-07-28*
