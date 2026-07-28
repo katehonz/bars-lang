@@ -53,6 +53,17 @@ Special characters are sanitized for the backends (`?` → `_Q`, `+` → `_plus`
   (+ a b))
 ```
 
+Optional **docstring** — first body expression is a string, then real body
+(skipped at runtime by the self-hosted compiler; extracted by `bars-self doc`):
+
+```clojure
+(defn add [a b]
+  "Add two integers."
+  (+ a b))
+```
+
+Leading `;;` comments above `defn` are also used as docs (same as before).
+
 ### Traits (Phase 14.4+)
 
 Static monomorphization — no dynamic dispatch. Methods become

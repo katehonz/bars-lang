@@ -347,18 +347,28 @@
           l2  (st-l res)]
       (lower-body-exprs ast (+ i 1) n t2 l2 lines loops adt structs op))))
 
+;; First body expr that is a string, with more body after it → docstring (skip).
+(defn defn-body-start [ast]
+  (let [n (count ast)]
+    (if (< n 4) 3
+      (let [b0 (get ast 3)]
+        (if (if (is-atom? b0) (= (tag-of b0) 2) false)
+          (if (> n 4) 4 3)
+          3)))))
+
 (defn lower-defn [ast t l lines loops adt structs]
   (let [name   (val-of (get ast 1))
         params (normalize-params (get ast 2))
         n      (count ast)
+        start  (defn-body-start ast)
         entry  (fresh-label l "entry_")
         l2     (+ l 1)
         empty  (vector)
         _      (put lines (str-concat "func " (str-concat name (str-concat " " (str-concat (fmt-params params) ":")))))
         _      (put lines (str-concat "  " (str-concat entry ":")))
-        res    (if (> n 4)
-                 (lower-body-exprs ast 3 n t l2 lines empty adt structs "")
-                 (lower-expr (get ast 3) t l2 lines empty adt structs))
+        res    (if (> (- n start) 1)
+                 (lower-body-exprs ast start n t l2 lines empty adt structs "")
+                 (lower-expr (get ast start) t l2 lines empty adt structs))
         op     (ret-op res)
         t3     (st-t res)
         l3     (st-l res)

@@ -1,7 +1,7 @@
 # Bars — Пътна Карта (v6.0)
 
 > Актуална към: 2026-07-28  
-> Състояние: Фази 0–16 готови. Фаза 17.1–17.3a (test, defmacro, HOF, docs) ✅.  
+> Състояние: Фази 0–16 готови. Фаза 17.1–17.3 (test, defmacro, HOF, docstrings) ✅.  
 > Философия: Следващите версии на компилатора се пишат на Bars.
 > 
 > Структура: `bootstrap/` — Rust bootstrap (замразен), `compiler/` — компилатор на Bars, `lib/` — stdlib
@@ -216,10 +216,11 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.1** Test framework — `lib/test.brs` (`suite` / `is` / `is-eq` / `finish`)
 - [x] **17.2** User `defmacro` in self-host (syntax-quote templates) + `t/deftest`
 - [x] **17.3a** HOF `map`/`filter`/`reduce` in self-host HIR + docs (destructure, DOCTRINE)
-- [ ] **17.3b** Keyword arguments / docstrings on `defn`
+- [x] **17.3b** Docstrings on `defn` (string first body) + `bars-self doc`
+- [ ] **17.3c** Keyword arguments for functions
 - [ ] **17.4** HTTP server helper package; TLS deferred
 - [ ] **17.5** Real top-level `def` globals (or ban + document)
 
 ---
 
-*Версия: 6.5 | Актуализирано: 2026-07-28*
+*Версия: 6.6 | Актуализирано: 2026-07-28*

@@ -78,6 +78,15 @@
 (defn md-code [s]
   (str-concat (bt) (str-concat s (bt))))
 
+;; Inline docstring: first body expr is a string (with more body after).
+(defn inline-docstring [form]
+  (let [n (count form)]
+    (if (< n 5) ""
+      (let [b0 (get form 3)]
+        (if (if (is-atom? b0) (= (ast-tag b0) 2) false)
+          (ast-val b0)
+          "")))))
+
 (defn defn-entry [path src form kind]
   (let [n (count form)]
     (if (< n 3) ""
@@ -88,7 +97,9 @@
                   (str-concat name
                     (str-concat " " (str-concat (format-params params) ")"))))
             off (form-offset form)
-            docstr (if (< off 0) "" (comments-before src off))
+            cdoc (if (< off 0) "" (comments-before src off))
+            idoc (inline-docstring form)
+            docstr (if (> (count idoc) 0) idoc cdoc)
             h (str-concat "### " (str-concat (md-code name) "\n\n"))
             body (str-concat "**"
                     (str-concat kind

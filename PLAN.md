@@ -473,10 +473,17 @@ bars/
 - [x] Docs: language guide (destructure + HOF), stdlib HOF section, DOCTRINE maps row
 - [x] self-test: `hof_demo`, `hof_lambda`
 
-### 17.3b Next language (queued)
+### 17.3b Docstrings ✅
+
+- [x] Convention: first `defn` body expr is a string → docstring
+- [x] Self-host HIR skips it when more body follows
+- [x] `bars-self doc` prefers inline docstring over `;;` comments above
+- [x] Language guide note
+
+### 17.3c Next language (queued)
 
 - [ ] Real top-level `def` globals (or ban and document)
-- [ ] Keyword args + docstrings on `defn`
+- [ ] Keyword arguments for functions
 - [ ] Parser error recovery
 
 ### 17.3 Ecosystem (queued)
@@ -487,4 +494,4 @@ bars/
 
 ---
 
-*План версия: 6.11 | Актуализиран: 2026-07-28*
+*План версия: 6.12 | Актуализиран: 2026-07-28*
