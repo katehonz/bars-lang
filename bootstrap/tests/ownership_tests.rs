@@ -236,3 +236,32 @@ fn test_copy_types_dont_move() {
     "#).unwrap();
     assert!(check_program(&prog).is_ok());
 }
+
+#[test]
+fn test_unknown_symbol_is_not_owned() {
+    // Unknown free variables must not panic; treat as non-owned (Copy).
+    let prog = reader::read(r#"
+        (defn main []
+          mystery_global)
+    "#).unwrap();
+    // Ownership should not crash; typecheck may still fail elsewhere.
+    let _ = check_program(&prog);
+}
+
+#[test]
+fn test_double_move_via_def() {
+    // Second move of Owned after first def-alias must fail.
+    let prog = reader::read(r#"
+        (defstruct Box [v])
+        (defn main []
+          (let [b (Box 1)]
+            (def a b)
+            (def c b)))
+    "#).unwrap();
+    let err = check_program(&prog).unwrap_err();
+    assert!(
+        matches!(err, OwnershipError::UseAfterMove(_, _, _)),
+        "Expected UseAfterMove on second move, got: {:?}",
+        err
+    );
+}

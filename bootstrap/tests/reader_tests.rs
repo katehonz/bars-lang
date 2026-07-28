@@ -83,3 +83,39 @@ fn test_parse_lambda_multi_body() {
     "#).unwrap();
     assert!(matches!(&prog.exprs[0], bars::ast::Expr::Lambda { .. }));
 }
+
+#[test]
+fn test_unterminated_string_errors() {
+    let err = reader::read(r#""hello"#).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.to_lowercase().contains("unterminated"),
+        "expected unterminated string error, got: {msg}"
+    );
+}
+
+#[test]
+fn test_parse_match_and_deftype() {
+    let prog = reader::read(r#"
+        (deftype Option [Some i64] [None])
+        (defn main []
+          (match (Some 1)
+            (Some x) x
+            (None) 0))
+    "#).unwrap();
+    assert_eq!(prog.exprs.len(), 2);
+    assert!(matches!(prog.exprs[0], bars::ast::Expr::DefType { .. }));
+    assert!(matches!(prog.exprs[1], bars::ast::Expr::Defn { .. }));
+}
+
+#[test]
+fn test_parse_struct_and_field() {
+    let prog = reader::read(r#"
+        (defstruct Point [x y])
+        (defn main []
+          (let [p (Point 1 2)]
+            (.x p)))
+    "#).unwrap();
+    assert_eq!(prog.exprs.len(), 2);
+    assert!(matches!(prog.exprs[0], bars::ast::Expr::DefStruct { .. }));
+}

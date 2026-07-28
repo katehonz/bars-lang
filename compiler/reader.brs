@@ -83,17 +83,8 @@
               (recur (+ i 1) (+ (* acc 10) (- c 48)) neg)
               (* acc neg))))))))
 
-;; Digit char → one-char string for int-str (0..9)
-(defn digit-str [d]
-  (str-slice "0123456789" d (+ d 1)))
-
-;; Integer → decimal string (for line:col diagnostics)
-(defn int-str [n]
-  (if (< n 0)
-    (str-concat "-" (int-str (- 0 n)))
-    (if (< n 10)
-      (digit-str n)
-      (str-concat (int-str (/ n 10)) (digit-str (% n 10))))))
+;; Integer → decimal string (runtime helper; for line:col diagnostics)
+(defn int-str [n] (str-from-i64 n))
 
 ;; Byte offset → [line col] (1-based), scanning source text.
 (defn offset-to-span [text offset]

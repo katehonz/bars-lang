@@ -11,11 +11,7 @@
     false
     (= (str-starts-with? a b) 1)))
 
-(defn int-str [n]
-  (let [d "0123456789"]
-    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
-      (if (< n 10) (str-slice d n (+ n 1))
-        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+(defn int-str [n] (str-from-i64 n))
 
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))

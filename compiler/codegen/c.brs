@@ -15,11 +15,7 @@
   (if (!= (count a) (count b)) false
     (= (str-starts-with? a b) 1)))
 
-(defn int-str [n]
-  (let [d "0123456789"]
-    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
-      (if (< n 10) (str-slice d n (+ n 1))
-        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+(defn int-str [n] (str-from-i64 n))
 
 (defn lines-push [v s] (do (push v s) v))
 
@@ -66,10 +62,15 @@
       (if (str-eq? fname "str-slice") "bars_string_slice"
         (if (str-eq? fname "str-count") "bars_string_length"
           (if (str-eq? fname "str-starts-with?") "bars_string_starts_with"
-            (if (str-eq? fname "str-index-of") "bars_string_index_of"
-              (if (str-eq? fname "code-char") "bars_code_char"
-                (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
-                  "")))))))))
+            (if (str-eq? fname "str-ends-with?") "bars_string_ends_with"
+              (if (str-eq? fname "str-index-of") "bars_string_index_of"
+                (if (str-eq? fname "str-trim") "bars_string_trim"
+                  (if (str-eq? fname "str-substring") "bars_string_substring"
+                    (if (str-eq? fname "str-split") "bars_string_split"
+                      (if (str-eq? fname "str-join") "bars_string_join"
+                        (if (str-eq? fname "code-char") "bars_code_char"
+                          (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                            ""))))))))))))))
 
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"
@@ -92,7 +93,7 @@
       (if (str-eq? fname "exit") "bars_exit"
         (if (str-eq? fname "args-count") "bars_args_count"
           (if (str-eq? fname "args-get") "bars_args_get"
-            (if (str-eq? fname "bars_env_set") "bars_env_set"
+            (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
               (if (str-eq? fname "bars_getenv") "bars_getenv"
                 (if (str-eq? fname "bars_system") "bars_system"
                   "")))))))))

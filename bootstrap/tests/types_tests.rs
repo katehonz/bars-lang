@@ -330,3 +330,32 @@ fn test_adt_result_type() {
         }
     }
 }
+
+#[test]
+fn test_identity_is_polymorphic() {
+    let prog = reader::read(r#"
+        (defn id [x] x)
+        (defn main []
+          (id 1)
+          (id true))
+    "#).unwrap();
+    let mut ctx = InferCtx::new();
+    let result = ctx.infer_program(&prog);
+    assert!(result.is_ok(), "polymorphic id should type-check: {:?}", result.err());
+    let (_, types) = result.unwrap();
+    let id = types.iter().find(|(n, _)| n == "id").expect("id scheme");
+    assert!(
+        !id.1.vars.is_empty(),
+        "id should be generalized with type vars, got {:?}",
+        id.1
+    );
+}
+
+#[test]
+fn test_type_check_helper_ok() {
+    let prog = reader::read(r#"
+        (defn add [a b] (+ a b))
+        (defn main [] (add 1 2))
+    "#).unwrap();
+    assert!(bars::type_check(&prog).is_ok());
+}

@@ -12,11 +12,7 @@
 (defn ast-val [x] (get x 1))
 (defn is-atom? [x] (< (ast-tag x) 1000))
 
-(defn int-str [n]
-  (let [d "0123456789"]
-    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
-      (if (< n 10) (str-slice d n (+ n 1))
-        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+(defn int-str [n] (str-from-i64 n))
 
 (defn spaces [n]
   (loop [i 0 acc ""]

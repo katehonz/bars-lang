@@ -733,12 +733,13 @@ impl LoweringCtx {
 
             Expr::Lambda { params, body, .. } => {
                 // Save current lowering state, extract lambda as a separate function,
-                // then restore state.
+                // then restore state. lower_func overwrites current_params, so save it too.
                 let saved_blocks = std::mem::take(&mut self.blocks);
                 let saved_instrs = std::mem::take(&mut self.current_instrs);
                 let saved_block = std::mem::take(&mut self.current_block);
                 let saved_active = self.current_block_active;
                 let saved_loop = std::mem::take(&mut self.loop_stack);
+                let saved_params = std::mem::take(&mut self.current_params);
 
                 let name = format!("_lambda_{}", self.lambda_counter);
                 self.lambda_counter += 1;
@@ -751,6 +752,7 @@ impl LoweringCtx {
                 self.current_block = saved_block;
                 self.current_block_active = saved_active;
                 self.loop_stack = saved_loop;
+                self.current_params = saved_params;
 
                 // Lambda expression returns 0
                 Ok(Operand::Const(0))
@@ -1221,12 +1223,13 @@ impl LoweringCtx {
         match expr {
             Expr::Symbol(_, _) => Ok(expr.clone()),
             Expr::Lambda { params, body, .. } => {
-                // Save lowering state
+                // Save lowering state (lower_func overwrites current_params)
                 let saved_blocks = std::mem::take(&mut self.blocks);
                 let saved_instrs = std::mem::take(&mut self.current_instrs);
                 let saved_block = std::mem::take(&mut self.current_block);
                 let saved_active = self.current_block_active;
                 let saved_loop = std::mem::take(&mut self.loop_stack);
+                let saved_params = std::mem::take(&mut self.current_params);
 
                 let name = format!("_lambda_{}", self.lambda_counter);
                 self.lambda_counter += 1;
@@ -1239,6 +1242,7 @@ impl LoweringCtx {
                 self.current_block = saved_block;
                 self.current_block_active = saved_active;
                 self.loop_stack = saved_loop;
+                self.current_params = saved_params;
 
                 Ok(Expr::Symbol(Symbol(name), Span::new(0, 0)))
             }

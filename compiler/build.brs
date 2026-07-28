@@ -25,7 +25,7 @@
 (extern "slurp" [path i64] -> i64)
 (extern "spit" [path i64 content i64] -> i64)
 (extern "bars_system" [cmd i64] -> i64)
-(extern "bars_env_set" [name i64] -> i64)
+(extern "bars_env_is_set" [name i64] -> i64)
 (extern "bars_file_mtime" [path i64] -> i64)
 (extern "bars_sleep_ms" [ms i64] -> i64)
 (extern "bars_getenv" [name i64] -> i64)
@@ -76,30 +76,30 @@
 ;; Ownership: let-alias of Owned → move; loop rebinds are not moves;
 ;; Copy ops/lits don't move; real scope pop (vector pop runtime).
 (defn skip-typecheck? []
-  (= (bars_env_set "BARS_SKIP_TYPECHECK") 1))
+  (= (bars_env_is_set "BARS_SKIP_TYPECHECK") 1))
 
 (defn skip-ownership? []
-  (= (bars_env_set "BARS_SKIP_OWNERSHIP") 1))
+  (= (bars_env_is_set "BARS_SKIP_OWNERSHIP") 1))
 
 (defn strict-types? []
-  (= (bars_env_set "BARS_STRICT_TYPES") 1))
+  (= (bars_env_is_set "BARS_STRICT_TYPES") 1))
 
 (defn force-rebuild? []
-  (if (= (bars_env_set "BARS_FORCE") 1) true
-    (= (bars_env_set "BARS_NO_INCREMENTAL") 1)))
+  (if (= (bars_env_is_set "BARS_FORCE") 1) true
+    (= (bars_env_is_set "BARS_NO_INCREMENTAL") 1)))
 
 ;; Phase 14.2 tooling: debugger / profiler / compile timings / release
 (defn debug-mode? []
-  (= (bars_env_set "BARS_DEBUG") 1))
+  (= (bars_env_is_set "BARS_DEBUG") 1))
 
 (defn profile-mode? []
-  (= (bars_env_set "BARS_PROFILE") 1))
+  (= (bars_env_is_set "BARS_PROFILE") 1))
 
 (defn timings-mode? []
-  (= (bars_env_set "BARS_TIMINGS") 1))
+  (= (bars_env_is_set "BARS_TIMINGS") 1))
 
 (defn release-mode? []
-  (= (bars_env_set "BARS_RELEASE") 1))
+  (= (bars_env_is_set "BARS_RELEASE") 1))
 
 ;; clang/cc flags: profile > debug > release > default
 (defn link-opt-flags []
@@ -153,21 +153,7 @@
   (if (!= (count a) (count b)) false
     (= (str-starts-with? a b) 1)))
 
-;; Parent directory of a path ("a/b/c.brs" → "a/b", "c.brs" → ".").
-(defn dirname [path]
-  (let [n (count path)]
-    (loop [i (- n 1)]
-      (if (< i 0) "."
-        (if (= (str-get path i) 47)
-          (if (= i 0) "/" (str-slice path 0 i))
-          (recur (- i 1)))))))
-
-(defn join-path [base rel]
-  (if (if (= (count base) 0) true (str-eq? base "."))
-    rel
-    (if (= (str-get base (- (count base) 1)) 47)
-      (str-concat base rel)
-      (str-concat base (str-concat "/" rel)))))
+;; dirname / join-path live in pkg.brs (pkg/dirname, pkg/join-path).
 
 ;; Try opening path; return AST or 0 (silent — caller reports).
 (defn try-read [path]
@@ -186,10 +172,10 @@
   (let [bare (pkg/strip-brs path-raw)
         root (pkg/dep-root-by-name deps bare)]
     (if (> (count root) 0)
-      (let [lib1 (join-path root "src/lib.brs")
+      (let [lib1 (pkg/join-path root "src/lib.brs")
             a (try-read lib1)]
         (if (!= a 0) (found a lib1)
-          (let [lib2 (join-path root "src/main.brs")
+          (let [lib2 (pkg/join-path root "src/main.brs")
                 b (try-read lib2)]
             (if (!= b 0) (found b lib2) 0))))
       ;; Search each dep's src/ for the path
@@ -198,7 +184,7 @@
         (loop [i 0]
           (if (>= i n) 0
             (let [droot (get (get deps i) 1)
-                  cand (join-path (join-path droot "src") path)
+                  cand (pkg/join-path (pkg/join-path droot "src") path)
                   c (try-read cand)]
               (if (!= c 0) (found c cand)
                 (recur (+ i 1))))))))))
@@ -208,17 +194,17 @@
   (let [path (ensure-brs-path path-raw)
         a (try-read path)]
     (if (!= a 0) (found a path)
-      (let [rel (join-path base path)
+      (let [rel (pkg/join-path base path)
             b (try-read rel)]
         (if (!= b 0) (found b rel)
-          (let [libp (join-path "lib" path)
+          (let [libp (pkg/join-path "lib" path)
                 c (try-read libp)]
             (if (!= c 0) (found c libp)
               (let [d (find-in-deps deps path-raw)]
                 (if (!= d 0) d
                   ;; target/bars-deps/<name>/src/lib.brs (host clone layout)
                   (let [bare (pkg/strip-brs path-raw)
-                        dep-lib (join-path (join-path (join-path "target/bars-deps" bare) "src") "lib.brs")
+                        dep-lib (pkg/join-path (pkg/join-path (pkg/join-path "target/bars-deps" bare) "src") "lib.brs")
                         e (try-read dep-lib)]
                     (if (!= e 0) (found e dep-lib) 0)))))))))))
 
@@ -263,7 +249,7 @@
                           (note "each module file is loaded once (host-compatible)")
                           0)
                       (do (push visited mod-path)
-                          (let [mod-base (dirname mod-path)
+                          (let [mod-base (pkg/dirname mod-path)
                                 mod-resolved (resolve-requires-at mod-raw mod-base visited deps)]
                             (if (= mod-resolved 0) 0
                               (let [mod-ast (get mod-resolved 0)
@@ -287,12 +273,12 @@
 ;; source-paths = main + all required modules (for incremental mtime checks).
 (defn resolve-requires-main [ast main-path]
   (let [visited (vector)
-        base (dirname main-path)
+        base (pkg/dirname main-path)
         proj (pkg/find-manifest-dir base)
         deps (if (= (count proj) 0) (vector) (pkg/load-path-deps proj))]
     (do (push visited main-path)
         (if (> (count proj) 0)
-          (push visited (join-path proj "Bars.toml"))
+          (push visited (pkg/join-path proj "Bars.toml"))
           0)
         (if (> (count deps) 0)
           (println (str-concat "  note: Bars.toml path-deps from `" (str-concat proj "`")))
@@ -343,10 +329,10 @@
 
 ;; Backend: llvm (default), c, or experimental wasm/wat.
 (defn use-c-backend? []
-  (= (bars_env_set "BARS_BACKEND_C") 1))
+  (= (bars_env_is_set "BARS_BACKEND_C") 1))
 
 (defn use-wasm-backend? [triple]
-  (if (= (bars_env_set "BARS_BACKEND_WASM") 1) true
+  (if (= (bars_env_is_set "BARS_BACKEND_WASM") 1) true
     (tgt/is-wasm-target? triple)))
 
 (defn link-notes [output-path]
@@ -381,11 +367,12 @@
               (str-concat ct
                 (str-concat " -Wno-override-module -c "
                   (str-concat ll-path (str-concat " -o " obj)))))
-        c2 (str-concat cc " "
-              (str-concat opts
-                (str-concat obj
-                  (str-concat " " (str-concat rt
-                    (str-concat " -lgc -lm -o " output-path))))))
+        c2 (str-concat cc
+              (str-concat " "
+                (str-concat opts
+                  (str-concat obj
+                    (str-concat " " (str-concat rt
+                      (str-concat " -lgc -lm -o " output-path)))))))
         s1 (bars_system c1)]
     (if (!= s1 0)
       (do (err "link" "clang -c failed (cross LLVM)")
@@ -426,11 +413,12 @@
       (do (err "link" (str-concat "runtime object missing for `" (str-concat triple "`")))
           (note (tgt/runtime-missing-hint triple))
           2)
-      (let [cmd (str-concat cc " -I. "
-                  (str-concat opts
-                    (str-concat c-path
-                      (str-concat " " (str-concat rt
-                        (str-concat " -lgc -lm -o " output-path))))))
+      (let [cmd (str-concat cc
+                  (str-concat " -I. "
+                    (str-concat opts
+                      (str-concat c-path
+                        (str-concat " " (str-concat rt
+                          (str-concat " -lgc -lm -o " output-path)))))))
             status (bars_system cmd)]
         (if (!= status 0)
           (do (err "link" (str-concat cc " failed (C backend)"))
@@ -535,12 +523,8 @@
 ;; Poll source mtimes; recompile when any source is newer than the binary.
 ;; Interval fixed at 500ms (no getenv value API yet).
 
-;; int to string for watch status
-(defn int-str? [n]
-  (let [d "0123456789"]
-    (if (< n 0) (str-concat "-" (int-str? (- 0 n)))
-      (if (< n 10) (str-slice d n (+ n 1))
-        (str-concat (int-str? (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+;; int to string for watch status / diagnostics
+(defn int-str? [n] (str-from-i64 n))
 
 ;; Poll source mtimes; recompile when any loaded source is newer than last attempt.
 ;; On failure, wait for the next source change (no spam every tick).

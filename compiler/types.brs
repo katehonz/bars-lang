@@ -435,7 +435,7 @@
         (env_insert env "spit" bin)
         (env_insert env "exit" void-fn)
         (env_insert env "bars_system" unary)
-        (env_insert env "bars_env_set" unary)
+        (env_insert env "bars_env_is_set" unary)
         (env_insert env "bars_getenv" unary)
         (env_insert env "bars_file_mtime" unary)
         (env_insert env "bars_sleep_ms" unary)
@@ -508,15 +508,7 @@
       (ast_off expr)
       (if (> (count expr) 0) (expr_off (get expr 0)) -1))))
 
-(defn digit-str [d]
-  (str-slice "0123456789" d (+ d 1)))
-
-(defn int-str [n]
-  (if (< n 0)
-    (str-concat "-" (int-str (- 0 n)))
-    (if (< n 10)
-      (digit-str n)
-      (str-concat (int-str (/ n 10)) (digit-str (% n 10))))))
+(defn int-str [n] (str-from-i64 n))
 
 (defn offset-to-span [text offset]
   (let [n (count text)

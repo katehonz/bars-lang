@@ -56,7 +56,7 @@ unsafe extern "C" {
     fn bars_code_char(code: i64) -> *mut u8;
     fn bars_char_code(s: *const u8) -> i64;
     fn bars_system(s: *const u8) -> i64;
-    fn bars_env_set(s: *const u8) -> i64;
+    fn bars_env_is_set(s: *const u8) -> i64;
     fn bars_getenv(s: *const u8) -> *mut u8;
     fn bars_file_mtime(path: *const u8) -> i64;
     fn bars_sleep_ms(ms: i64) -> i64;
@@ -134,7 +134,7 @@ impl CraneliftBackend {
         jit_builder.symbol("bars_code_char", bars_code_char as *const u8);
         jit_builder.symbol("bars_char_code", bars_char_code as *const u8);
         jit_builder.symbol("bars_system", bars_system as *const u8);
-        jit_builder.symbol("bars_env_set", bars_env_set as *const u8);
+        jit_builder.symbol("bars_env_is_set", bars_env_is_set as *const u8);
         jit_builder.symbol("bars_getenv", bars_getenv as *const u8);
         jit_builder.symbol("bars_file_mtime", bars_file_mtime as *const u8);
         jit_builder.symbol("bars_sleep_ms", bars_sleep_ms as *const u8);
@@ -610,7 +610,7 @@ fn compile_instr<M: Module>(
                 "exit" if arg_vals.len() == 1 => {
                     call_runtime(builder, module, "bars_exit", &arg_vals)?
                 }
-                "bars_system" | "bars_env_set" | "bars_getenv" | "bars_file_mtime" | "bars_sleep_ms"
+                "bars_system" | "bars_env_is_set" | "bars_getenv" | "bars_file_mtime" | "bars_sleep_ms"
                 | "bars_file_exists" | "bars_file_delete" | "bars_srand"
                     if arg_vals.len() == 1 => {
                     call_runtime(builder, module, func_name, &arg_vals)?

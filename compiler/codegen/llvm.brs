@@ -14,11 +14,7 @@
   (if (!= (count a) (count b)) false
     (= (str-starts-with? a b) 1)))
 
-(defn int-str [n]
-  (let [d "0123456789"]
-    (if (< n 0) (str-concat "-" (int-str (- 0 n)))
-      (if (< n 10) (str-slice d n (+ n 1))
-        (str-concat (int-str (/ n 10)) (str-slice d (% n 10) (+ (% n 10) 1)))))))
+(defn int-str [n] (str-from-i64 n))
 
 (defn lines-push [v s] (do (push v s) v))
 
@@ -147,7 +143,12 @@
         (lines-push lines "declare i64 @bars_string_slice(i64, i64, i64)")
         (lines-push lines "declare i64 @bars_string_length(i64)")
         (lines-push lines "declare i64 @bars_string_starts_with(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_ends_with(i64, i64)")
         (lines-push lines "declare i64 @bars_string_index_of(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_trim(i64)")
+        (lines-push lines "declare i64 @bars_string_substring(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_string_split(i64, i64)")
+        (lines-push lines "declare i64 @bars_string_join(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_new_i64()")
         (lines-push lines "declare i64 @bars_vector_push_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_vector_pop_i64(i64)")
@@ -164,7 +165,7 @@
         (lines-push lines "declare i64 @bars_args_count()")
         (lines-push lines "declare i64 @bars_args_get(i64)")
         (lines-push lines "declare i64 @bars_exit(i64)")
-        (lines-push lines "declare i64 @bars_env_set(i64)")
+        (lines-push lines "declare i64 @bars_env_is_set(i64)")
         (lines-push lines "declare i64 @bars_getenv(i64)")
         (lines-push lines "declare i64 @bars_file_mtime(i64)")
         (lines-push lines "declare i64 @bars_sleep_ms(i64)")
@@ -202,10 +203,15 @@
       (if (str-eq? fname "str-slice") "bars_string_slice"
         (if (str-eq? fname "str-count") "bars_string_length"
           (if (str-eq? fname "str-starts-with?") "bars_string_starts_with"
-            (if (str-eq? fname "str-index-of") "bars_string_index_of"
-              (if (str-eq? fname "code-char") "bars_code_char"
-                (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
-                  "")))))))))
+            (if (str-eq? fname "str-ends-with?") "bars_string_ends_with"
+              (if (str-eq? fname "str-index-of") "bars_string_index_of"
+                (if (str-eq? fname "str-trim") "bars_string_trim"
+                  (if (str-eq? fname "str-substring") "bars_string_substring"
+                    (if (str-eq? fname "str-split") "bars_string_split"
+                      (if (str-eq? fname "str-join") "bars_string_join"
+                        (if (str-eq? fname "code-char") "bars_code_char"
+                          (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
+                            ""))))))))))))))
 
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"
@@ -229,7 +235,7 @@
         (if (str-eq? fname "args-count") "bars_args_count"
           (if (str-eq? fname "args-get") "bars_args_get"
             (if (str-eq? fname "println") "bars_print_any_i64"
-              (if (str-eq? fname "bars_env_set") "bars_env_set"
+              (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
                 (if (str-eq? fname "bars_getenv") "bars_getenv"
                   (if (str-eq? fname "bars_system") "bars_system"
                     ""))))))))))
@@ -402,6 +408,44 @@
           (recur (+ i 2) (str-concat "i64 " a) o2 g2)
           (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)) o2 g2))))))
 
+;; Multi-arg str-concat → left-fold of binary bars_string_concat (like Cranelift).
+;; HIR pairs: call dest str-concat var/const a var/const b var/const c ...
+;; Returns [output reg] or 0 if not multi-arg str-concat.
+(defn emit-str-concat-n [output dest words n env reg]
+  (if (not (str-eq? (get words 2) "str-concat")) 0
+    ;; n = 3 + 2*nargs; nargs >= 3 → n >= 9
+    (if (< n 9) 0
+      (let [r0 (pair-resolve words 3 output env reg)
+            a0 (get r0 0)
+            o0 (get r0 1)
+            g0 (get r0 2)
+            r1 (pair-resolve words 5 o0 env g0)
+            a1 (get r1 0)
+            o1 (get r1 1)
+            g1 (get r1 2)
+            t0 (str-concat dest "_sc0")]
+        (do (lines-push o1
+              (str-concat "  " (str-concat (llvm-local t0)
+                (str-concat " = call i64 @bars_string_concat(i64 "
+                  (str-concat a0 (str-concat ", i64 " (str-concat a1 ")")))))))
+            (loop [i 7 k 1 ocur o1 rcur g1 acc-name t0]
+              (if (>= i n)
+                (do (lines-push ocur
+                      (str-concat "  " (str-concat (llvm-local dest)
+                        (str-concat " = add i64 " (str-concat (llvm-local acc-name) ", 0")))))
+                    [ocur rcur])
+                (let [r (pair-resolve words i ocur env rcur)
+                      a (get r 0)
+                      o2 (get r 1)
+                      g2 (get r 2)
+                      tn (str-concat dest (str-concat "_sc" (int-str k)))]
+                  (do (lines-push o2
+                        (str-concat "  " (str-concat (llvm-local tn)
+                          (str-concat " = call i64 @bars_string_concat(i64 "
+                            (str-concat (llvm-local acc-name)
+                              (str-concat ", i64 " (str-concat a ")")))))))
+                      (recur (+ i 2) (+ k 1) o2 g2 tn))))))))))
+
 ;; Returns [output reg]
 (defn emit-call [output words n env reg]
   (let [dest (get words 1)
@@ -412,6 +456,9 @@
         handled (get ir 2)]
     (if (= handled 1)
       [o1 g1]
+      ;; multi-arg str-concat (n-ary → binary fold)
+      (let [scn (emit-str-concat-n o1 dest words n env g1)]
+        (if (!= scn 0) scn
       ;; str-concat with one arg is identity (host/cranelift does this too)
       ;; HIR: call dest str-concat var x  → n = 5
       (if (if (str-eq? fname "str-concat") (= n 5) false)
@@ -451,7 +498,7 @@
                               (str-concat "(" (str-concat arglist ")"))))]
                 (do (lines-push o2
                       (str-concat "  " (str-concat (llvm-local dest) call)))
-                    [o2 g2])))))))))
+                    [o2 g2])))))))))))
 
 ;; Returns [output reg]
 (defn emit-branch [output words env reg]
@@ -657,7 +704,7 @@
 ;; can break on Bars fn names and step through generated IR.
 
 (defn debug-mode? []
-  (= (bars_env_set "BARS_DEBUG") 1))
+  (= (bars_env_is_set "BARS_DEBUG") 1))
 
 ;; Last path component ("a/b/c.brs" → "c.brs")
 (defn path-basename [path]

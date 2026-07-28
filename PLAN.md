@@ -375,7 +375,7 @@ bars/
 
 ## Фаза 16: Бъгфиксове и Стабилизация 🪲
 
-> Актуално към: 2026-07-28 | Открити чрез пълен код ревю на bootstrap + self-hosted + runtime
+> Актуално към: 2026-07-28 | Открити чрез пълен код ревю; оставащите ☐ са затворени в 6.8
 
 ### 🔴 Критични
 
@@ -394,7 +394,7 @@ bars/
 |---|-----|------|--------|
 | 7 | Unterminated string literal се приема без грешка | `bootstrap/src/reader/lexer.rs` | ✅ |
 | 8 | REPL отрицателен depth води до безкрайно чакане | `bootstrap/src/main.rs` | ✅ |
-| 9 | Lambda extraction не save/restore-ва `current_params` | `bootstrap/src/hir/lowering.rs` | ☐ |
+| 9 | Lambda extraction не save/restore-ва `current_params` | `bootstrap/src/hir/lowering.rs` | ✅ |
 | 10 | Ownership checker branch средите не са изолирани (env-copy не се вика) | `compiler/ownership.brs` | ✅ |
 | 11 | Linter крашва при файл започващ с нов ред (OOB достъп) | `compiler/lint.brs` | ✅ |
 
@@ -405,16 +405,16 @@ bars/
 | 12 | Debug `eprintln!` в production код | `types/mod.rs`, `cranelift/mod.rs` | ✅ |
 | 13 | `build.rs` ползва `panic!()` вместо `exit(1)` | `bootstrap/build.rs` | ✅ |
 | 14 | Ownership checker третира непознати променливи като `Owned` | `bootstrap/src/ownership/checker.rs` | ✅ |
-| 15 | `bars_env_set` се ползва като getter (объркващо име) | `compiler/build.brs` | ☐ |
-| 16 | `int-str` helper дублиран в ~10 файла | multiple `.brs` | ☐ |
+| 15 | `bars_env_set` се ползва като getter (объркващо име) | → `bars_env_is_set` | ✅ |
+| 16 | `int-str` helper дублиран в ~10 файла | thin `str-from-i64` wrapper | ✅ |
 | 17 | JSON parser не поддържа `\b`, `\f` escape-ове | `lib/json.brs` | ✅ |
 | 18 | Hash map не се преразмерява (cap започва от 16, не расте) | `runtime/bars_runtime.c` | ✅ |
 | 19 | `recv-until-close` няма лимит на размера | `lib/http.brs` | ✅ |
 | 20 | `w-ident`/`c-ident` може да върне празен идентификатор | `codegen/wasm.brs`, `codegen/c.brs` | ✅ |
 | 21 | `find-content-length` не обработва вариации в whitespace на HTTP хедъра | `lib/http.brs` | ✅ |
-| 22 | `join-path`/`dirname` дублирани в `pkg.brs` и `build.brs` | `compiler/{pkg, build}.brs` | ☐ |
-| 23 | Няма unit тестове за parser, type checker, ownership | `bootstrap/src/` | ☐ |
-| 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `runtime/bars_runtime.c` | ☐ |
+| 22 | `join-path`/`dirname` дублирани в `pkg.brs` и `build.brs` | `build.brs` → `pkg/*` | ✅ |
+| 23 | Няма unit тестове за parser, type checker, ownership | bootstrap tests expanded | ✅ |
+| 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `GC_base` guard | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner)
@@ -430,4 +430,4 @@ bars/
 
 ---
 
-*План версия: 6.7 | Актуализиран: 2026-07-28*
+*План версия: 6.8 | Актуализиран: 2026-07-28*

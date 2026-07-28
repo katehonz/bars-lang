@@ -109,20 +109,24 @@ void bars_print_any_i64(int64_t val) {
         bars_print_i64(val);
         return;
     }
-    /* Small values are definitely not heap pointers.
-       Boehm GC on 64-bit systems allocates in high addresses.
-       Most reasonable integers fit below 256MB. */
-    if (val < 0x10000000L || val < 0) {
+    /* Negative / small values cannot be heap pointers. */
+    if (val < 0 || val < 0x10000000L) {
         bars_print_i64(val);
         return;
     }
-    /* Check if val looks like a valid heap pointer (reasonably aligned) */
+    /* Misaligned values are plain integers, not object headers. */
     if ((val & 0x7) != 0) {
         bars_print_i64(val);
         return;
     }
-    /* Try to read magic number */
-    uint32_t* magic_ptr = (uint32_t*)(uintptr_t)val;
+    /* Only dereference if Boehm GC recognizes this as a heap object.
+       Avoids SIGSEGV when an ordinary large integer passes the heuristics. */
+    void* p = (void*)(uintptr_t)val;
+    if (GC_base(p) == NULL) {
+        bars_print_i64(val);
+        return;
+    }
+    uint32_t* magic_ptr = (uint32_t*)p;
     uint32_t magic = *magic_ptr;
     if (magic == BARS_MAGIC_VECTOR) {
         bars_print_vector_i64((const bars_vector_t*)magic_ptr);
@@ -614,8 +618,8 @@ int64_t bars_system(bars_string_t* cmd) {
     return (int64_t)system(cmd->data);
 }
 
-/* Non-zero if environment variable is set and non-empty */
-int64_t bars_env_set(bars_string_t* name) {
+/* 1 if environment variable is set and non-empty, else 0 (does not set). */
+int64_t bars_env_is_set(bars_string_t* name) {
     if (!name || !name->data) return 0;
     const char* v = getenv(name->data);
     return (v && v[0] != '\0') ? 1 : 0;

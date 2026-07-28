@@ -53,3 +53,31 @@ fn test_tail_call_recognized() {
     assert!(ir.contains("call $sum"));
     assert!(ir.contains("ret"));
 }
+
+/// Regression: lambda extraction must save/restore current_params so a later
+/// loop that shadows a function parameter still renames the loop var (QBE).
+#[test]
+fn test_lambda_then_loop_param_shadow() {
+    let prog = reader::read(r#"
+        (defn main [n]
+          (let [f (fn [x] (+ x 1))]
+            (loop [n 0]
+              (if (= n 3)
+                n
+                (recur (+ n 1))))))
+    "#).unwrap();
+    let hir = bars::lower_and_optimize(&prog).unwrap();
+    let main = hir.funcs.iter().find(|f| f.name == "main").expect("main");
+    // Loop var shadowing param `n` must be renamed to _lv_n (not clobbered by lambda params).
+    let has_lv = main.blocks.iter().any(|b| {
+        b.instrs.iter().any(|i| match i {
+            bars::hir::Instr::Assign { dest, .. } => dest == "_lv_n" || dest.starts_with("_lv_"),
+            _ => false,
+        })
+    });
+    assert!(
+        has_lv,
+        "expected renamed loop var after lambda extraction; blocks: {:?}",
+        main.blocks
+    );
+}
