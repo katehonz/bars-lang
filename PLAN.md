@@ -441,7 +441,7 @@ bars/
 |---|--------|---------|-------------|
 | A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
 | B | Globals | Top-level `(def x …)` не е истински LLVM global — само local slot в lowering | няма споделено mutable state между defn без context map |
-| C | HOF | `map`/`filter`/`reduce` LLVM path счупен (`bars_map_new_i64` arity) | няма `run-tests` върху vector от функции |
+| C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
 | D | Types | Soft string/void warnings; soft-by-default | шум, но не блокира |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
 | F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
@@ -465,13 +465,19 @@ bars/
 - [x] Examples: `defmacro_demo`, `defmacro_demo2`, `deftest_demo`
 - [ ] Full macro interpreter (list/cons/if at expand-time) — later if needed
 
-### 17.3 Next language (queued)
+### 17.3a HOF + docs ✅
 
-- [ ] Fix HOF in self-host LLVM (or document host-only)
+- [x] Self-host HIR: `(map f v)` / `(filter p v)` / `(reduce f init v)` → loop desugar
+- [x] Lambda args via beta-reduction `(fn [x] …)` → `let` inside the loop
+- [x] Unique loop vars (`__miN` …) for nesting safety
+- [x] Docs: language guide (destructure + HOF), stdlib HOF section, DOCTRINE maps row
+- [x] self-test: `hof_demo`, `hof_lambda`
+
+### 17.3b Next language (queued)
+
 - [ ] Real top-level `def` globals (or ban and document)
-- [ ] Keyword args + docstrings
+- [ ] Keyword args + docstrings on `defn`
 - [ ] Parser error recovery
-- [ ] Docs: destructuring polish, fix DOCTRINE maps row
 
 ### 17.3 Ecosystem (queued)
 
@@ -481,4 +487,4 @@ bars/
 
 ---
 
-*План версия: 6.10 | Актуализиран: 2026-07-28*
+*План версия: 6.11 | Актуализиран: 2026-07-28*

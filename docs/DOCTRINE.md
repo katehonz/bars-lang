@@ -57,7 +57,7 @@ But Clojure made a trade-off: the JVM. Great for web services. Unacceptable for:
 | S-expression syntax | Native compilation (QBE AOT + Cranelift JIT) |
 | Homoiconic macros | Ownership checking (no lifetime annotations) |
 | REPL-driven development | Zero-cost C FFI |
-| Vectors `[]` and maps `{}` | Optional GC (Boehm) |
+| Vectors `[]`; maps via `(map)` (no `{}`) | Optional GC (Boehm) |
 | Keywords `:foo` | `loop` / `recur` tail recursion |
 | Immutable-by-default | Small binaries (no 200MB runtime) |
 

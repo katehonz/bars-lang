@@ -287,6 +287,22 @@ Context-based suite (works with `bars-self`; no user `defmacro` needed).
 
 See `examples/test_demo.brs`, `examples/deftest_demo.brs`.
 
-## Higher-Order Functions (REPL/Cranelift Only)
+## Higher-Order Functions (`map` / `filter` / `reduce`)
 
-The AOT backend does not yet support function pointers, so `map-vec`, `filter-vec`, and `reduce-vec` are commented out in `lib/core.brs`. They work in the Cranelift JIT REPL.
+Built into the compiler (HIR desugar → `loop`/`recur`). Work on **host and
+`bars-self`** (LLVM/C/WASM), with named functions or `(fn […] …)` lambdas.
+
+| Form | Meaning |
+|------|---------|
+| `(map f vec)` | New vector of `(f x)` for each element |
+| `(filter pred vec)` | Elements where `pred` is truthy |
+| `(reduce f init vec)` | Fold left: `(f acc x)` |
+
+```clojure
+(map inc [1 2 3])                 ;; → vector length 3
+(filter even? [1 2 3 4])          ;; → [2 4]
+(reduce add 0 [1 2 3 4 5])        ;; → 15
+(map (fn [x] (* x 2)) [1 2 3])    ;; lambda OK
+```
+
+**Note:** zero-arg `(map)` is still the **hash-map** constructor.

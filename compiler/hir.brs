@@ -400,6 +400,158 @@
         _ (put lines (str-concat "    assign " (str-concat bname (str-concat " " (op-fmt op)))))]
     (mk-ret op t2 l2)))
 
+;; ---- HOF desugar: map / filter / reduce → loop (Phase 17.3) ----
+;; Named functions and inline (fn […] …) via beta-reduction into let.
+;; Avoids calling bars_map_new for (map f vec).
+
+(defn hir-sym [name]
+  (let [v (vector)]
+    (do (push v 1) (push v name) v)))
+
+(defn hir-num [n]
+  (let [v (vector)]
+    (do (push v 0) (push v n) v)))
+
+(defn hir-special [tag name]
+  (let [v (vector)]
+    (do (push v tag) (push v name) v)))
+
+(defn hir-vec-marker []
+  (let [v (vector)]
+    (do (push v 28) v)))
+
+(defn hir-vec [elems]
+  (let [out (vector)
+        n (count elems)]
+    (do (push out (hir-vec-marker))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (get elems i))
+                (recur (+ i 1))))))))
+
+(defn hir-call [name args]
+  (let [out (vector)
+        n (count args)]
+    (do (push out (hir-sym name))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (get args i))
+                (recur (+ i 1))))))))
+
+(defn hir-if [c t e]
+  (let [out (vector)]
+    (do (push out (hir-special 12 "if"))
+        (push out c)
+        (push out t)
+        (push out e)
+        out)))
+
+(defn hir-do [exprs]
+  (let [out (vector)
+        n (count exprs)]
+    (do (push out (hir-special 13 "do"))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (get exprs i))
+                (recur (+ i 1))))))))
+
+(defn hir-loop [binds body]
+  (let [out (vector)]
+    (do (push out (hir-special 14 "loop"))
+        (push out binds)
+        (push out body)
+        out)))
+
+(defn hir-recur [args]
+  (let [out (vector)
+        n (count args)]
+    (do (push out (hir-special 15 "recur"))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (get args i))
+                (recur (+ i 1))))))))
+
+(defn hir-let [binds body]
+  (let [out (vector)]
+    (do (push out (hir-special 11 "let"))
+        (push out binds)
+        (push out body)
+        out)))
+
+(defn is-fn-form? [expr]
+  (if (is-atom? expr) false
+    (let [h (get expr 0)]
+      (if (not (is-atom? h)) false
+        (if (= (tag-of h) 16) true
+          (if (= (tag-of h) 1) (str-eq? (val-of h) "fn") false))))))
+
+(defn fn-body-ast [expr]
+  (let [n (count expr)]
+    (if (<= n 2) (hir-num 0)
+      (if (= n 3) (get expr 2)
+        (let [bodies (vector)]
+          (do (loop [i 2]
+                (if (>= i n) 0
+                  (do (push bodies (get expr i))
+                      (recur (+ i 1)))))
+              (hir-do bodies)))))))
+
+;; Apply f (symbol or fn) to arg ASTs → call or (let [params args] body).
+(defn apply-callable [f args]
+  (if (if (is-atom? f) (= (tag-of f) 1) false)
+    (hir-call (val-of f) args)
+    (if (is-fn-form? f)
+      (let [params (normalize-params (get f 1))
+            np (count params)
+            na (count args)
+            bind-elems (vector)]
+        (do (loop [i 0]
+              (if (>= i np) 0
+                (do (push bind-elems (get params i))
+                    (push bind-elems (if (< i na) (get args i) (hir-num 0)))
+                    (recur (+ i 1)))))
+            (hir-let (hir-vec bind-elems) (fn-body-ast f))))
+      ;; Fallback: treat compound head as error → call 0-arg nonsense
+      (hir-num 0))))
+
+(defn desugar-map [f vec-ast uid]
+  (let [i (hir-sym (str-concat "__mi" (int-str uid)))
+        result (hir-sym (str-concat "__mr" (int-str uid)))
+        binds (hir-vec (vector i (hir-num 0) result (hir-call "vector" (vector))))
+        cond (hir-call "=" (vector i (hir-call "count" (vector vec-ast))))
+        elem (hir-call "get" (vector vec-ast i))
+        mapped (apply-callable f (vector elem))
+        push-c (hir-call "push" (vector result mapped))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) result))
+        body (hir-if cond result (hir-do (vector push-c rec)))]
+    (hir-loop binds body)))
+
+(defn desugar-filter [pred vec-ast uid]
+  (let [i (hir-sym (str-concat "__fi" (int-str uid)))
+        result (hir-sym (str-concat "__fr" (int-str uid)))
+        elem (hir-sym (str-concat "__fe" (int-str uid)))
+        binds (hir-vec (vector i (hir-num 0) result (hir-call "vector" (vector))))
+        cond (hir-call "=" (vector i (hir-call "count" (vector vec-ast))))
+        get-e (hir-call "get" (vector vec-ast i))
+        pred-c (apply-callable pred (vector elem))
+        push-c (hir-call "push" (vector result elem))
+        maybe (hir-if pred-c push-c (hir-num 0))
+        bind-e (hir-let (hir-vec (vector elem get-e)) maybe)
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) result))
+        body (hir-if cond result (hir-do (vector bind-e rec)))]
+    (hir-loop binds body)))
+
+(defn desugar-reduce [f init-ast vec-ast uid]
+  (let [i (hir-sym (str-concat "__ri" (int-str uid)))
+        acc (hir-sym (str-concat "__ra" (int-str uid)))
+        binds (hir-vec (vector i (hir-num 0) acc init-ast))
+        cond (hir-call "=" (vector i (hir-call "count" (vector vec-ast))))
+        elem (hir-call "get" (vector vec-ast i))
+        next-acc (apply-callable f (vector acc elem))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) next-acc))
+        body (hir-if cond acc rec)]
+    (hir-loop binds body)))
+
 (defn lower-call [ast t l lines loops adt structs]
   (let [fname (val-of (get ast 0))
         n (count ast)
@@ -409,6 +561,13 @@
     (if (str-eq? fname "vector")
       ;; (vector a b c) → new + push each (not multi-arg runtime new)
       (lower-vector-from ast 1 t l lines loops adt structs)
+    ;; HOF: (map f vec) (filter pred vec) (reduce f init vec)
+    (if (if (str-eq? fname "map") (= n 3) false)
+      (lower-expr (desugar-map (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "filter") (= n 3) false)
+      (lower-expr (desugar-filter (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "reduce") (= n 4) false)
+      (lower-expr (desugar-reduce (get ast 1) (get ast 2) (get ast 3) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -444,7 +603,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

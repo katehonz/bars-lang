@@ -76,6 +76,8 @@ EXAMPLES=(
   examples/deftest_demo.brs
   examples/defmacro_demo.brs
   examples/defmacro_demo2.brs
+  examples/hof_demo.brs
+  examples/hof_lambda.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -949,6 +951,8 @@ C_EXAMPLES=(
   examples/deftest_demo.brs
   examples/defmacro_demo.brs
   examples/defmacro_demo2.brs
+  examples/hof_demo.brs
+  examples/hof_lambda.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

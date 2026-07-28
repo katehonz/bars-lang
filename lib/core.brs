@@ -1,8 +1,8 @@
 ;; Bars Standard Library — Core functions
 ;; These are written in Bars itself and compiled with the toolchain.
-;; NOTE: Higher-order vector functions (map-vec, filter-vec, reduce-vec)
-;;       work only in the REPL/Cranelift backend where function pointers
-;;       are supported. In QBE AOT mode, use inline loops or recursion.
+;; NOTE: Built-in (map f vec) / (filter p vec) / (reduce f init vec) are
+;;       desugared by the compiler (host + bars-self) into loop/recur.
+;;       Empty (map) is still the hash-map constructor.
 
 ;; ---------------------------------------------------------------------------
 ;; Numeric helpers

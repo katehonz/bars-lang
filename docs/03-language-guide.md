@@ -110,6 +110,43 @@ Type annotations in parameters use the `^type` syntax. Supported types:
   (+ x y))
 ```
 
+### Destructuring in `let`
+
+Vector and nested patterns (also works with `defstruct` field patterns):
+
+```clojure
+(let [[a b c] (vector 10 20 30)]
+  (+ a b c))          ;; 60
+
+(let [[x _ z] (vector 1 2 3)]
+  (+ x z))            ;; 4  (_ discards)
+
+(let [[a [b c] d] (vector 7 (vector 8 9) 10)]
+  (+ a b c d))        ;; 34
+```
+
+See `examples/let_destructure.brs`, `examples/struct_destructure.brs`.
+
+### Higher-order `map` / `filter` / `reduce`
+
+These are **not** hashmap constructors. With two (or three) arguments they
+desugar to inline `loop`/`recur` (self-host and host):
+
+```clojure
+(defn inc [x] (+ x 1))
+(defn even? [x] (= (% x 2) 0))
+(defn add [a b] (+ a b))
+
+(map inc [1 2 3])              ;; [2 3 4]
+(filter even? [1 2 3 4])       ;; [2 4]
+(reduce add 0 [1 2 3 4 5])     ;; 15
+
+;; Inline lambda (beta-reduced into the loop):
+(map (fn [x] (* x 2)) [1 2 3])
+```
+
+Empty `(map)` still creates a **hash map**. Use `map-set` / `map-get` for maps.
+
 ### `if` — Conditional
 
 ```clojure
