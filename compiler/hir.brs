@@ -251,7 +251,11 @@
             (do (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " (val-of ast)))))
                 (mk-ret dest (+ t 1) l)))
           (if (= tag 3)
-            (mk-ret (val-of ast) t l)
+            ;; Keywords → string ":name" (host-compatible)
+            (let [dest (fresh-temp t)
+                  content (str-concat ":" (val-of ast))]
+              (do (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " content))))
+                  (mk-ret dest (+ t 1) l)))
             (if (= tag 4)
               (mk-ret "0" t l)
               (if (= tag 5)
@@ -562,6 +566,34 @@
         body (hir-if cond acc rec)]
     (hir-loop binds body)))
 
+;; ---- Keyword args pack (Phase 17.3c) ----
+;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
+;; Explicit form so (map-set m :k v) is not rewritten.
+;; Keys are bare keyword names (no leading ':') for (kw-get opts "name").
+
+(defn hir-str [s]
+  (let [v (vector)]
+    (do (push v 2) (push v s) v)))
+
+(defn is-kw-atom? [x]
+  (if (is-atom? x) (= (tag-of x) 3) false))
+
+(defn desugar-kwargs-form [ast]
+  ;; (kwargs k1 v1 k2 v2 ...) — require even number of args after head
+  (let [n (count ast)
+        out (vector)]
+    (if (< n 1) (hir-call "vector" (vector))
+      (if (!= (% (- n 1) 2) 0)
+        (hir-call "vector" (vector))
+        (do (push out (hir-sym "vector"))
+            (loop [i 1]
+              (if (>= i n) out
+                (let [el (get ast i)]
+                  (do (if (is-kw-atom? el)
+                        (push out (hir-str (val-of el)))
+                        (push out el))
+                      (recur (+ i 1)))))))))))
+
 (defn lower-call [ast t l lines loops adt structs]
   (let [fname (val-of (get ast 0))
         n (count ast)
@@ -571,6 +603,9 @@
     (if (str-eq? fname "vector")
       ;; (vector a b c) → new + push each (not multi-arg runtime new)
       (lower-vector-from ast 1 t l lines loops adt structs)
+    ;; (kwargs :k v ...) → flat vector of string keys + values
+    (if (if (str-eq? fname "kwargs") true (str-eq? fname "kw-pack"))
+      (lower-expr (desugar-kwargs-form ast) t l lines loops adt structs)
     ;; HOF: (map f vec) (filter pred vec) (reduce f init vec)
     (if (if (str-eq? fname "map") (= n 3) false)
       (lower-expr (desugar-map (get ast 1) (get ast 2) l) t l lines loops adt structs)
@@ -613,7 +648,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

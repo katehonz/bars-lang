@@ -480,18 +480,32 @@ bars/
 - [x] `bars-self doc` prefers inline docstring over `;;` comments above
 - [x] Language guide note
 
-### 17.3c Next language (queued)
+### 17.3c Keyword args ✅
+
+- [x] Built-in `(kwargs :k v …)` → `(vector "k" v …)` in self-host HIR
+- [x] Keywords lower to stringlit `":name"` (host-compatible)
+- [x] `lib/kw.brs` — `lookup` / `lookup-or` / `has?` / `count-pairs`
+- [x] Example `kwargs_demo.brs`
+- Explicit pack (not silent rewrite of all calls) so `map-set` + keyword keys stay valid
+
+### 17.4 HTTP server package ✅
+
+- [x] `lib/http_server.brs` — parse-request, response builders, accept-request, reply, serve-once
+- [x] Re-export net listen/ok?/close (avoid duplicate require)
+- [x] Example `http_server_route.brs` (path routing)
+- [ ] TLS / HTTPS — deferred
+
+### 17.5 Next (queued)
 
 - [ ] Real top-level `def` globals (or ban and document)
-- [ ] Keyword arguments for functions
 - [ ] Parser error recovery
 
-### 17.3 Ecosystem (queued)
+### 17.3 Ecosystem
 
-- [ ] HTTP server helper (`lib/http-server` routing)
+- [x] HTTP server helper (`lib/http_server`) — 17.4
 - [ ] Crypto hashes (SHA-256) runtime + package
 - [ ] TLS / HTTPS (OpenSSL or similar) — later
 
 ---
 
-*План версия: 6.12 | Актуализиран: 2026-07-28*
+*План версия: 6.13 | Актуализиран: 2026-07-28*

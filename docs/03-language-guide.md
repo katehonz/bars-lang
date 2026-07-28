@@ -158,6 +158,24 @@ desugar to inline `loop`/`recur` (self-host and host):
 
 Empty `(map)` still creates a **hash map**. Use `map-set` / `map-get` for maps.
 
+### Keyword arguments (`kwargs`)
+
+Trailing keyword options are packed **explicitly** with the `kwargs` built-in
+(so `(map-set m :k v)` is not rewritten):
+
+```clojure
+(require "lib/kw" :as kw)
+
+(defn greet [msg opts]
+  (let [name (kw/lookup-or opts "name" "world")]
+    (println name)))
+
+(greet "hi" (kwargs :name "Ada" :times 3))
+;; opts = ["name" "Ada" "times" 3]
+```
+
+Keywords themselves lower to strings like `":foo"` when used as values.
+
 ### `if` — Conditional
 
 ```clojure

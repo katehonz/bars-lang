@@ -225,6 +225,36 @@ Sync TCP over the C runtime. File descriptors are `i64` (`-1` = error).
 /tmp/cli     # → ping
 ```
 
+### `lib/kw.brs` — Keyword-arg helpers (Phase 17.3c)
+
+Use with the compiler built-in `(kwargs :k v …)` → flat vector of string keys.
+
+| Function | Description |
+|----------|-------------|
+| `lookup` | Value for key, or `0` if missing |
+| `lookup-or` | Value or default |
+| `has?` | Key present? |
+| `count-pairs` | Number of pairs |
+
+### `lib/http_server.brs` — HTTP/1.1 server helpers (Phase 17.4)
+
+Sync one-shot helpers over TCP. Re-exports `listen` / `ok?` / `close` / `send` /
+`recv` so a single `(require "lib/http_server" :as hs)` is enough.
+
+Request vector: `[method path body]`. Response: full HTTP message string.
+
+| Function | Description |
+|----------|-------------|
+| `parse-request` | Raw bytes → request or `0` |
+| `method` / `path` / `body` | Accessors |
+| `method-eq?` / `path-eq?` | String equality helpers |
+| `ok` / `not-found` / `bad-request` / … | Response builders |
+| `accept-request` | From listen fd → `[client req]` |
+| `reply` | Send response + close client |
+| `serve-once` | Listen, one client, fixed response |
+
+See `examples/http_server_route.brs`.
+
 ### `lib/http.brs` — HTTP/1.1 client (Phase 15.1)
 
 Pure Bars client on top of `lib/net`. Sync only; **no TLS**.
