@@ -187,6 +187,7 @@
         (lines-push lines "declare i64 @bars_tcp_recv(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_close(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
+        (lines-push lines "declare i8* @bars_alloc(i64)")
         (lines-push lines "")
         lines)))
 
@@ -564,6 +565,82 @@
         [output strs (+ str-cnt 1) env reg])))
 
 ;; Returns [output strs str-cnt env reg]
+(defn emit-alloc [output words env reg]
+  (let [dest (get words 1)
+        size (get words 2)
+        tmp (str-concat dest "_p")
+        r2 (ensure-alloca output env dest)
+        o2 (get r2 0)
+        env2 (get r2 1)]
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp)
+            (str-concat " = call i8* @bars_alloc(i64 " size ")"))))
+        (lines-push o2
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = ptrtoint i8* " (str-concat (llvm-local tmp) " to i64")))))
+        (let [r3 (emit-assign-inline o2 dest (llvm-local dest) env2)]
+          [(get r3 0) env2 reg]))))  ;; alloc doesn't read vars, reg unchanged
+
+(defn emit-assign-inline [output dest val-llvm env]
+  (let [r2 (ensure-alloca output env dest)
+        o2 (get r2 0)
+        env2 (get r2 1)]
+    (do (lines-push o2
+          (str-concat "  store i64 " (str-concat val-llvm
+            (str-concat ", i64* " (llvm-local (addr-name dest))))))
+        [o2 env2])))
+
+(defn emit-fieldload [output words env reg]
+  (let [dest (get words 1)
+        r1 (pair-resolve words 2 output env reg)
+        base (get r1 0)
+        o1 (get r1 1)
+        g1 (get r1 2)
+        woff (get words 4)
+        tmp-p (str-concat dest "_p")
+        tmp-g (str-concat dest "_g")
+        r2 (ensure-alloca o1 env dest)
+        o2 (get r2 0)
+        env2 (get r2 1)]
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp-p)
+            (str-concat " = inttoptr i64 " (str-concat base " to i64*")))))
+        (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp-g)
+            (str-concat " = getelementptr i64, i64* " (str-concat (llvm-local tmp-p)
+              (str-concat ", i64 " woff))))))
+        (lines-push o2
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = load i64, i64* " (llvm-local tmp-g)))))
+        (let [r3 (emit-assign-inline o2 dest (llvm-local dest) env2)]
+          [(get r3 0) env2 g1]))))
+
+(defn emit-fieldstore [output words env reg]
+  (let [r1 (pair-resolve words 1 output env reg)
+        base (get r1 0)
+        o1 (get r1 1)
+        g1 (get r1 2)
+        woff (get words 3)
+        r2 (pair-resolve words 4 o1 env g1)
+        val (get r2 0)
+        o2 (get r2 1)
+        g2 (get r2 2)
+        base-name (get words 2)
+        tmp-p (str-concat base-name (str-concat "_fp" (int-str reg)))
+        tmp-g (str-concat base-name (str-concat "_fg" (int-str reg)))]
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp-p)
+            (str-concat " = inttoptr i64 " (str-concat base " to i64*")))))
+        (lines-push o2
+          (str-concat "  " (str-concat (llvm-local tmp-g)
+            (str-concat " = getelementptr i64, i64* " (str-concat (llvm-local tmp-p)
+              (str-concat ", i64 " woff))))))
+        (lines-push o2
+          (str-concat "  store i64 " (str-concat val
+            (str-concat ", i64* " (llvm-local tmp-g)))))
+        [o2 env g2])))
+
+;; Returns [output strs str-cnt env reg]
 (defn emit-instr [output words trimmed strs str-cnt env reg]
   (let [cmd (get words 0) n (count words)]
     (if (str-eq? cmd "assign")
@@ -582,7 +659,16 @@
               [(emit-jump output words) strs str-cnt env reg]
               (if (str-eq? cmd "stringlit")
                 (emit-stringlit output trimmed strs str-cnt env reg)
-                [output strs str-cnt env reg]))))))))
+                (if (str-eq? cmd "alloc")
+                  (let [r (emit-alloc output words env reg)]
+                    [(get r 0) strs str-cnt (get r 1) (get r 2)])
+                  (if (str-eq? cmd "fieldload")
+                    (let [r (emit-fieldload output words env reg)]
+                      [(get r 0) strs str-cnt (get r 1) (get r 2)])
+                    (if (str-eq? cmd "fieldstore")
+                      (let [r (emit-fieldstore output words env reg)]
+                        [(get r 0) strs str-cnt (get r 1) (get r 2)])
+                      [output strs str-cnt env reg])))))))))))
 
 (defn process-func [body line in-func strs str-cnt]
   (let [body2 (if (= in-func 1) (lines-push body "}") body)

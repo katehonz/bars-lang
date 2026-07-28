@@ -342,6 +342,37 @@
               (str-concat esc "\");")))))
         [o1 e1])))
 
+(defn emit-alloc-c [output words env]
+  (let [dest (c-ident (get words 1))
+        size (get words 2)
+        er (ensure-decl output env dest)
+        o1 (get er 0)
+        e1 (get er 1)]
+    (do (lines-push o1 (str-concat "  " (str-concat dest
+          (str-concat " = (int64_t)(uintptr_t)bars_alloc(" (str-concat size ");")))))
+        [o1 e1])))
+
+(defn emit-fieldload-c [output words env]
+  (let [dest (c-ident (get words 1))
+        base (pair-op words 2)
+        woff (get words 4)
+        er (ensure-decl output env dest)
+        o1 (get er 0)
+        e1 (get er 1)]
+    (do (lines-push o1 (str-concat "  " (str-concat dest
+          (str-concat " = ((int64_t*)(uintptr_t)(" (str-concat base
+            (str-concat "))[" (str-concat woff "];")))))))
+        [o1 e1])))
+
+(defn emit-fieldstore-c [output words env]
+  (let [base (pair-op words 1)
+        woff (get words 3)
+        val (pair-op words 4)]
+    (do (lines-push output (str-concat "  ((int64_t*)(uintptr_t)("
+          (str-concat base (str-concat "))[" (str-concat woff
+            (str-concat "] = " (str-concat val ";")))))))
+        [output env])))
+
 (defn emit-instr [output words trimmed env]
   (let [cmd (get words 0) n (count words)]
     (if (str-eq? cmd "assign")
@@ -356,7 +387,13 @@
               [(emit-jump output words) env]
               (if (str-eq? cmd "stringlit")
                 (emit-stringlit output trimmed env)
-                [output env]))))))))
+                (if (str-eq? cmd "alloc")
+                  (emit-alloc-c output words env)
+                  (if (str-eq? cmd "fieldload")
+                    (emit-fieldload-c output words env)
+                    (if (str-eq? cmd "fieldstore")
+                      (emit-fieldstore-c output words env)
+                      [output env])))))))))))
 
 (defn c-header []
   (let [lines (vector)]

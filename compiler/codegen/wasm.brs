@@ -203,6 +203,15 @@
         out)
     (emit-goto-pc out (+ i 1))))
 
+(defn parse-int-wasm [s]
+  (let [n (count s)]
+    (loop [i 0 acc 0]
+      (if (>= i n) acc
+        (let [c (str-get s i)]
+          (if (if (>= c 48) (<= c 57) false)
+            (recur (+ i 1) (+ (* acc 10) (- c 48)))
+            acc))))))
+
 ;; Emit one instruction body (no outer if). Ends with br $dispatch or return.
 (defn emit-step [out words locals table i nsteps]
   (let [cmd (if (> (count words) 0) (get words 0) "")
@@ -225,7 +234,6 @@
                   (lines-push out "      return")
                   out)))
           (if (str-eq? cmd "branch")
-            ;; branch var/const c then-lbl else-lbl
             (let [cond (pair-op words 1)
                   then-n (get words 3)
                   else-n (get words 4)
@@ -247,14 +255,37 @@
                     pc (label-pc-get table lbl)]
                 (emit-goto-pc out pc))
               (if (str-eq? cmd "stringlit")
-                ;; no string runtime: store 0
                 (let [dest (get words 1)
                       _ (ensure-local locals dest)]
                   (do (lines-push out "      i64.const 0")
                       (lines-push out (str-concat "      local.set $" (w-ident dest)))
                       (emit-next-pc out i nsteps)))
-                ;; unknown / empty: fall through
-                (emit-next-pc out i nsteps)))))))))
+                (if (str-eq? cmd "alloc")
+                  ;; No heap in WASM backend: return 0
+                  (let [dest (get words 1)
+                        _ (ensure-local locals dest)]
+                    (do (lines-push out "      i64.const 0")
+                        (lines-push out (str-concat "      local.set $" (w-ident dest)))
+                        (emit-next-pc out i nsteps)))
+                  (if (str-eq? cmd "fieldload")
+                    (let [dest (get words 1)
+                          woff (get words 4)
+                          boff (* (parse-int-wasm woff) 8)
+                          _ (ensure-local locals dest)]
+                      (do (lines-push out (str-concat "      " (pair-op words 2)))
+                          (lines-push out "      i32.wrap_i64")
+                          (lines-push out (str-concat "      i64.load offset=" (int-str boff)))
+                          (lines-push out (str-concat "      local.set $" (w-ident dest)))
+                          (emit-next-pc out i nsteps)))
+                    (if (str-eq? cmd "fieldstore")
+                      (let [woff (get words 3)
+                            boff (* (parse-int-wasm woff) 8)]
+                        (do (lines-push out (str-concat "      " (pair-op words 1)))
+                            (lines-push out (str-concat "      " (pair-op words 4)))
+                            (lines-push out "      i32.wrap_i64")
+                            (lines-push out (str-concat "      i64.store offset=" (int-str boff)))
+                            (emit-next-pc out i nsteps)))
+                      (emit-next-pc out i nsteps))))))))))))
 
 (defn emit-step-call [out words nw locals table i nsteps]
   (let [dest (get words 1)

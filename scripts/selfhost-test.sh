@@ -69,6 +69,9 @@ EXAMPLES=(
   examples/cond_demo.brs
   examples/nested_demo.brs
   examples/map.brs
+  examples/let_destructure.brs
+  examples/struct_demo.brs
+  examples/struct_destructure.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -935,6 +938,9 @@ C_EXAMPLES=(
   examples/cond_demo.brs
   examples/nested_demo.brs
   examples/map.brs
+  examples/let_destructure.brs
+  examples/struct_demo.brs
+  examples/struct_destructure.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then
