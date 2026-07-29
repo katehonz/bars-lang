@@ -1288,8 +1288,10 @@
         r
         main-loop))))
 
-;; (sort coll) → fresh sorted vector (insertion sort on a clone, ascending)
-(defn desugar-sort [vec-ast uid]
+;; (sort coll) / (sort cmp coll) → fresh sorted vector (insertion sort on a
+;; clone). cmp is a "comes-before" predicate: (cmp a b) truthy → a first.
+;; Default cmp is `<` (ascending).
+(defn desugar-sort [cmp-ast vec-ast uid]
   (let [v (hir-sym (str-concat "__sov" (int-str uid)))
         c (hir-sym (str-concat "__soc" (int-str uid)))
         i (hir-sym (str-concat "__soi" (int-str uid)))
@@ -1299,13 +1301,13 @@
         outer (hir-vec (vector
                  v (hir-call "vector-clone" (vector vec-ast))
                  c (hir-call "count" (vector v))))
-        ;; inner: shift elements > x one slot right; result is the slot p
+        ;; inner: shift v[j] right while x comes before it; result is the slot p
         shift (hir-call "vector-set" (vector v
                 (hir-call "+" (vector j (hir-num 1)))
                 (hir-call "get" (vector v j))))
         inner-binds (hir-vec (vector j (hir-call "-" (vector i (hir-num 1)))))
         inner-done (hir-call "<" (vector j (hir-num 0)))
-        inner-cmp (hir-call ">" (vector (hir-call "get" (vector v j)) x))
+        inner-cmp (apply-callable cmp-ast (vector x (hir-call "get" (vector v j))))
         inner-step (hir-do (vector shift
                      (hir-recur (vector (hir-call "-" (vector j (hir-num 1)))))))
         inner-body (hir-if inner-done (hir-num -1)
@@ -1774,8 +1776,14 @@
       (lower-expr (desugar-partition (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "frequencies") (= n 2) false)
       (lower-expr (desugar-frequencies (get ast 1) (hir-lam-next)) t l lines loops adt structs)
-    (if (if (str-eq? fname "sort") (= n 2) false)
-      (lower-expr (desugar-sort (get ast 1) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "sort") (if (= n 2) true (= n 3)) false)
+      ;; (sort coll) defaults to `<`; (sort cmp coll) uses the predicate
+      (lower-expr
+        (desugar-sort
+          (if (= n 3) (get ast 1) (hir-sym "<"))
+          (if (= n 3) (get ast 2) (get ast 1))
+          (hir-lam-next))
+        t l lines loops adt structs)
     (if (if (str-eq? fname "group-by") (= n 3) false)
       (lower-expr (desugar-group-by (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "zipmap") (= n 3) false)
@@ -1812,6 +1820,12 @@
       (lower-expr (hir-call "+" (vector (get ast 1) (hir-num 1))) t l lines loops adt structs)
     (if (if (str-eq? fname "dec") (= n 2) false)
       (lower-expr (hir-call "-" (vector (get ast 1) (hir-num 1))) t l lines loops adt structs)
+    ;; str-includes? → substring found at index >= 0
+    (if (if (str-eq? fname "str-includes?") (= n 3) false)
+      (lower-expr (hir-call ">=" (vector
+                    (hir-call "str-index-of" (vector (get ast 1) (get ast 2)))
+                    (hir-num 0)))
+        t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1866,7 +1880,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

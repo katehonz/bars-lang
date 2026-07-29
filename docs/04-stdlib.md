@@ -129,7 +129,9 @@ Self-host HIR desugars (also in the C backend):
 | `interpose` | `(interpose sep coll)` | `sep` between elements |
 | `partition` | `(partition n coll)` | Vector of n-sized chunks (tail dropped) |
 | `frequencies` | `(frequencies coll)` | Map element → occurrence count |
-| `sort` | `(sort coll)` | Fresh vector, ascending (input not mutated) |
+| `sort` | `(sort coll)` / `(sort cmp coll)` | Fresh vector; default `<` or custom comes-before fn |
+| `str-upper` / `str-lower` | `(str-upper s)` | ASCII case map |
+| `str-includes?` | `(str-includes? s sub)` | `1` if substring present, else `0` |
 | `group-by` | `(group-by f coll)` | Map `(f x)` → vector of matching elems |
 | `zipmap` | `(zipmap ks vs)` | Map from keys to values (stops at shorter) |
 | `select-keys` | `(select-keys m ks)` | Sub-map with only the present keys |

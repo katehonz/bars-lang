@@ -81,12 +81,15 @@
               (if (str-eq? fname "str-index-of") "bars_string_index_of"
                 (if (str-eq? fname "str-replace") "bars_string_replace"
                   (if (str-eq? fname "str-trim") "bars_string_trim"
+                    (if (str-eq? fname "str-upper") "bars_string_upper"
+                      (if (str-eq? fname "str-lower") "bars_string_lower"
+                        (if (str-eq? fname "str-eq?") "bars_string_eq_i64"
                     (if (str-eq? fname "str-substring") "bars_string_substring"
                       (if (str-eq? fname "str-split") "bars_string_split"
                         (if (str-eq? fname "str-join") "bars_string_join"
                           (if (str-eq? fname "code-char") "bars_code_char"
                             (if (str-eq? fname "str-from-i64") "bars_string_from_i64"
-                              "")))))))))))))))
+                              ""))))))))))))))))))
 
 (defn map-vec-ops [fname]
   (if (str-eq? fname "count") "bars_count_any_i64"

@@ -134,6 +134,33 @@ for src in "${EXAMPLES[@]}"; do
   fi
 done
 
+# --- Phase 17.48: lib/test seq coverage (exit code matters) ---
+run_seq_lib_test() {
+  local src="examples/seq_lib_test.brs"
+  local out="$TMP/seq_lib_test"
+  local log="$TMP/seq_lib_test.compile.log"
+  if [[ ! -f "$src" ]]; then
+    echo "SKIP seq_lib_test (missing)"
+    return
+  fi
+  if ! "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  $src"
+    tail -5 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  if "$out" >"$TMP/seq_lib_test.out" 2>&1; then
+    echo "OK   examples/seq_lib_test.brs (lib/test exit 0)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      seq_lib_test (lib/test failures)"
+    tail -8 "$TMP/seq_lib_test.out" | sed 's/^/  /'
+    fail=$((fail + 1))
+  fi
+}
+
+run_seq_lib_test
+
 # --- git path-deps smoke (local file:// repo; no network) ---
 run_git_dep_smoke() {
   local gitlib="$TMP/gitlib"

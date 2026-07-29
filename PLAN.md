@@ -855,6 +855,15 @@ bars/
 - [x] `keys`/`vals` aliases към `map-keys`/`map-values`
 - [x] Example `reduce_kv_demo.brs` → 15, 1, 3 3, 60 3 6, 7
 
+### 17.48 `sort` с comparator + string разширения + lib/test покритие ✅
+
+- [x] `(sort cmp coll)` — custom comes-before predicate; `(sort coll)` = `<`
+- [x] Runtime `bars_string_upper`/`bars_string_lower` (ASCII) + backend maps
+- [x] `(str-includes? s sub)` → desugar към `(>= (str-index-of s sub) 0)`
+- [x] `examples/seq_lib_test.brs` — lib/test suite (33 проверки) за 17.40–17.48
+- [x] `bars_string_eq_i64` в runtime + `str-eq?` mapping (беше само локални defn-и)
+- [x] selfhost-test: seq_lib_test блок с exit-code проверка (не само compile)
+
 ---
 
-*План версия: 6.55 | Актуализиран: 2026-07-29*
+*План версия: 6.56 | Актуализиран: 2026-07-29*

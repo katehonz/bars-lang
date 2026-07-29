@@ -759,6 +759,43 @@ int64_t bars_spit(bars_string_t* path, bars_string_t* content) {
     return (int64_t)written;
 }
 
+/* String equality: 1 if same content, else 0. NULL-safe. */
+int64_t bars_string_eq_i64(bars_string_t* a, bars_string_t* b) {
+    if (a == b) return 1;
+    if (!a || !b || !a->data || !b->data) return 0;
+    if (a->len != b->len) return 0;
+    return memcmp(a->data, b->data, a->len) == 0 ? 1 : 0;
+}
+
+/* ASCII case mapping (byte-wise; non-ASCII bytes pass through). */
+bars_string_t* bars_string_upper(bars_string_t* s) {
+    if (!s || !s->data) return bars_string_new("");
+    bars_string_t* out = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    out->magic = BARS_MAGIC_STRING;
+    out->data = (char*)bars_alloc(s->len + 1);
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        out->data[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+    }
+    out->data[s->len] = '\0';
+    out->len = s->len;
+    return out;
+}
+
+bars_string_t* bars_string_lower(bars_string_t* s) {
+    if (!s || !s->data) return bars_string_new("");
+    bars_string_t* out = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    out->magic = BARS_MAGIC_STRING;
+    out->data = (char*)bars_alloc(s->len + 1);
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        out->data[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+    }
+    out->data[s->len] = '\0';
+    out->len = s->len;
+    return out;
+}
+
 bars_string_t* bars_string_trim(bars_string_t* s) {
     if (!s || !s->data || s->len == 0) return bars_string_new("");
     size_t start = 0;

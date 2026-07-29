@@ -172,7 +172,8 @@ desugar to inline `loop`/`recur` (self-host):
 (interpose 0 [1 2 3])          ;; [1 0 2 0 3]
 (partition 2 [1 2 3 4 5])      ;; [[1 2] [3 4]] (tail dropped)
 (frequencies [1 2 1])          ;; map {1: 2, 2: 1}
-(sort [4 1 3 2])               ;; [1 2 3 4] (ascending, input kept)
+(sort [4 1 3 2])               ;; [1 2 3 4] (default <, input kept)
+(sort > [4 1 3 2])             ;; [4 3 2 1] (custom comes-before cmp)
 (group-by pos? [1 -2 3])       ;; map {1: [1 3], 0: [-2]}
 (zipmap [10 20] [1 2])         ;; map {10: 1, 20: 2}
 (select-keys m [1 3])          ;; only keys 1 and 3 from map m
