@@ -983,13 +983,15 @@
 (defn desugar-take [n-ast vec-ast uid]
   (let [v (hir-sym (str-concat "__tkv" (int-str uid)))
         nn (hir-sym (str-concat "__tkn" (int-str uid)))
+        c (hir-sym (str-concat "__tkc" (int-str uid)))
         m (hir-sym (str-concat "__tkm" (int-str uid)))
         i (hir-sym (str-concat "__tki" (int-str uid)))
         r (hir-sym (str-concat "__tkr" (int-str uid)))
         outer (hir-vec (vector
                  v vec-ast
                  nn n-ast
-                 m (hir-call "min" (vector nn (hir-call "count" (vector v))))
+                 c (hir-call "count" (vector v))
+                 m (hir-if (hir-call "<" (vector nn c)) nn c)
                  r (hir-call "vector" (vector))))
         binds (hir-vec (vector i (hir-num 0) r r))
         cond (hir-call ">=" (vector i m))
@@ -1011,7 +1013,9 @@
                  nn n-ast
                  c (hir-call "count" (vector v))
                  r (hir-call "vector" (vector))))
-        binds (hir-vec (vector i (hir-call "min" (vector nn c)) r r))
+        binds (hir-vec (vector
+                 i (hir-if (hir-call "<" (vector nn c)) nn c)
+                 r r))
         cond (hir-call ">=" (vector i c))
         pushed (hir-call "push" (vector r (hir-call "get" (vector v i))))
         rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
