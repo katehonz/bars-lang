@@ -764,6 +764,11 @@ bars/
 - [x] `(every? pred coll)` → 1 if all truthy, else 0
 - [x] Example `some_every_demo.brs` → 1 0, 1 0 1, 12
 
+### 17.36 `not-any?` / `not-every?` ✅
+
+- [x] Macros → `(if (some …) 0 1)` / `(if (every? …) 0 1)`
+- [x] Example `not_any_demo.brs` → 1 0, 0 1 1
+
 ---
 
-*План версия: 6.42 | Актуализиран: 2026-07-29*
+*План версия: 6.43 | Актуализиран: 2026-07-29*
