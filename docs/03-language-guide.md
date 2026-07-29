@@ -501,21 +501,32 @@ HOF `map`/`filter`/`reduce` still beta-reduce inline lambdas (no allocation).
 ### `apply` — call with a vector of args
 
 ```clojure
-(apply f [a b c])   ;; same as (f a b c); f may be a local/closure
+(apply f [a b c])      ;; same as (f a b c)
+(apply f a b [c d])    ;; fixed args then spread last vector → (f a b c d)
 ```
 
-`apply` spreads a vector into `bars_icall0`…`bars_icall8` (max 8 args). Use it
-when the argument list is built at runtime.
+`apply` spreads into `bars_icall0`…`bars_icall8` (max 8 args total). The last
+argument must be a vector; any preceding args after `f` are prepended.
 
 ```clojure
 (let [f add2]
   (apply f [20 22]))          ;; → 42
 
-(let [n 100
-      h (fn [x y] (+ (+ x y) n))]
-  (apply h [1 2]))            ;; → 103
+(apply add3 10 [20 12])       ;; → 42
 ```
 
+### `partial` — freeze leading args
+
+```clojure
+(partial f a b)   ;; → (fn [x] (apply f a b [x]))
+```
+
+Returns a **one-argument** function. Useful for specializing HOFs:
+
+```clojure
+(let [p (partial add3 10 20)]
+  (p 12))                     ;; → 42
+```
 ### Threading Macros
 
 ```clojure

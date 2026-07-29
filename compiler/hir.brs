@@ -976,6 +976,31 @@
                         (push out el))
                       (recur (+ i 1)))))))))))
 
+;; (apply f xs) unchanged; (apply f a b … xs) → (bars_apply_join f (vector a b…) xs)
+(defn desugar-apply [ast]
+  (let [n (count ast)]
+    (if (<= n 3)
+      ast
+      (let [f (get ast 1)
+            rest (get ast (- n 1))
+            fixed (vector)
+            _ (loop [i 2]
+                (if (>= i (- n 1)) 0
+                  (do (push fixed (get ast i))
+                      (recur (+ i 1)))))
+            vform (vector)
+            _ (push vform (hir-sym "vector"))
+            _ (loop [i 0]
+                (if (>= i (count fixed)) 0
+                  (do (push vform (get fixed i))
+                      (recur (+ i 1)))))
+            out (vector)]
+        (do (push out (hir-sym "bars_apply_join"))
+            (push out f)
+            (push out vform)
+            (push out rest)
+            out)))))
+
 (defn lower-call [ast t l lines loops adt structs]
   (let [fname (val-of (get ast 0))
         n (count ast)
@@ -990,6 +1015,8 @@
     (if (str-eq? fname "set")
       ;; (set a b c) → new + set-add each
       (lower-set-from ast 1 t l lines loops adt structs)
+    (if (if (str-eq? fname "apply") (> n 3) false)
+      (lower-expr (desugar-apply ast) t l lines loops adt structs)
     ;; (kwargs :k v ...) → flat vector of string keys + values
     (if (if (str-eq? fname "kwargs") true (str-eq? fname "kw-pack"))
       (lower-expr (desugar-kwargs-form ast) t l lines loops adt structs)
@@ -1054,7 +1081,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

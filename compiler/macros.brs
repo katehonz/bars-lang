@@ -588,32 +588,34 @@
         (expand-if-let expr macs)
         (if (str-eq? name "when-let")
           (expand-when-let expr macs)
-          (if (str-eq? name "cond")
-            (expand-cond expr macs)
-            (if (str-eq? name "and")
-              (expand-and expr macs)
-              (if (str-eq? name "or")
-                (expand-or expr macs)
-                (if (str-eq? name "->")
-                  (expand-thread expr macs)
-                  (if (str-eq? name "->>")
-                    (expand-thread-last expr macs)
-                    (if (str-eq? name "deftrait")
-                      (expand-deftrait expr)
-                      (if (str-eq? name "impl")
-                        (expand-impl expr (vector) macs)
-                        (if (str-eq? name "defconst")
-                          (expand-defconst expr macs)
-                          (if (str-eq? name "trait-call")
-                            (expand-trait-call expr macs)
-                            (if (str-eq? name "tcall")
+          (if (str-eq? name "partial")
+            (expand-partial expr macs)
+            (if (str-eq? name "cond")
+              (expand-cond expr macs)
+              (if (str-eq? name "and")
+                (expand-and expr macs)
+                (if (str-eq? name "or")
+                  (expand-or expr macs)
+                  (if (str-eq? name "->")
+                    (expand-thread expr macs)
+                    (if (str-eq? name "->>")
+                      (expand-thread-last expr macs)
+                      (if (str-eq? name "deftrait")
+                        (expand-deftrait expr)
+                        (if (str-eq? name "impl")
+                          (expand-impl expr (vector) macs)
+                          (if (str-eq? name "defconst")
+                            (expand-defconst expr macs)
+                            (if (str-eq? name "trait-call")
                               (expand-trait-call expr macs)
-                              (let [entry (macro-lookup macs name)]
-                                (if (= entry 0)
-                                  (expand-children-from expr 0 macs)
-                                  (let [args (expand-call-args expr macs)
-                                        expanded (apply-user-macro entry args)]
-                                    (expand-expr expanded macs)))))))))))))))))))
+                              (if (str-eq? name "tcall")
+                                (expand-trait-call expr macs)
+                                (let [entry (macro-lookup macs name)]
+                                  (if (= entry 0)
+                                    (expand-children-from expr 0 macs)
+                                    (let [args (expand-call-args expr macs)
+                                          expanded (apply-user-macro entry args)]
+                                      (expand-expr expanded macs))))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -702,6 +704,29 @@
                        (get body-exprs 0)
                        (mk-do body-exprs))]
             (mk-let1 nstr init (mk-if (mk-sym nstr) body (mk-nil)))))))))
+
+;; (partial f a b) => (fn [__px] (apply f a b [__px]))  — one more arg
+;; (partial f) => f
+(defn expand-partial [expr macs]
+  (let [n (count expr)]
+    (if (< n 2)
+      (mk-nil)
+      (if (= n 2)
+        (expand-expr (get expr 1) macs)
+        (let [x (mk-sym "__px")
+              call (vector)
+              _ (push call (mk-sym "apply"))
+              _ (loop [i 1]
+                  (if (>= i n) 0
+                    (do (push call (expand-expr (get expr i) macs))
+                        (recur (+ i 1)))))
+              xvec (wrap-vec (vector x))
+              _ (push call xvec)
+              out (vector)]
+          (do (push out (mk-special 16 "fn"))
+              (push out (wrap-vec (vector x)))
+              (push out call)
+              out))))))
 
 ;; (and) => true; (and x) => x; (and a b c) => (if a (if b c false) false)
 (defn expand-and [expr macs]

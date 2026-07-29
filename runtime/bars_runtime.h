@@ -122,6 +122,8 @@ int64_t bars_icall8(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, i
 
 /* (apply f args-vec) — call f with 0..8 args from a vector (17.22) */
 int64_t bars_apply(int64_t f, int64_t args_vec);
+/* (apply f a b … rest-vec) — fixed args then spread rest (17.23) */
+int64_t bars_apply_join(int64_t f, int64_t fixed_vec, int64_t rest_vec);
 
 /* Persistent / COW vector ops (Phase 17.14) — originals never mutated */
 int64_t bars_vector_clone_i64(bars_vector_t* vec);

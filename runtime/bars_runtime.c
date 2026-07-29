@@ -360,6 +360,27 @@ int64_t bars_apply(int64_t f, int64_t args_vec) {
     }
 }
 
+/* Concat fixed_vec ++ rest_vec, then bars_apply. rest may be empty vector. */
+int64_t bars_apply_join(int64_t f, int64_t fixed_vec, int64_t rest_vec) {
+    bars_vector_t* out = bars_vector_new();
+    if (bars_is_vector_i64(fixed_vec)) {
+        bars_vector_t* fx = (bars_vector_t*)(uintptr_t)fixed_vec;
+        int64_t nf = bars_vector_count_i64(fx);
+        for (int64_t i = 0; i < nf; i++)
+            bars_vector_push_i64(out, bars_vector_get_i64(fx, i));
+    }
+    if (bars_is_vector_i64(rest_vec)) {
+        bars_vector_t* rs = (bars_vector_t*)(uintptr_t)rest_vec;
+        int64_t nr = bars_vector_count_i64(rs);
+        for (int64_t i = 0; i < nr; i++)
+            bars_vector_push_i64(out, bars_vector_get_i64(rs, i));
+    } else if (rest_vec != 0) {
+        fprintf(stderr, "error: apply: last arg must be a vector\n");
+        return 0;
+    }
+    return bars_apply(f, (int64_t)(uintptr_t)out);
+}
+
 /* Simple i64 vector helpers */
 
 bars_vector_t* bars_vector_new_i64(void) {

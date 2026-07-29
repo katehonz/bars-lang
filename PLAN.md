@@ -688,6 +688,13 @@ bars/
 - [x] HIR builtin allowlist includes `apply`
 - [x] Example `apply_demo.brs` → 42, 42, 103, 21
 
+### 17.23 Multi-arg `apply` + `partial` ✅
+
+- [x] `(apply f a b xs)` — fixed args + rest vector via `bars_apply_join`
+- [x] HIR desugar multi-arg `apply` → `(bars_apply_join f (vector a…) xs)`
+- [x] Built-in macro `(partial f a…)` → `(fn [x] (apply f a… [x]))`
+- [x] Example `partial_demo.brs` → 42, 6, 42, 17, 24
+
 ---
 
-*План версия: 6.29 | Актуализиран: 2026-07-29*
+*План версия: 6.30 | Актуализиран: 2026-07-29*
