@@ -687,6 +687,30 @@ run_https_smoke() {
     echo "FAIL run      https GET (got: $stdout)"
     fail=$((fail + 1))
   fi
+
+  # Phase 17.54: Bars TLS server (SSL_accept side) serving the same client
+  if [[ -f examples/https_server.brs ]]; then
+    local srv_bin="$TMP/https_srv"
+    if ! "$CC_BIN" examples/https_server.brs "$srv_bin" >"$TMP/https_srv.compile.log" 2>&1; then
+      echo "FAIL compile  https_server"
+      tail -8 "$TMP/https_srv.compile.log" | sed 's/^/  /'
+      fail=$((fail + 1))
+    else
+      "$srv_bin" "$TMP/tls.crt" "$TMP/tls.key" >/dev/null 2>&1 &
+      local bpid=$!
+      sleep 0.3
+      stdout="$(timeout 5 "$out" 2>/dev/null || true)"
+      kill "$bpid" 2>/dev/null || true
+      wait "$bpid" 2>/dev/null || true
+      if echo "$stdout" | head -1 | grep -qx '200'; then
+        echo "OK   https server (Bars SSL_accept :18443 → 200)"
+        pass=$((pass + 1))
+      else
+        echo "FAIL run      https server (got: $stdout)"
+        fail=$((fail + 1))
+      fi
+    fi
+  fi
 }
 
 run_https_smoke

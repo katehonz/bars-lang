@@ -280,4 +280,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 
 ---
 
-*Версия: 7.40 | Актуализирано: 2026-07-29*
+- [x] **17.54** TLS server — `bars_tls_listen`/`bars_tls_accept`/`bars_tls_server_close` (`SSL_accept`, TLS 1.2+, GC finalizer); `lib/tls` server API; `examples/https_server.brs`; smoke Bars server × Bars client + openssl interop
+
+---
+
+*Версия: 7.41 | Актуализирано: 2026-07-29*

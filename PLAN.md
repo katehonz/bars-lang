@@ -955,4 +955,21 @@ TLS 1.2 floor; GC finalizer за TLS conn; `bars_tls_last_error`.
 
 ---
 
-*План версия: 6.62 | Актуализиран: 2026-07-29*
+### 17.54 TLS server (`SSL_accept` страна) ✅
+
+Затваря отложеното от 17.11:
+
+- [x] Runtime `bars_tls_listen(port, cert, key)` → server handle
+  (SSL_CTX веднъж на listener, PEM chain + private key check,
+  TLS 1.2 floor, `BARS_MAGIC_TLS_SRV` + GC finalizer)
+- [x] Runtime `bars_tls_accept(server)` → conn handle, същия тип като
+  client conn (`ctx = NULL` — owned от server); после общи send/recv/close
+- [x] Runtime `bars_tls_server_close`; validation на двата handle типа
+- [x] `lib/tls.brs`: `listen` / `accept` / `close-server`
+- [x] Example `examples/https_server.brs` (one-shot GET → 200 hello,
+  cert/key от args); suite smoke: Bars server × Bars client → 200
+- [x] Проверено и с `openssl s_client` (interop) + C backend compile
+
+---
+
+*План версия: 6.63 | Актуализиран: 2026-07-29*

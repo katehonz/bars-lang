@@ -35,3 +35,16 @@
 ;; last OpenSSL error as a string ("" if none) — handshake/verify failures
 (defn last-error []
   (bars_tls_last_error))
+
+;; --- server side (Phase 17.54) ---
+
+;; listen on port with PEM cert/key → server handle, -1 on error
+(defn listen [port cert-file key-file]
+  (bars_tls_listen port cert-file key-file))
+
+;; accept one connection → connection handle (send/recv/close as client), -1 on error
+(defn accept [server]
+  (bars_tls_accept server))
+
+(defn close-server [server]
+  (bars_tls_server_close server))

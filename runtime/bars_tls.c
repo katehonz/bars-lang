@@ -13,6 +13,11 @@
  *   bars_tls_last_error()                → string with the last OpenSSL error
  *                                          ("" if none)
  *
+ * Server side (Phase 17.54):
+ *   bars_tls_listen(port, cert, key)     → server handle or -1
+ *   bars_tls_accept(server)              → connection handle or -1
+ *   bars_tls_server_close(server)        → 0
+ *
  * verify=1 → SSL_VERIFY_PEER + hostname check (SSL_set1_host) against the
  *            system default CA paths (production).
  * verify=0 → SSL_VERIFY_NONE (local dev / self-signed test servers).
@@ -21,14 +26,17 @@
 #include <openssl/err.h>
 
 #include <gc/gc.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "bars_runtime.h"
 
-/* Plain TCP connect lives in the base runtime (always linked). */
+/* Plain TCP connect/listen live in the base runtime (always linked). */
 extern int64_t bars_tcp_connect(bars_string_t* host, int64_t port);
+extern int64_t bars_tcp_listen(int64_t port);
 
-#define BARS_MAGIC_TLS 0xB4157E55u  /* BARTLS — handle validation */
+#define BARS_MAGIC_TLS 0xB4157E55u  /* BARTLS — connection handle validation */
+#define BARS_MAGIC_TLS_SRV 0xB4157E66u  /* BARTLSSRV — server handle validation */
 
 typedef struct {
     uint32_t magic;  /* must stay first: validated before any other deref */
@@ -173,5 +181,92 @@ int64_t bars_tls_close(int64_t handle) {
     bars_tls_conn_t* c = tls_conn_from_handle(handle);
     if (!c) return 0;
     tls_conn_teardown(c);
+    return 0;
+}
+
+/* --- TLS server (SSL_accept side) --- */
+
+typedef struct {
+    uint32_t magic;  /* BARS_MAGIC_TLS_SRV */
+    SSL_CTX* ctx;
+    int      fd;
+} bars_tls_server_t;
+
+static bars_tls_server_t* tls_server_from_handle(int64_t handle) {
+    if (handle <= 0 || (handle & 0x7) != 0) return NULL;
+    bars_tls_server_t* s = (bars_tls_server_t*)(uintptr_t)handle;
+    if (GC_base(s) == NULL) return NULL;
+    if (s->magic != BARS_MAGIC_TLS_SRV) return NULL;
+    return s;
+}
+
+static void tls_server_teardown(bars_tls_server_t* s) {
+    if (s->magic != BARS_MAGIC_TLS_SRV) return;
+    if (s->ctx) { SSL_CTX_free(s->ctx); s->ctx = NULL; }
+    if (s->fd >= 0) { close(s->fd); s->fd = -1; }
+    s->magic = 0;
+}
+
+static void tls_server_finalize(void* obj, void* data) {
+    (void)data;
+    tls_server_teardown((bars_tls_server_t*)obj);
+}
+
+/* bars_tls_listen(port, cert_file, key_file) → server handle or -1.
+   One SSL_CTX per listener; connections are accepted with bars_tls_accept
+   and then use the same send/recv/close as client connections. */
+int64_t bars_tls_listen(int64_t port, bars_string_t* cert_file, bars_string_t* key_file) {
+    if (!cert_file || !cert_file->data || !key_file || !key_file->data) return -1;
+    bars_tls_init_once();
+    SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx) return -1;
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    if (SSL_CTX_use_certificate_chain_file(ctx, cert_file->data) != 1 ||
+        SSL_CTX_use_PrivateKey_file(ctx, key_file->data, SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_check_private_key(ctx) != 1) {
+        tls_note_error();
+        SSL_CTX_free(ctx);
+        return -1;
+    }
+    int fd = (int)bars_tcp_listen(port);
+    if (fd < 0) { SSL_CTX_free(ctx); return -1; }
+    bars_tls_server_t* s = (bars_tls_server_t*)bars_alloc(sizeof(bars_tls_server_t));
+    if (!s) { close(fd); SSL_CTX_free(ctx); return -1; }
+    s->magic = BARS_MAGIC_TLS_SRV;
+    s->ctx = ctx;
+    s->fd  = fd;
+    GC_register_finalizer(s, tls_server_finalize, NULL, NULL, NULL);
+    return (int64_t)(uintptr_t)s;
+}
+
+/* bars_tls_accept(server) → connection handle (like bars_tls_connect) or -1. */
+int64_t bars_tls_accept(int64_t server) {
+    bars_tls_server_t* s = tls_server_from_handle(server);
+    if (!s || s->fd < 0) return -1;
+    int cfd = accept(s->fd, NULL, NULL);
+    if (cfd < 0) return -1;
+    SSL* ssl = SSL_new(s->ctx);
+    if (!ssl) { close(cfd); return -1; }
+    SSL_set_fd(ssl, cfd);
+    if (SSL_accept(ssl) != 1) {
+        tls_note_error();
+        SSL_free(ssl);
+        close(cfd);
+        return -1;
+    }
+    bars_tls_conn_t* c = (bars_tls_conn_t*)bars_alloc(sizeof(bars_tls_conn_t));
+    if (!c) { SSL_free(ssl); close(cfd); return -1; }
+    c->magic = BARS_MAGIC_TLS;
+    c->ctx = NULL;  /* owned by the server handle */
+    c->ssl = ssl;
+    c->fd  = cfd;
+    GC_register_finalizer(c, tls_conn_finalize, NULL, NULL, NULL);
+    return (int64_t)(uintptr_t)c;
+}
+
+int64_t bars_tls_server_close(int64_t server) {
+    bars_tls_server_t* s = tls_server_from_handle(server);
+    if (!s) return 0;
+    tls_server_teardown(s);
     return 0;
 }
