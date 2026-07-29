@@ -144,6 +144,9 @@
                                                                 (if (str-eq? name "take-while") true
                                                                   (if (str-eq? name "drop-while") true
                                                                     (if (str-eq? name "range") true
+                                                                      (if (str-eq? name "reverse") true
+                                                                        (if (str-eq? name "concat") true
+                                                                          (if (str-eq? name "distinct") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
@@ -172,7 +175,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1113,6 +1116,98 @@
     (hir-let outer
       (hir-let (hir-vec (vector start loop1)) loop2))))
 
+;; (reverse coll) → new vector, back-to-front
+(defn desugar-reverse [vec-ast uid]
+  (let [v (hir-sym (str-concat "__rvv" (int-str uid)))
+        c (hir-sym (str-concat "__rvc" (int-str uid)))
+        i (hir-sym (str-concat "__rvi" (int-str uid)))
+        r (hir-sym (str-concat "__rvr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))))
+        binds (hir-vec (vector
+                 i (hir-call "-" (vector c (hir-num 1)))
+                 r (hir-call "vector" (vector))))
+        done (hir-call "<" (vector i (hir-num 0)))
+        pushed (hir-call "push" (vector r (hir-call "get" (vector v i))))
+        rec (hir-recur (vector (hir-call "-" (vector i (hir-num 1))) r))
+        step (hir-let (hir-vec (vector r pushed)) rec)
+        body (hir-if done r step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (concat a b) → fresh vector with all of a then all of b
+(defn desugar-concat-2 [a-ast b-ast uid]
+  (let [a (hir-sym (str-concat "__cta" (int-str uid)))
+        b (hir-sym (str-concat "__ctb" (int-str uid)))
+        c1 (hir-sym (str-concat "__ctm" (int-str uid)))
+        c2 (hir-sym (str-concat "__ctn" (int-str uid)))
+        i (hir-sym (str-concat "__cti" (int-str uid)))
+        j (hir-sym (str-concat "__ctj" (int-str uid)))
+        r (hir-sym (str-concat "__ctr" (int-str uid)))
+        s (hir-sym (str-concat "__cts" (int-str uid)))
+        outer (hir-vec (vector
+                 a a-ast
+                 b b-ast
+                 c1 (hir-call "count" (vector a))
+                 c2 (hir-call "count" (vector b))))
+        binds1 (hir-vec (vector i (hir-num 0) r (hir-call "vector" (vector))))
+        done1 (hir-call ">=" (vector i c1))
+        push1 (hir-call "push" (vector r (hir-call "get" (vector a i))))
+        rec1 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        step1 (hir-let (hir-vec (vector r push1)) rec1)
+        loop1 (hir-loop binds1 (hir-if done1 r step1))
+        binds2 (hir-vec (vector j (hir-num 0) s s))
+        done2 (hir-call ">=" (vector j c2))
+        push2 (hir-call "push" (vector s (hir-call "get" (vector b j))))
+        rec2 (hir-recur (vector (hir-call "+" (vector j (hir-num 1))) s))
+        step2 (hir-let (hir-vec (vector s push2)) rec2)
+        loop2 (hir-loop binds2 (hir-if done2 s step2))]
+    (hir-let outer
+      (hir-let (hir-vec (vector s loop1)) loop2))))
+
+;; (concat) → []; (concat a) → a; (concat a b c …) → left fold of concat-2
+(defn desugar-concat [ast uid]
+  (let [n (count ast)]
+    (if (<= n 1)
+      (hir-call "vector" (vector))
+      (if (= n 2)
+        (get ast 1)
+        (if (= n 3)
+          (desugar-concat-2 (get ast 1) (get ast 2) uid)
+          (let [head2 (hir-call "concat" (vector (get ast 1) (get ast 2)))
+                rest-args (vector)]
+            (do (push rest-args head2)
+                (loop [i 3]
+                  (if (>= i n) 0
+                    (do (push rest-args (get ast i))
+                        (recur (+ i 1)))))
+                (desugar-concat (hir-call "concat" rest-args) uid))))))))
+
+;; (distinct coll) → first occurrence of each element, order preserved
+(defn desugar-distinct [vec-ast uid]
+  (let [v (hir-sym (str-concat "__dsv" (int-str uid)))
+        c (hir-sym (str-concat "__dsc" (int-str uid)))
+        i (hir-sym (str-concat "__dsi" (int-str uid)))
+        r (hir-sym (str-concat "__dsr" (int-str uid)))
+        x (hir-sym (str-concat "__dsx" (int-str uid)))
+        y (hir-sym (str-concat "__dsy" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        lam (hir-call "fn" (vector (hir-vec (vector y))
+              (hir-call "=" (vector y x))))
+        dup (hir-call "some" (vector lam r))
+        skip (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        keep (hir-let (hir-vec (vector r (hir-call "push" (vector r x)))) skip)
+        check (hir-let (hir-vec (vector x getx))
+                (hir-if dup skip keep))
+        body (hir-if done r check)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1208,6 +1303,12 @@
       (if (if (>= n 2) (<= n 4) false)
         (lower-expr (desugar-range ast l) t l lines loops adt structs)
         (lower-expr (hir-call "vector" (vector)) t l lines loops adt structs))
+    (if (if (str-eq? fname "reverse") (= n 2) false)
+      (lower-expr (desugar-reverse (get ast 1) l) t l lines loops adt structs)
+    (if (str-eq? fname "concat")
+      (lower-expr (desugar-concat ast l) t l lines loops adt structs)
+    (if (if (str-eq? fname "distinct") (= n 2) false)
+      (lower-expr (desugar-distinct (get ast 1) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1262,7 +1363,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

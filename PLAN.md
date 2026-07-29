@@ -789,6 +789,13 @@ bars/
 - [x] Positive and negative step; step 0 → empty vector
 - [x] Example `range_demo.brs` → 4 0 3, 4 2 5, 4 6, 3 5 1, 20
 
+### 17.40 `reverse` / `concat` / `distinct` ✅
+
+- [x] HIR desugar: `(reverse coll)` → fresh vector back-to-front
+- [x] `(concat a b …)` → fresh vector; variadic via left fold
+- [x] `(distinct coll)` → first occurrence kept (uses `some` + inline `fn`)
+- [x] Example `seq_ops_demo.brs` → 4 4 1, 5 1 5, 4 4, 4 1 4, 4 4 1
+
 ---
 
-*План версия: 6.47 | Актуализиран: 2026-07-29*
+*План версия: 6.48 | Актуализиран: 2026-07-29*

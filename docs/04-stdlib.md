@@ -115,6 +115,18 @@ Maps can hold vectors and other collections:
 (range-step 0 10 2) ;; [0 2 4 6 8]
 ```
 
+### Sequence Ops
+
+Self-host HIR desugars (also in the C backend):
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `take` / `drop` | `(take n coll)` | First n / all but first n elements |
+| `take-while` / `drop-while` | `(take-while pred coll)` | Prefix/suffix by predicate |
+| `reverse` | `(reverse coll)` | New vector, back-to-front |
+| `concat` | `(concat a b …)` | Fresh vector with all elements, variadic |
+| `distinct` | `(distinct coll)` | First occurrence of each element, order kept |
+
 ### Boolean Helpers
 
 | Function | Signature | Description |

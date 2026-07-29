@@ -254,7 +254,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.37** `take` / `drop` vector slicing
 - [x] **17.38** `take-while` / `drop-while` + min/max codegen
 - [x] **17.39** `range` integer sequence builder
+- [x] **17.40** `reverse` / `concat` / `distinct` sequence ops
 
 ---
 
-*Версия: 7.26 | Актуализирано: 2026-07-29*
+*Версия: 7.27 | Актуализирано: 2026-07-29*
