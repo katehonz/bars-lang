@@ -360,8 +360,150 @@
           (if (> n 4) 4 3)
           3)))))
 
-(defn lower-defn [ast t l lines loops adt structs]
+;; ============================================================
+;; Automatic TCO: self-tail-recursive defn → loop/recur
+;; (defn f [p…] body…) with any self-call becomes
+;;   (defn f [p…] (loop [p p …] body'))
+;; where tail-position (f a…) of matching arity becomes (recur a…).
+;; Tail positions: defn body last expr; if branches; do last expr;
+;; let body last expr; match arm bodies. Nested loop/fn are NOT
+;; entered (inner scope). Non-tail or wrong-arity self-calls stay
+;; ordinary calls. Bodies with no self-call are left untouched.
+;; ============================================================
+
+;; True if expr contains any call to `name` (scans whole subtree).
+(defn tco-has-call? [expr name]
+  (if (is-atom? expr) false
+    (let [head (list-head expr)
+          n (count expr)]
+      (if (if (is-atom? head)
+            (if (= (tag-of head) 1) (str-eq? (val-of head) name) false)
+            false)
+        true
+        (loop [i 0]
+          (if (>= i n) false
+            (if (tco-has-call? (get expr i) name) true
+              (recur (+ i 1)))))))))
+
+;; True if expr is a call (name a…) with exactly `arity` args.
+(defn tco-self-call? [expr name arity]
+  (if (is-atom? expr) false
+    (let [head (list-head expr)]
+      (if (if (is-atom? head)
+            (if (= (tag-of head) 1) (str-eq? (val-of head) name) false)
+            false)
+        (= (- (count expr) 1) arity)
+        false))))
+
+;; Copy a form, replacing the element at idx.
+(defn tco-replace [expr idx newval]
+  (let [n (count expr)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (do (push out (if (= i idx) newval (get expr i)))
+                (recur (+ i 1)))))
+        out)))
+
+;; (f a…) → (recur a…) keeping the arg ASTs.
+(defn tco-call-to-recur [expr]
+  (let [n (count expr)
+        args (vector)]
+    (do (loop [i 1]
+          (if (>= i n) 0
+            (do (push args (get expr i))
+                (recur (+ i 1)))))
+        (hir-recur args))))
+
+;; Rewrite tail-position self-calls in match arm bodies (odd idx ≥ 3).
+(defn tco-rewrite-match [expr name arity]
+  (let [n (count expr)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (do (push out
+                  (if (if (>= i 3) (= (% i 2) 1) false)
+                    (tco-rewrite-tail (get expr i) name arity)
+                    (get expr i)))
+                (recur (+ i 1)))))
+        out)))
+
+;; Rewrite tail-position self-calls in expr → recur. All else untouched.
+(defn tco-rewrite-tail [expr name arity]
+  (if (is-atom? expr) expr
+    (if (tco-self-call? expr name arity)
+      (tco-call-to-recur expr)
+      (let [head (list-head expr)
+            tag (if (is-atom? head) (tag-of head) -1)
+            n (count expr)]
+        (if (= tag 12)
+          ;; (if c t e): both branches are tail
+          (if (>= n 4)
+            (tco-replace
+              (tco-replace expr 2 (tco-rewrite-tail (get expr 2) name arity))
+              3 (tco-rewrite-tail (get expr 3) name arity))
+            expr)
+          (if (= tag 13)
+            ;; (do e…): last expr is tail
+            (if (> n 1)
+              (tco-replace expr (- n 1) (tco-rewrite-tail (get expr (- n 1)) name arity))
+              expr)
+            (if (= tag 11)
+              ;; (let […] body…): last body expr is tail
+              (if (> n 2)
+                (tco-replace expr (- n 1) (tco-rewrite-tail (get expr (- n 1)) name arity))
+                expr)
+              (if (= tag 17)
+                (tco-rewrite-match expr name arity)
+                expr))))))))
+
+;; True if any defn body expr (from start) contains a self-call.
+(defn tco-body-has-call? [ast start name]
+  (let [n (count ast)]
+    (loop [i start]
+      (if (>= i n) false
+        (if (tco-has-call? (get ast i) name) true
+          (recur (+ i 1)))))))
+
+;; Wrap defn body exprs [start..n) in (loop [p p …] body') with rewrites.
+(defn tco-wrap-body [ast start params name arity]
+  (let [n (count ast)
+        body (if (= (- n start) 1)
+               (get ast start)
+               (let [exprs (vector)]
+                 (do (loop [i start]
+                       (if (>= i n) 0
+                         (do (push exprs (get ast i))
+                             (recur (+ i 1)))))
+                     (hir-do exprs))))
+        bind-elems (vector)
+        np (count params)]
+    (do (loop [i 0]
+          (if (>= i np) 0
+            (do (push bind-elems (get params i))
+                (push bind-elems (get params i))
+                (recur (+ i 1)))))
+        (hir-loop (hir-vec bind-elems)
+                  (tco-rewrite-tail body name arity)))))
+
+;; Entry: rewrite a self-recursive defn; otherwise return it unchanged.
+(defn tco-defn [ast]
   (let [name   (val-of (get ast 1))
+        params (normalize-params (get ast 2))
+        start  (defn-body-start ast)
+        n      (count ast)]
+    (if (if (>= start n) true (not (tco-body-has-call? ast start name)))
+      ast
+      (let [out (vector)]
+        (do (push out (get ast 0))
+            (push out (get ast 1))
+            (push out (get ast 2))
+            (push out (tco-wrap-body ast start params name (count params)))
+            out)))))
+
+(defn lower-defn [ast t l lines loops adt structs]
+  (let [ast    (tco-defn ast)
+        name   (val-of (get ast 1))
         params (normalize-params (get ast 2))
         n      (count ast)
         start  (defn-body-start ast)

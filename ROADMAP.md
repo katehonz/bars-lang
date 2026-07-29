@@ -219,9 +219,10 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.3b** Docstrings on `defn` (string first body) + `bars-self doc`
 - [x] **17.3c** `kwargs` pack + `lib/kw` (lookup / has?)
 - [x] **17.4** `lib/http_server` — parse/route helpers, serve-once (no TLS)
-- [ ] **17.5** Real top-level `def` globals (or ban + document)
-- [ ] **17.6** TLS / HTTPS (deferred)
+- [x] **17.5** Real top-level `def` globals (LLVM + C backend)
+- [x] **17.6** Auto TCO (self-tail-call → `recur`) + `str-replace` runtime/stdlib
+- [ ] **17.7** TLS / HTTPS (deferred)
 
 ---
 
-*Версия: 6.7 | Актуализирано: 2026-07-28*
+*Версия: 6.8 | Актуализирано: 2026-07-29*

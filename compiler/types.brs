@@ -434,6 +434,7 @@
         (env_insert env "str-get" bin)
         (env_insert env "str-slice" slice3)
         (env_insert env "str-index-of" bin)
+        (env_insert env "str-replace" slice3)
         (env_insert env "str-starts-with?" bin)
         (env_insert env "str-ends-with?" bin)
         (env_insert env "count" unary)

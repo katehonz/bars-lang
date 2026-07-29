@@ -576,6 +576,40 @@ bars_string_t* bars_string_slice(bars_string_t* s, int64_t start, int64_t end) {
     return bars_string_substring(s, start, len);
 }
 
+/* Replace all (non-overlapping) occurrences of `from` in `s` with `to`. */
+bars_string_t* bars_string_replace(bars_string_t* s, bars_string_t* from, bars_string_t* to) {
+    if (!s || !s->data) return bars_string_new("");
+    if (!from || from->len == 0 || from->len > s->len) return bars_string_new(s->data);
+    if (!to || !to->data) to = bars_string_new("");
+    size_t occ = 0;
+    for (size_t i = 0; i + from->len <= s->len; ) {
+        if (memcmp(s->data + i, from->data, from->len) == 0) {
+            occ++;
+            i += from->len;
+        } else {
+            i++;
+        }
+    }
+    if (occ == 0) return bars_string_new(s->data);
+    size_t new_len = s->len - occ * from->len + occ * to->len;
+    bars_string_t* result = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
+    result->magic = BARS_MAGIC_STRING;
+    result->data = (char*)bars_alloc(new_len + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < s->len; ) {
+        if (i + from->len <= s->len && memcmp(s->data + i, from->data, from->len) == 0) {
+            memcpy(result->data + j, to->data, to->len);
+            j += to->len;
+            i += from->len;
+        } else {
+            result->data[j++] = s->data[i++];
+        }
+    }
+    result->data[new_len] = '\0';
+    result->len = new_len;
+    return result;
+}
+
 /* --- Char / string conversions --- */
 
 bars_string_t* bars_code_char(int64_t code) {

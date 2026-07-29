@@ -238,6 +238,7 @@
         (push v "count") (push v "get") (push v "first") (push v "last")
         (push v "str-count") (push v "str-get") (push v "str-starts-with?")
         (push v "str-ends-with?") (push v "str-index-of") (push v "str-slice")
+        (push v "str-replace")
         (push v "int-str") (push v "vector")
         v)))
 

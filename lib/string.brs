@@ -16,3 +16,4 @@
 ;;   (str-starts-with? s pre)  -> 1 if s starts with prefix, else 0
 ;;   (str-ends-with? s suf)    -> 1 if s ends with suffix, else 0
 ;;   (str-index-of s needle)   -> first index of needle, or -1
+;;   (str-replace s from to)   -> new string with all occurrences of `from` replaced by `to`

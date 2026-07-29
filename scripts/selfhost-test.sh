@@ -81,6 +81,8 @@ EXAMPLES=(
   examples/kwargs_demo.brs
   examples/globals_demo.brs
   examples/crypto_demo.brs
+  examples/tco_demo.brs
+  examples/str_replace_demo.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -959,6 +961,8 @@ C_EXAMPLES=(
   examples/kwargs_demo.brs
   examples/globals_demo.brs
   examples/crypto_demo.brs
+  examples/tco_demo.brs
+  examples/str_replace_demo.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

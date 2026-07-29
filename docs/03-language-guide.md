@@ -221,6 +221,31 @@ Returns the value of the last expression.
 - `recur` must provide exactly as many arguments as `loop` has bindings.
 - `recur` can appear inside `if` branches.
 
+### Automatic TCO (self-recursive `defn`)
+
+The self-hosted compiler automatically converts **self-tail-recursive** calls
+into loops, so deep recursion runs in constant stack space:
+
+```clojure
+(defn count-down [n]
+  (if (= n 0)
+    0
+    (count-down (- n 1))))   ;; tail call → compiled as a loop
+
+(count-down 1000000)          ;; no stack overflow
+```
+
+- Tail positions: last body expression, both branches of `if`, last
+  expression of `do`, last body expression of `let`, `match` arm bodies.
+- The call must be to the same function with the same number of arguments;
+  anything else stays an ordinary call.
+- Self-calls inside a nested `loop` or `fn` are not converted.
+- Non-tail self-calls (e.g. `(+ 1 (fact (- n 1)))`) stay recursive calls.
+- Caveat: a tail call that swaps bare parameters — `(f b a)` — can
+  miscompile (sequential `recur` assignment, a pre-existing `loop`/`recur`
+  limitation). Compute swapped values into `let` bindings first.
+- Mutual recursion is not optimized; use explicit `loop`/`recur` there.
+
 ### `def` — Global Variable
 
 A top-level `(def name init)` creates a **real global**, initialized once

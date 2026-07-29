@@ -422,7 +422,7 @@ bars/
 3. Pattern matching в `let` (destructuring) → ✅ (commit destructuring)
 4. Keyword arguments за функции
 5. Persistent/immutable data structures
-6. Автоматично TCO за рекурсивни функции
+6. Автоматично TCO за рекурсивни функции → **17.6 ✅** (self-tail-call → recur в `lower-defn`)
 7. Documentation strings за `defn`
 8. Истински typeclass/protocol механизъм (не само macros)
 9. По-добри compile-time грешки вместо `panic!()`/`unwrap()`
@@ -514,6 +514,24 @@ bars/
   - `c-ident` renames C keywords (`default` → `default_`) — fixes `lib/kw` params
   - C suite now green: `test_demo`, `deftest_demo`, `kwargs_demo` (self-test 80/80)
 
+### 17.6 Auto TCO + str-replace ✅
+
+- [x] Автоматичен TCO за self-recursive `defn` (idea #6)
+  - AST pre-pass в началото на `lower-defn` (`compiler/hir.brs`): self-call в tail
+    позиция → `recur`; тялото се обвива в `(loop [p1 p1 …] body')`
+  - Tail позиции: последен израз в тялото, двата клона на `if`, последен израз
+    на `do`/`let`, тела на `match` клони; вложени `loop`/`fn` се пропускат
+  - Грешна arity или не-tail self-call → остава нормално извикване
+  - Върви след macros/types/ownership → cond/when получават TCO безплатно;
+    ownership никога не вижда синтезирания loop
+  - Известно ограничение: `(f b a)` swap на голи параметри — sequential recur
+    assign (pre-existing за явен loop/recur); mutual recursion не се оптимизира
+  - Example `tco_demo.brs` (1M дълбочина, non-tail factorial, match/let/do tails)
+- [x] `str-replace` — runtime + stdlib
+  - `bars_string_replace` в C runtime (replace all, non-overlapping)
+  - LLVM declare + map, C backend map, types env (`slice3`), ownership copy-ops
+  - Example `str_replace_demo.brs`; self-test 88/88
+
 ### 17.3 Ecosystem
 
 - [x] HTTP server helper (`lib/http_server`) — 17.4
@@ -525,4 +543,4 @@ bars/
 
 ---
 
-*План версия: 6.16 | Актуализиран: 2026-07-28*
+*План версия: 6.17 | Актуализиран: 2026-07-29*

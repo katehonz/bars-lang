@@ -149,6 +149,7 @@ int64_t bars_string_starts_with(bars_string_t* s, bars_string_t* prefix);
 int64_t bars_string_ends_with(bars_string_t* s, bars_string_t* suffix);
 int64_t bars_string_index_of(bars_string_t* s, bars_string_t* needle);
 bars_string_t* bars_string_slice(bars_string_t* s, int64_t start, int64_t end);
+bars_string_t* bars_string_replace(bars_string_t* s, bars_string_t* from, bars_string_t* to);
 
 /* CLI args */
 void bars_set_args(int argc, char** argv);

@@ -142,6 +142,7 @@ Maps can hold vectors and other collections:
 |----------|-----------|-------------|
 | `str-empty?` | `(str-empty? s)` | `true` if string is empty |
 | `str-count` | `(str-count s)` | Length of string |
+| `str-replace` | `(str-replace s from to)` | New string with all occurrences of `from` replaced by `to` |
 
 ## Phase 14.1 modules
 
