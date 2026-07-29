@@ -129,6 +129,8 @@ Self-host HIR desugars (also in the C backend):
 | `interpose` | `(interpose sep coll)` | `sep` between elements |
 | `partition` | `(partition n coll)` | Vector of n-sized chunks (tail dropped) |
 | `frequencies` | `(frequencies coll)` | Map element → occurrence count |
+| `sort` | `(sort coll)` | Fresh vector, ascending (input not mutated) |
+| `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 
 ### Boolean Helpers
 

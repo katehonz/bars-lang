@@ -256,7 +256,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.39** `range` integer sequence builder
 - [x] **17.40** `reverse` / `concat` / `distinct` sequence ops
 - [x] **17.41** `interpose` / `partition` / `frequencies`
+- [x] **17.42** `sort` (insertion на clone) + mutating `vector-set`
 
 ---
 
-*Версия: 7.28 | Актуализирано: 2026-07-29*
+*Версия: 7.29 | Актуализирано: 2026-07-29*

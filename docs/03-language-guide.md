@@ -172,6 +172,7 @@ desugar to inline `loop`/`recur` (self-host):
 (interpose 0 [1 2 3])          ;; [1 0 2 0 3]
 (partition 2 [1 2 3 4 5])      ;; [[1 2] [3 4]] (tail dropped)
 (frequencies [1 2 1])          ;; map {1: 2, 2: 1}
+(sort [4 1 3 2])               ;; [1 2 3 4] (ascending, input kept)
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):

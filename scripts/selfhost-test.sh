@@ -112,6 +112,7 @@ EXAMPLES=(
   examples/range_demo.brs
   examples/seq_ops_demo.brs
   examples/seq_more_demo.brs
+  examples/sort_demo.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -1021,6 +1022,7 @@ C_EXAMPLES=(
   examples/range_demo.brs
   examples/seq_ops_demo.brs
   examples/seq_more_demo.brs
+  examples/sort_demo.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

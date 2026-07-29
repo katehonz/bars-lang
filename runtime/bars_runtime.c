@@ -423,6 +423,14 @@ int64_t bars_vector_assoc_i64(bars_vector_t* vec, int64_t idx, int64_t val) {
     return cloned;
 }
 
+/* Set index in place (mutating); returns the vector, 0 on null/out-of-range. */
+int64_t bars_vector_set_i64(bars_vector_t* vec, int64_t idx, int64_t val) {
+    if (!vec || idx < 0 || idx >= (int64_t)vec->len) return 0;
+    bars_value_t v = { .tag = BARS_I64, .data = { .i64 = val } };
+    vec->data[(size_t)idx] = v;
+    return (int64_t)(uintptr_t)vec;
+}
+
 /* Return a new vector without the last element. Empty/null → empty clone. */
 int64_t bars_vector_pop_copy_i64(bars_vector_t* vec) {
     if (!vec || vec->len == 0)

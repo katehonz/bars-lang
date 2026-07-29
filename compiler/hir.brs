@@ -150,6 +150,8 @@
                                                                             (if (str-eq? name "interpose") true
                                                                               (if (str-eq? name "partition") true
                                                                                 (if (str-eq? name "frequencies") true
+                                                                                  (if (str-eq? name "sort") true
+                                                                                    (if (str-eq? name "vector-set") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
@@ -178,7 +180,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1268,6 +1270,41 @@
       (hir-if (hir-call "<=" (vector sz (hir-num 0)))
         r
         main-loop))))
+
+;; (sort coll) → fresh sorted vector (insertion sort on a clone, ascending)
+(defn desugar-sort [vec-ast uid]
+  (let [v (hir-sym (str-concat "__sov" (int-str uid)))
+        c (hir-sym (str-concat "__soc" (int-str uid)))
+        i (hir-sym (str-concat "__soi" (int-str uid)))
+        j (hir-sym (str-concat "__soj" (int-str uid)))
+        x (hir-sym (str-concat "__sox" (int-str uid)))
+        p (hir-sym (str-concat "__sop" (int-str uid)))
+        outer (hir-vec (vector
+                 v (hir-call "vector-clone" (vector vec-ast))
+                 c (hir-call "count" (vector v))))
+        ;; inner: shift elements > x one slot right; result is the slot p
+        shift (hir-call "vector-set" (vector v
+                (hir-call "+" (vector j (hir-num 1)))
+                (hir-call "get" (vector v j))))
+        inner-binds (hir-vec (vector j (hir-call "-" (vector i (hir-num 1)))))
+        inner-done (hir-call "<" (vector j (hir-num 0)))
+        inner-cmp (hir-call ">" (vector (hir-call "get" (vector v j)) x))
+        inner-step (hir-do (vector shift
+                     (hir-recur (vector (hir-call "-" (vector j (hir-num 1)))))))
+        inner-body (hir-if inner-done (hir-num -1)
+                     (hir-if inner-cmp inner-step j))
+        inner-loop (hir-loop inner-binds inner-body)
+        insert (hir-call "vector-set" (vector v
+                 (hir-call "+" (vector p (hir-num 1))) x))
+        step (hir-let (hir-vec (vector x (hir-call "get" (vector v i))))
+               (hir-let (hir-vec (vector p inner-loop))
+                 (hir-do (vector insert
+                   (hir-recur (vector (hir-call "+" (vector i (hir-num 1)))))))))
+        binds (hir-vec (vector i (hir-num 1)))
+        body (hir-if (hir-call ">=" (vector i c)) v step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (frequencies coll) → map element → occurrence count
 (defn desugar-frequencies [vec-ast uid]
   (let [v (hir-sym (str-concat "__fqv" (int-str uid)))
         c (hir-sym (str-concat "__fqc" (int-str uid)))
@@ -1396,6 +1433,8 @@
       (lower-expr (desugar-partition (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "frequencies") (= n 2) false)
       (lower-expr (desugar-frequencies (get ast 1) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "sort") (= n 2) false)
+      (lower-expr (desugar-sort (get ast 1) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1450,7 +1489,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

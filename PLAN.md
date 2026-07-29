@@ -804,6 +804,13 @@ bars/
 - [x] `(frequencies coll)` → map elem → count (`map-get` missing = 0)
 - [x] Example `seq_more_demo.brs` → 5 1 0 3, 1, 2 2 3, 2, 0, 3 3 2 1
 
+### 17.42 `sort` + `vector-set` ✅
+
+- [x] Runtime `bars_vector_set_i64` (mutating indexed write, returns vec)
+- [x] LLVM/C mapping `vector-set`; declare i64 in llvm.brs
+- [x] `(sort coll)` → insertion sort on a clone (input not mutated), ascending
+- [x] Example `sort_demo.brs` → 6 1 1 2 5, 3 1, 3, 1, -5, 3 1 3
+
 ---
 
-*План версия: 6.49 | Актуализиран: 2026-07-29*
+*План версия: 6.50 | Актуализиран: 2026-07-29*
