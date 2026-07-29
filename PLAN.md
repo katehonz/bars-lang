@@ -675,6 +675,12 @@ bars/
 - [x] Soft undef still emits the name (no more silent `const 0` rewrite)
 - [x] Example `icall_arity.brs` → 21, 150
 
+### 17.21 `if-let` / `when-let` + document control macros ✅
+
+- [x] Built-in `if-let` / `when-let` (single binding, truthy init)
+- [x] Document existing `when` / `unless` / `->` / `->>` / `cond` in language guide
+- [x] Example `iflet_demo.brs` → 1 2 7 3 4 9 12
+
 ---
 
-*План версия: 6.27 | Актуализиран: 2026-07-29*
+*План версия: 6.28 | Актуализиран: 2026-07-29*

@@ -235,7 +235,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.18** Capturing closures (env vector + bars_icallN)
 - [x] **17.19** Nested closures + HIR undefined-name diagnostics
 - [x] **17.20** Higher-arity icall (5–8) + let-pattern locals tracking
+- [x] **17.21** `if-let` / `when-let` + docs for when/unless/->/->>
 
 ---
 
-*Версия: 7.7 | Актуализирано: 2026-07-29*
+*Версия: 7.8 | Актуализирано: 2026-07-29*

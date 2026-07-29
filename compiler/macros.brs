@@ -584,32 +584,36 @@
     (expand-when expr macs)
     (if (str-eq? name "unless")
       (expand-unless expr macs)
-      (if (str-eq? name "cond")
-        (expand-cond expr macs)
-        (if (str-eq? name "and")
-          (expand-and expr macs)
-          (if (str-eq? name "or")
-            (expand-or expr macs)
-            (if (str-eq? name "->")
-              (expand-thread expr macs)
-              (if (str-eq? name "->>")
-                (expand-thread-last expr macs)
-                (if (str-eq? name "deftrait")
-                  (expand-deftrait expr)
-                  (if (str-eq? name "impl")
-                    (expand-impl expr (vector) macs)
-                    (if (str-eq? name "defconst")
-                      (expand-defconst expr macs)
-                      (if (str-eq? name "trait-call")
-                        (expand-trait-call expr macs)
-                        (if (str-eq? name "tcall")
-                          (expand-trait-call expr macs)
-                          (let [entry (macro-lookup macs name)]
-                            (if (= entry 0)
-                              (expand-children-from expr 0 macs)
-                              (let [args (expand-call-args expr macs)
-                                    expanded (apply-user-macro entry args)]
-                                (expand-expr expanded macs)))))))))))))))))
+      (if (str-eq? name "if-let")
+        (expand-if-let expr macs)
+        (if (str-eq? name "when-let")
+          (expand-when-let expr macs)
+          (if (str-eq? name "cond")
+            (expand-cond expr macs)
+            (if (str-eq? name "and")
+              (expand-and expr macs)
+              (if (str-eq? name "or")
+                (expand-or expr macs)
+                (if (str-eq? name "->")
+                  (expand-thread expr macs)
+                  (if (str-eq? name "->>")
+                    (expand-thread-last expr macs)
+                    (if (str-eq? name "deftrait")
+                      (expand-deftrait expr)
+                      (if (str-eq? name "impl")
+                        (expand-impl expr (vector) macs)
+                        (if (str-eq? name "defconst")
+                          (expand-defconst expr macs)
+                          (if (str-eq? name "trait-call")
+                            (expand-trait-call expr macs)
+                            (if (str-eq? name "tcall")
+                              (expand-trait-call expr macs)
+                              (let [entry (macro-lookup macs name)]
+                                (if (= entry 0)
+                                  (expand-children-from expr 0 macs)
+                                  (let [args (expand-call-args expr macs)
+                                        expanded (apply-user-macro entry args)]
+                                    (expand-expr expanded macs)))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -661,6 +665,43 @@
                           (do (push body-exprs (expand-expr (get expr i) macs))
                               (recur (+ i 1)))))
                       (mk-if cond (mk-do body-exprs) (mk-nil)))))))))))
+
+;; (if-let [x init] then else?) => (let [x init] (if x then else))
+;; One binding only (Clojure-style). else defaults to nil.
+(defn expand-if-let [expr macs]
+  (let [n (count expr)]
+    (if (< n 3)
+      (mk-nil)
+      (let [binds (unwrap-vec (get expr 1))
+            then-e (expand-expr (get expr 2) macs)
+            else-e (if (>= n 4) (expand-expr (get expr 3) macs) (mk-nil))]
+        (if (< (count binds) 2)
+          (mk-nil)
+          (let [name (get binds 0)
+                init (expand-expr (get binds 1) macs)
+                nstr (if (is-atom? name) (ast-val name) "x")]
+            (mk-let1 nstr init (mk-if (mk-sym nstr) then-e else-e))))))))
+
+;; (when-let [x init] body...) => (let [x init] (when x body...))
+(defn expand-when-let [expr macs]
+  (let [n (count expr)]
+    (if (< n 3)
+      (mk-nil)
+      (let [binds (unwrap-vec (get expr 1))
+            body-exprs (vector)
+            _ (loop [i 2]
+                (if (>= i n) 0
+                  (do (push body-exprs (expand-expr (get expr i) macs))
+                      (recur (+ i 1)))))]
+        (if (< (count binds) 2)
+          (mk-nil)
+          (let [name (get binds 0)
+                init (expand-expr (get binds 1) macs)
+                nstr (if (is-atom? name) (ast-val name) "x")
+                body (if (= (count body-exprs) 1)
+                       (get body-exprs 0)
+                       (mk-do body-exprs))]
+            (mk-let1 nstr init (mk-if (mk-sym nstr) body (mk-nil)))))))))
 
 ;; (and) => true; (and x) => x; (and a b c) => (if a (if b c false) false)
 (defn expand-and [expr macs]

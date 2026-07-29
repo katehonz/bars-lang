@@ -184,7 +184,37 @@ Keywords themselves lower to strings like `":foo"` when used as values.
   else-expr)
 ```
 
-The `else-expr` is optional and defaults to `nil`.
+The `else-expr` is optional and defaults to `nil`. Non-zero integers are truthy
+(branch condition is `≠ 0`).
+
+### `when` / `unless` / `if-let` / `when-let`
+
+Built-in macros (no `require`):
+
+```clojure
+(when cond body...)          ;; (if cond (do body...) nil)
+(unless cond body...)        ;; (if (not cond) (do body...) nil)
+
+(if-let [x (maybe)]
+  then-expr
+  else-expr)                 ;; else optional → nil
+
+(when-let [x (maybe)]
+  body...)                   ;; (let [x (maybe)] (when x body...))
+```
+
+`if-let` / `when-let` bind a single name; the body runs only when the init
+value is truthy.
+
+### Threading macros `->` / `->>`
+
+```clojure
+(-> 1 (+ 2) (* 3))           ;; (* (+ 1 2) 3) → 9
+(->> 5 (+ 1) (* 2))          ;; (* 2 (+ 1 5)) → 12
+```
+
+`->` inserts the value as the **first** argument of each form; `->>` as the
+**last**.
 
 ### `cond` — Multi-way Conditional
 
