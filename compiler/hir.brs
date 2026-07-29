@@ -141,8 +141,10 @@
                                                           (if (str-eq? name "every?") true
                                                             (if (str-eq? name "take") true
                                                               (if (str-eq? name "drop") true
-                                                                (if (str-eq? name "apply") true
-                                                                  (if (str-eq? name "identity") true
+                                                                (if (str-eq? name "take-while") true
+                                                                  (if (str-eq? name "drop-while") true
+                                                                    (if (str-eq? name "apply") true
+                                                                      (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
                                                             (if (str-eq? name "true") true
                                                               (if (str-eq? name "false") true
@@ -169,7 +171,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1023,6 +1025,58 @@
         body (hir-if cond r step)]
     (hir-let outer (hir-loop binds body))))
 
+;; (take-while pred coll) → prefix while pred is truthy
+(defn desugar-take-while [pred vec-ast uid]
+  (let [v (hir-sym (str-concat "__twv" (int-str uid)))
+        i (hir-sym (str-concat "__twi" (int-str uid)))
+        r (hir-sym (str-concat "__twr" (int-str uid)))
+        x (hir-sym (str-concat "__twx" (int-str uid)))
+        outer (hir-vec (vector v vec-ast r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i (hir-call "count" (vector v))))
+        getx (hir-call "get" (vector v i))
+        pred-c (apply-callable pred (vector x))
+        pushed (hir-call "push" (vector r x))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        step (hir-let (hir-vec (vector r pushed)) rec)
+        check (hir-let (hir-vec (vector x getx))
+                (hir-if pred-c step r))
+        body (hir-if done r check)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (drop-while pred coll) → suffix after pred becomes falsy
+(defn desugar-drop-while [pred vec-ast uid]
+  (let [v (hir-sym (str-concat "__dwv" (int-str uid)))
+        c (hir-sym (str-concat "__dwc" (int-str uid)))
+        i (hir-sym (str-concat "__dwi" (int-str uid)))
+        j (hir-sym (str-concat "__dwj" (int-str uid)))
+        r (hir-sym (str-concat "__dwr" (int-str uid)))
+        x (hir-sym (str-concat "__dwx" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))))
+        ;; phase1: find first index where pred is false
+        binds1 (hir-vec (vector i (hir-num 0)))
+        done1 (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        pred-c (apply-callable pred (vector x))
+        rec1 (hir-recur (vector (hir-call "+" (vector i (hir-num 1)))))
+        check1 (hir-let (hir-vec (vector x getx))
+                 (hir-if pred-c rec1 i))
+        body1 (hir-if done1 i check1)
+        loop1 (hir-loop binds1 body1)
+        start (hir-sym (str-concat "__dws" (int-str uid)))
+        ;; phase2: copy from start
+        binds2 (hir-vec (vector j start r (hir-call "vector" (vector))))
+        done2 (hir-call ">=" (vector j c))
+        pushed (hir-call "push" (vector r (hir-call "get" (vector v j))))
+        rec2 (hir-recur (vector (hir-call "+" (vector j (hir-num 1))) r))
+        step2 (hir-let (hir-vec (vector r pushed)) rec2)
+        body2 (hir-if done2 r step2)
+        loop2 (hir-loop binds2 body2)]
+    (hir-let outer
+      (hir-let (hir-vec (vector start loop1)) loop2))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1110,6 +1164,10 @@
       (lower-expr (desugar-take (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "drop") (= n 3) false)
       (lower-expr (desugar-drop (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "take-while") (= n 3) false)
+      (lower-expr (desugar-take-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "drop-while") (= n 3) false)
+      (lower-expr (desugar-drop-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1164,7 +1222,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

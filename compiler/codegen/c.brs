@@ -369,6 +369,18 @@
                 e1 (get er 1)]
             (do (lines-push o1 (str-concat "  " (str-concat dest (str-concat " = (" (str-concat a " == 0) ? 1 : 0;")))))
                 [o1 e1]))
+          (if (if (str-eq? fname "min") true (str-eq? fname "max"))
+            (let [a (pair-op words 3)
+                  b (pair-op words 5)
+                  er (ensure-decl output env dest)
+                  o1 (get er 0)
+                  e1 (get er 1)
+                  op (if (str-eq? fname "min") "<" ">")]
+              (do (lines-push o1
+                    (str-concat "  " (str-concat dest
+                      (str-concat " = ((" (str-concat a (str-concat " " (str-concat op
+                        (str-concat " " (str-concat b (str-concat ") ? " (str-concat a (str-concat " : " (str-concat b ";")))))))))))))
+                  [o1 e1]))
           (if (str-eq? fname "println")
             (let [arg (if (<= n 3) "0" (pair-op words 3))
                   er (ensure-decl output env dest)
@@ -397,7 +409,7 @@
                       (str-concat "  " (str-concat dest
                         (str-concat " = (int64_t)(uintptr_t)"
                           (str-concat mapped (str-concat "(" (str-concat args ");")))))))
-                    [o1 e1])))))))))
+                    [o1 e1]))))))))))
 
 (defn emit-branch [output words]
   (let [c (pair-op words 1)

@@ -775,6 +775,12 @@ bars/
 - [x] `(take n coll)` / `(drop n coll)` with `min` clamping
 - [x] Example `take_drop_demo.brs` → 3 1 3, 3 3, 5 0
 
+### 17.38 `take-while` / `drop-while` + `min`/`max` ✅
+
+- [x] HIR desugar `take-while` / `drop-while` (pred + vector)
+- [x] LLVM/C: inline `min`/`max` via select / ternary
+- [x] Example `take_while_demo.brs` → 2 1 2, 3 0, 3, 3 7
+
 ---
 
-*План версия: 6.44 | Актуализиран: 2026-07-29*
+*План версия: 6.45 | Актуализиран: 2026-07-29*

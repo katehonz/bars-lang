@@ -159,6 +159,9 @@ desugar to inline `loop`/`recur` (self-host):
 (not-every? pos? [1 0 3])      ;; 1 (not all match)
 (take 3 [1 2 3 4 5])           ;; [1 2 3]
 (drop 2 [1 2 3 4 5])           ;; [3 4 5]
+(take-while pos? [1 2 0 4])    ;; [1 2]
+(drop-while pos? [1 2 0 4])    ;; [0 4]
+(min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):
 (map (fn [x] (* x 2)) [1 2 3])

@@ -489,7 +489,28 @@
                     (str-concat "  " (str-concat (llvm-local dest)
                       (str-concat " = zext i1 " (str-concat (llvm-local tmp) " to i64")))))
                   [o1 g1 1]))
-            [output reg 0]))))))
+            ;; min/max via select (signed)
+            (if (if (str-eq? fname "min") true (str-eq? fname "max"))
+              (let [r1 (pair-resolve words si output env reg)
+                    a (get r1 0)
+                    o1 (get r1 1)
+                    g1 (get r1 2)
+                    r2 (pair-resolve words (+ si 2) o1 env g1)
+                    b (get r2 0)
+                    o2 (get r2 1)
+                    g2 (get r2 2)
+                    tmp (str-concat dest "_mm")
+                    pred (if (str-eq? fname "min") "slt" "sgt")]
+                (do (lines-push o2
+                      (str-concat "  " (str-concat (llvm-local tmp)
+                        (str-concat " = icmp " (str-concat pred
+                          (str-concat " i64 " (str-concat a (str-concat ", " b))))))))
+                    (lines-push o2
+                      (str-concat "  " (str-concat (llvm-local dest)
+                        (str-concat " = select i1 " (str-concat (llvm-local tmp)
+                          (str-concat ", i64 " (str-concat a (str-concat ", i64 " b))))))))
+                    [o2 g2 1]))
+              [output reg 0])))))))
 
 ;; Returns [output env reg]
 (defn emit-assign [output words env reg]
