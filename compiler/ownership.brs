@@ -310,10 +310,10 @@
     (let [head (get expr 0)]
       (if (not (is-atom? head))
         (let [n (count expr)]
-          (loop [i 0 err 0]
-            (if (>= i n) err
+          (loop [i 0 eacc 0]
+            (if (>= i n) eacc
               (let [e (check-expr env (get expr i) diag)]
-                (recur (+ i 1) (if (> e 0) e err))))))
+                (recur (+ i 1) (if (> e 0) e eacc))))))
         (let [tag (ast-tag head)]
           (if (= tag 28)
             0
@@ -325,11 +325,11 @@
           (if (= tag 16) (check-lambda env expr diag)
           (if (= tag 17)
             (let [n (count expr)]
-              (loop [i 1 err 0]
-                (if (>= i n) err
+              (loop [i 1 eacc 0]
+                (if (>= i n) eacc
                   (let [arm-env (env-copy env)
                         e (check-expr arm-env (get expr i) diag)]
-                    (recur (+ i 1) (if (> e 0) e err))))))
+                    (recur (+ i 1) (if (> e 0) e eacc))))))
           (check-call env expr diag)))))))))))))))
 
 (defn check-defn [env expr diag]
@@ -343,10 +343,10 @@
           (do (env-insert env (ast-val (get params i)) (S_Owned))
               (recur (+ i 1)))))
       (let [result
-            (loop [j 3 err 0]
-              (if (>= j n) err
+            (loop [j 3 eacc 0]
+              (if (>= j n) eacc
                 (let [e (check-expr env (get expr j) diag)]
-                  (recur (+ j 1) (if (> e 0) e err)))))]
+                  (recur (+ j 1) (if (> e 0) e eacc)))))]
         (do (env-release-borrows env)
             (env-pop-scope env)
             result)))))
@@ -360,10 +360,10 @@
       (if (>= i n)
         (let [result (if (<= nbody 3)
                        (check-expr env (get expr 2) diag)
-                       (loop [j 2 err 0]
-                         (if (>= j nbody) err
+                       (loop [j 2 eacc 0]
+                         (if (>= j nbody) eacc
                            (let [e (check-expr env (get expr j) diag)]
-                             (recur (+ j 1) (if (> e 0) e err))))))]
+                             (recur (+ j 1) (if (> e 0) e eacc))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
@@ -391,11 +391,11 @@
 
 (defn check-do [env expr diag]
   (let [n (count expr)]
-    (loop [i 1 err 0]
-      (if (>= i n) err
+    (loop [i 1 eacc 0]
+      (if (>= i n) eacc
         (let [e (check-expr env (get expr i) diag)]
           (do (env-release-borrows env)
-              (recur (+ i 1) (if (> e 0) e err))))))))
+              (recur (+ i 1) (if (> e 0) e eacc))))))))
 
 (defn check-loop [env expr diag]
   (let [bindings (unwrap-vec (get expr 1))
@@ -406,10 +406,10 @@
       (if (>= i n)
         (let [result (if (<= nbody 3)
                        (check-expr env (get expr 2) diag)
-                       (loop [j 2 err 0]
-                         (if (>= j nbody) err
+                       (loop [j 2 eacc 0]
+                         (if (>= j nbody) eacc
                            (let [e (check-expr env (get expr j) diag)]
-                             (recur (+ j 1) (if (> e 0) e err))))))]
+                             (recur (+ j 1) (if (> e 0) e eacc))))))]
           (do (env-release-borrows env)
               (env-pop-scope env)
               result))
@@ -449,11 +449,11 @@
 
 (defn check-call [env expr diag]
   (let [n (count expr)]
-    (loop [i 0 err 0]
+    (loop [i 0 eacc 0]
       (if (>= i n)
-        (do (env-release-borrows env) err)
+        (do (env-release-borrows env) eacc)
         (let [e (check-one-arg env (get expr i) diag)]
-          (recur (+ i 1) (if (> e 0) e err)))))))
+          (recur (+ i 1) (if (> e 0) e eacc)))))))
 
 ;; ---- Top-level entry ----
 ;; check_ownership [ast] or check_ownership_at [ast path text]
@@ -466,10 +466,10 @@
           n (count ast-list)]
       (do (push diag path)
           (push diag text)
-          (loop [i 0 err 0]
-            (if (>= i n) err
+          (loop [i 0 eacc 0]
+            (if (>= i n) eacc
               (let [e (check-expr env (get ast-list i) diag)]
-                (recur (+ i 1) (if (> e 0) e err)))))))))
+                (recur (+ i 1) (if (> e 0) e eacc)))))))))
 
 (defn check_ownership [ast-list]
   (check_ownership_at ast-list "" ""))

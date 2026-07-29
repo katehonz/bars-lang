@@ -433,6 +433,22 @@ Short-circuiting macros (not function calls):
 
 Any non-zero / non-`false` / non-`nil` value is truthy (including integers other than 0).
 
+### First-class functions (closed)
+
+Named top-level functions and **closed** lambdas can be passed as values and
+called through a local:
+
+```clojure
+(defn apply1 [f x] (f x))
+(defn double [n] (* n 2))
+
+(apply1 double 21)           ;; → 42
+(apply1 (fn [n] (+ n 1)) 41) ;; → 42  (lambda lifted to a top-level __lamN)
+```
+
+Lambdas that **capture** outer locals are not supported yet (use HOF
+`map`/`filter`/`reduce`, which beta-reduce inline lambdas).
+
 ### Threading Macros
 
 ```clojure

@@ -448,27 +448,73 @@
             (str-concat "] = " (str-concat val ";")))))))
         [output env])))
 
+(defn emit-funcref-c [output words env]
+  (let [dest (c-ident (get words 1))
+        fname (map-user-fname (get words 2))
+        er (ensure-decl output env dest)
+        o1 (get er 0)
+        e1 (get er 1)]
+    (do (lines-push o1
+          (str-concat "  " (str-concat dest
+            (str-concat " = (int64_t)(uintptr_t)&" (str-concat (c-ident fname) ";")))))
+        [o1 e1])))
+
+(defn emit-icall-c [output words n env]
+  (let [dest (c-ident (get words 1))
+        callee (pair-op words 2)
+        nargs (/ (- n 4) 2)
+        er (ensure-decl output env dest)
+        o1 (get er 0)
+        e1 (get er 1)
+        args (loop [i 4 acc ""]
+               (if (>= i n) acc
+                 (let [a (pair-op words i)]
+                   (if (= i 4)
+                     (recur (+ i 2) a)
+                     (recur (+ i 2) (str-concat acc (str-concat ", " a)))))))
+        cast (if (= nargs 0)
+               "int64_t(*)(void)"
+               (loop [i 0 acc "int64_t(*)("]
+                 (if (>= i nargs)
+                   (str-concat acc ")")
+                   (if (= i 0)
+                     (recur (+ i 1) (str-concat acc "int64_t"))
+                     (recur (+ i 1) (str-concat acc ", int64_t"))))))
+        line (if (= nargs 0)
+               (str-concat "  " (str-concat dest
+                 (str-concat " = ((" (str-concat cast (str-concat ")(uintptr_t)("
+                   (str-concat callee "))();"))))))
+               (str-concat "  " (str-concat dest
+                 (str-concat " = ((" (str-concat cast (str-concat ")(uintptr_t)("
+                   (str-concat callee (str-concat "))(" (str-concat args ");")))))))))]
+    (do (lines-push o1 line)
+        [o1 e1])))
+
 (defn emit-instr [output words trimmed env]
   (let [cmd (get words 0) n (count words)]
     (if (str-eq? cmd "assign")
       (emit-assign output words env)
       (if (str-eq? cmd "call")
         (emit-call output words n env)
-        (if (str-eq? cmd "branch")
-          [(emit-branch output words) env]
-          (if (str-eq? cmd "return")
-            [(emit-return output words) env]
-            (if (str-eq? cmd "jump")
-              [(emit-jump output words) env]
-              (if (str-eq? cmd "stringlit")
-                (emit-stringlit output trimmed env)
-                (if (str-eq? cmd "alloc")
-                  (emit-alloc-c output words env)
-                  (if (str-eq? cmd "fieldload")
-                    (emit-fieldload-c output words env)
-                    (if (str-eq? cmd "fieldstore")
-                      (emit-fieldstore-c output words env)
-                      [output env])))))))))))
+        (if (str-eq? cmd "icall")
+          (emit-icall-c output words n env)
+          (if (str-eq? cmd "funcref")
+            (emit-funcref-c output words env)
+            (if (str-eq? cmd "branch")
+              [(emit-branch output words) env]
+              (if (str-eq? cmd "return")
+                [(emit-return output words) env]
+                (if (str-eq? cmd "jump")
+                  [(emit-jump output words) env]
+                  (if (str-eq? cmd "stringlit")
+                    (emit-stringlit output trimmed env)
+                    (if (str-eq? cmd "alloc")
+                      (emit-alloc-c output words env)
+                      (if (str-eq? cmd "fieldload")
+                        (emit-fieldload-c output words env)
+                        (if (str-eq? cmd "fieldstore")
+                          (emit-fieldstore-c output words env)
+                          [output env])))))))))))))
 
 (defn c-header []
   (let [lines (vector)]

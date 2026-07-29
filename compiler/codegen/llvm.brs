@@ -735,6 +735,116 @@
             (str-concat ", i64* " (llvm-local tmp-g)))))
         [o2 env g2])))
 
+;; funcref dest name arity → %dest = ptrtoint of @name (function as i64 value)
+(def __lf_names (vector))
+(def __lf_ar (vector))
+
+(defn lf-clear []
+  (loop []
+    (if (= (count __lf_names) 0) 0
+      (do (pop __lf_names) (pop __lf_ar) (recur)))))
+
+(defn lf-add [name arity]
+  (do (push __lf_names name)
+      (push __lf_ar arity)
+      0))
+
+(defn lf-arity [name]
+  (let [n (count __lf_names)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (if (str-eq? (get __lf_names i) name)
+          (get __lf_ar i)
+          (recur (+ i 1)))))))
+
+(defn funcref-ty [arity]
+  (if (= arity 0) "i64 ()*"
+    (loop [i 0 acc "i64 ("]
+      (if (>= i arity)
+        (str-concat acc ")*")
+        (if (= i 0)
+          (recur (+ i 1) (str-concat acc "i64"))
+          (recur (+ i 1) (str-concat acc ", i64")))))))
+
+(defn parse-arity [s]
+  (let [n (count s)]
+    (loop [i 0 acc 0]
+      (if (>= i n) acc
+        (let [c (str-get s i)]
+          (if (if (>= c 48) (<= c 57) false)
+            (recur (+ i 1) (+ (* acc 10) (- c 48)))
+            acc))))))
+
+(defn scan-func-arities [hir-lines]
+  (do (lf-clear)
+      (loop [i 0]
+        (if (>= i (count hir-lines)) 0
+          (let [line (get hir-lines i)]
+            (do (if (str-starts-with? line "func ")
+                  (lf-add (map-user-fname (extract-func-name line))
+                          (count (split-words (extract-params-str line))))
+                  0)
+                (recur (+ i 1))))))))
+
+(defn emit-funcref [output words env reg]
+  (let [dest (get words 1)
+        fname (map-user-fname (get words 2))
+        arity-hir (if (>= (count words) 4) (parse-arity (get words 3)) -1)
+        arity (if (>= arity-hir 0) arity-hir (lf-arity fname))
+        gname (llvm-global fname)
+        fty (funcref-ty arity)]
+    (do (lines-push output
+          (str-concat "  " (str-concat (llvm-local dest)
+            (str-concat " = ptrtoint " (str-concat fty
+              (str-concat " " (str-concat gname " to i64")))))))
+        [output env reg])))
+
+;; Build "i64 (i64, i64, …)*" type string for n args.
+(defn icall-fn-ty [nargs]
+  (if (= nargs 0) "i64 ()*"
+    (loop [i 0 acc "i64 ("]
+      (if (>= i nargs)
+        (str-concat acc ")*")
+        (if (= i 0)
+          (recur (+ i 1) (str-concat acc "i64"))
+          (recur (+ i 1) (str-concat acc ", i64")))))))
+
+;; icall dest var f [var/const a …] — indirect call through funcref
+(defn emit-icall [output words n env reg]
+  (let [dest (get words 1)
+        r0 (pair-resolve words 2 output env reg)
+        callee (get r0 0)
+        o1 (get r0 1)
+        g1 (get r0 2)
+        nargs (/ (- n 4) 2)
+        fty (icall-fn-ty nargs)
+        fptmp (str-concat dest (str-concat "_ifp" (int-str g1)))
+        ra (loop [i 4 acc "" ocur o1 rcur (+ g1 1)]
+             (if (>= i n) [acc ocur rcur]
+               (let [r (pair-resolve words i ocur env rcur)
+                     a (get r 0)
+                     o2 (get r 1)
+                     g2 (get r 2)]
+                 (if (= i 4)
+                   (recur (+ i 2) (str-concat "i64 " a) o2 g2)
+                   (recur (+ i 2) (str-concat acc (str-concat ", i64 " a)) o2 g2)))))
+        arglist (get ra 0)
+        o2 (get ra 1)
+        g2 (get ra 2)]
+    (do (lines-push o2
+          (str-concat "  " (str-concat (llvm-local fptmp)
+            (str-concat " = inttoptr i64 " (str-concat callee
+              (str-concat " to " fty))))))
+        (if (= nargs 0)
+          (lines-push o2
+            (str-concat "  " (str-concat (llvm-local dest)
+              (str-concat " = call i64 " (str-concat (llvm-local fptmp) "()")))))
+          (lines-push o2
+            (str-concat "  " (str-concat (llvm-local dest)
+              (str-concat " = call i64 " (str-concat (llvm-local fptmp)
+                (str-concat "(" (str-concat arglist ")"))))))))
+        [o2 env g2])))
+
 ;; Returns [output strs str-cnt env reg]
 (defn emit-instr [output words trimmed strs str-cnt env reg]
   (let [cmd (get words 0) n (count words)]
@@ -744,26 +854,32 @@
       (if (str-eq? cmd "call")
         (let [r (emit-call output words n env reg)]
           [(get r 0) strs str-cnt env (get r 1)])
-        (if (str-eq? cmd "branch")
-          (let [r (emit-branch output words env reg)]
-            [(get r 0) strs str-cnt env (get r 1)])
-          (if (str-eq? cmd "return")
-            (let [r (emit-return output words env reg)]
-              [(get r 0) strs str-cnt env (get r 1)])
-            (if (str-eq? cmd "jump")
-              [(emit-jump output words) strs str-cnt env reg]
-              (if (str-eq? cmd "stringlit")
-                (emit-stringlit output trimmed strs str-cnt env reg)
-                (if (str-eq? cmd "alloc")
-                  (let [r (emit-alloc output words env reg)]
-                    [(get r 0) strs str-cnt (get r 1) (get r 2)])
-                  (if (str-eq? cmd "fieldload")
-                    (let [r (emit-fieldload output words env reg)]
-                      [(get r 0) strs str-cnt (get r 1) (get r 2)])
-                    (if (str-eq? cmd "fieldstore")
-                      (let [r (emit-fieldstore output words env reg)]
+        (if (str-eq? cmd "icall")
+          (let [r (emit-icall output words n env reg)]
+            [(get r 0) strs str-cnt (get r 1) (get r 2)])
+          (if (str-eq? cmd "funcref")
+            (let [r (emit-funcref output words env reg)]
+              [(get r 0) strs str-cnt (get r 1) (get r 2)])
+            (if (str-eq? cmd "branch")
+              (let [r (emit-branch output words env reg)]
+                [(get r 0) strs str-cnt env (get r 1)])
+              (if (str-eq? cmd "return")
+                (let [r (emit-return output words env reg)]
+                  [(get r 0) strs str-cnt env (get r 1)])
+                (if (str-eq? cmd "jump")
+                  [(emit-jump output words) strs str-cnt env reg]
+                  (if (str-eq? cmd "stringlit")
+                    (emit-stringlit output trimmed strs str-cnt env reg)
+                    (if (str-eq? cmd "alloc")
+                      (let [r (emit-alloc output words env reg)]
                         [(get r 0) strs str-cnt (get r 1) (get r 2)])
-                      [output strs str-cnt env reg])))))))))))
+                      (if (str-eq? cmd "fieldload")
+                        (let [r (emit-fieldload output words env reg)]
+                          [(get r 0) strs str-cnt (get r 1) (get r 2)])
+                        (if (str-eq? cmd "fieldstore")
+                          (let [r (emit-fieldstore output words env reg)]
+                            [(get r 0) strs str-cnt (get r 1) (get r 2)])
+                          [output strs str-cnt env reg])))))))))))))
 
 (defn process-func [body line in-func strs str-cnt seed]
   (let [body2 (if (= in-func 1) (lines-push body "}") body)
@@ -849,37 +965,38 @@
   (hir-to-llvm-at hir-lines "x86_64-unknown-linux-gnu"))
 
 (defn hir-to-llvm-at [hir-lines triple]
-  (let [n (count hir-lines)
-        globs (scan-globals hir-lines)
-        marks (gmarks-of globs)]
-    (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env (vector) reg 0
-           all-body (vector)]
-      (if (>= i n)
-        (let [body2 (if (= in-func 1)
-                      (let [closed (lines-push body "}")
-                            inj (inject-allocas-after-define closed env)]
-                        (do (append-vec all-body inj) all-body))
-                      all-body)
-              out (llvm-header triple)
-              wrap (c-main-wrapper)]
-          (do (append-vec out strs)
-              (if (> (count strs) 0) (lines-push out "") 0)
-              (emit-gstorage out globs)
-              (if (> (count globs) 0) (lines-push out "") 0)
-              (append-vec out body2)
-              (append-vec out wrap)
-              out))
-        (let [line (get hir-lines i)]
-          (if (str-starts-with? line "func ")
-            (let [flushed (if (= in-func 1)
-                            (let [closed (lines-push body "}")
-                                  inj (inject-allocas-after-define closed env)]
-                              (do (append-vec all-body inj) all-body))
-                            all-body)
-                  res (process-line (vector) line 0 strs str-cnt (append-vec (vector) marks) 0)]
-              (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) flushed))
-            (let [res (process-line body line in-func strs str-cnt env reg)]
-              (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) all-body))))))))
+  (do (scan-func-arities hir-lines)
+      (let [n (count hir-lines)
+            globs (scan-globals hir-lines)
+            marks (gmarks-of globs)]
+        (loop [i 0 body (vector) in-func 0 strs (vector) str-cnt 0 env (vector) reg 0
+               all-body (vector)]
+          (if (>= i n)
+            (let [body2 (if (= in-func 1)
+                          (let [closed (lines-push body "}")
+                                inj (inject-allocas-after-define closed env)]
+                            (do (append-vec all-body inj) all-body))
+                          all-body)
+                  out (llvm-header triple)
+                  wrap (c-main-wrapper)]
+              (do (append-vec out strs)
+                  (if (> (count strs) 0) (lines-push out "") 0)
+                  (emit-gstorage out globs)
+                  (if (> (count globs) 0) (lines-push out "") 0)
+                  (append-vec out body2)
+                  (append-vec out wrap)
+                  out))
+            (let [line (get hir-lines i)]
+              (if (str-starts-with? line "func ")
+                (let [flushed (if (= in-func 1)
+                                (let [closed (lines-push body "}")
+                                      inj (inject-allocas-after-define closed env)]
+                                  (do (append-vec all-body inj) all-body))
+                                all-body)
+                      res (process-line (vector) line 0 strs str-cnt (append-vec (vector) marks) 0)]
+                  (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) flushed))
+                (let [res (process-line body line in-func strs str-cnt env reg)]
+                  (recur (+ i 1) (get res 0) (get res 1) (get res 2) (get res 3) (get res 4) (get res 5) all-body)))))))))
 
 (defn join-lines [ll-lines]
   (let [n (count ll-lines)]

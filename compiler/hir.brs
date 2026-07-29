@@ -5,6 +5,11 @@
 ;;
 ;; loops: vector of frames [label vars-vector]
 ;; adt:   vector of entries [name disc nfields]
+;;
+;; First-class closed lambdas (Phase 17.17):
+;;   lift (fn […] …) with no free locals → top-level __lamN
+;;   funcref / icall for function values + indirect calls
+;;   (captures of locals not supported yet)
 
 (defn str-eq? [a b]
   (if (!= (str-count a) (str-count b))
@@ -12,6 +17,86 @@
     (= (str-starts-with? a b) 1)))
 
 (defn int-str [n] (str-from-i64 n))
+
+;; ---- First-class fn context (mutable, single-threaded compiler) ----
+(def __hir_locals (vector))
+(def __hir_fns (vector))      ;; names
+(def __hir_fn_ar (vector))    ;; parallel arities
+(def __hir_lam_n (vector))
+
+(defn hir-clear-vec [v]
+  (loop []
+    (if (= (count v) 0) 0
+      (do (pop v) (recur)))))
+
+(defn hir-name-in? [v name]
+  (let [n (count v)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (str-eq? (get v i) name) true
+          (recur (+ i 1)))))))
+
+(defn hir-is-local? [name] (hir-name-in? __hir_locals name))
+(defn hir-is-fn? [name] (hir-name-in? __hir_fns name))
+
+(defn hir-fn-arity [name]
+  (let [n (count __hir_fns)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (if (str-eq? (get __hir_fns i) name) (get __hir_fn_ar i)
+          (recur (+ i 1)))))))
+
+(defn hir-locals-reset []
+  (hir-clear-vec __hir_locals))
+
+(defn hir-locals-add [name]
+  (if (hir-is-local? name) 0
+    (push __hir_locals name)))
+
+(defn hir-fns-reset []
+  (do (hir-clear-vec __hir_fns)
+      (hir-clear-vec __hir_fn_ar)))
+
+(defn hir-fns-add [name arity]
+  (if (hir-is-fn? name) 0
+    (do (push __hir_fns name)
+        (push __hir_fn_ar arity))))
+
+(defn hir-lam-next []
+  (if (= (count __hir_lam_n) 0)
+    (do (push __hir_lam_n 0) 0)
+    (let [n (get __hir_lam_n 0)]
+      (do (pop __hir_lam_n)
+          (push __hir_lam_n (+ n 1))
+          n))))
+
+(defn is-builtin-name? [name]
+  (if (str-eq? name "+") true
+    (if (str-eq? name "-") true
+      (if (str-eq? name "*") true
+        (if (str-eq? name "/") true
+          (if (str-eq? name "%") true
+            (if (str-eq? name "=") true
+              (if (str-eq? name "!=") true
+                (if (str-eq? name "<") true
+                  (if (str-eq? name ">") true
+                    (if (str-eq? name "<=") true
+                      (if (str-eq? name ">=") true
+                        (if (str-eq? name "not") true
+                          (if (str-eq? name "and") true
+                            (if (str-eq? name "or") true
+                              (if (str-eq? name "println") true
+                                (if (str-eq? name "print") true
+                                  (if (str-eq? name "vector") true
+                                    (if (str-eq? name "push") true
+                                      (if (str-eq? name "get") true
+                                        (if (str-eq? name "count") true
+                                          (if (str-eq? name "map") true
+                                            (if (str-eq? name "filter") true
+                                              (if (str-eq? name "reduce") true
+                                                (if (str-eq? name "nil") true
+                                                  (if (str-eq? name "true") true
+                                                    (str-eq? name "false")))))))))))))))))))))))))))
 
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
@@ -245,7 +330,17 @@
     (if (= tag 0)
       (mk-ret (int-str (val-of ast)) t l)
       (if (= tag 1)
-        (mk-ret (val-of ast) t l)
+        (let [name (val-of ast)]
+          ;; Locals win. Else top-level / lifted fn → funcref (i64 fn pointer).
+          (if (hir-is-local? name)
+            (mk-ret name t l)
+            (if (hir-is-fn? name)
+              (let [dest (fresh-temp t)
+                    ar (hir-fn-arity name)]
+                (do (put lines (str-concat "    funcref " (str-concat dest
+                          (str-concat " " (str-concat name (str-concat " " (int-str ar)))))))
+                    (mk-ret dest (+ t 1) l)))
+              (mk-ret name t l))))
         (if (= tag 2)
           (let [dest (fresh-temp t)]
             (do (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " (val-of ast)))))
@@ -529,6 +624,11 @@
         entry  (fresh-label l "entry_")
         l2     (+ l 1)
         empty  (vector)
+        _      (hir-locals-reset)
+        _      (loop [i 0]
+                 (if (>= i (count params)) 0
+                   (do (hir-locals-add (val-of (get params i)))
+                       (recur (+ i 1)))))
         _      (put lines (str-concat "func " (str-concat name (str-concat " " (str-concat (fmt-params params) ":")))))
         _      (put lines (str-concat "  " (str-concat entry ":")))
         res    (if (> (- n start) 1)
@@ -538,7 +638,8 @@
         t3     (st-t res)
         l3     (st-l res)
         _      (if (is-dead-op? op) 0
-                 (put lines (str-concat "    return " (op-fmt op))))]
+                 (put lines (str-concat "    return " (op-fmt op))))
+        _      (hir-locals-reset)]
     (mk-ret "<done>" t3 l3)))
 
 ;; ADT constructor call: vector + push disc + fields
@@ -799,14 +900,18 @@
                   (str-concat " " (str-concat (op-fmt op)
                     (str-concat " " (int-str offset)))))))]
         (mk-ret dest t3 l2))
-      ;; Normal call (includes struct constructors via emit-all-struct-ctors)
+      ;; Normal call — or icall when callee is a local holding a funcref
       (loop [i 1 args (vector) tcur t lcur l]
         (if (>= i n)
           (let [dest (fresh-temp tcur)
                 tnext (+ tcur 1)
-                astr (join-args args 0)
-                _ (put lines (str-concat "    call " (str-concat dest (str-concat " " (str-concat fname (str-concat " " astr))))))]
-            (mk-ret dest tnext lcur))
+                astr (join-args args 0)]
+            (do (if (hir-is-local? fname)
+                  (put lines (str-concat "    icall " (str-concat dest
+                        (str-concat " var " (str-concat fname (str-concat " " astr))))))
+                  (put lines (str-concat "    call " (str-concat dest
+                        (str-concat " " (str-concat fname (str-concat " " astr)))))))
+                (mk-ret dest tnext lcur)))
           (let [res (lower-expr (get ast i) tcur lcur lines loops adt structs)
                 op  (ret-op res)
                 t2  (st-t res)
@@ -901,6 +1006,10 @@
               op   (ret-op res)
               t2   (st-t res)
               l2   (st-l res)
+              ;; Track simple symbol bindings for icall / funcref (17.17)
+              _    (if (if (is-atom? bpat) (= (tag-of bpat) 1) false)
+                     (hir-locals-add (val-of bpat))
+                     0)
               tl   (lower-let-pattern bpat op t2 l2 lines loops adt structs)]
           (recur (+ i 2) (get tl 0) (get tl 1)))))))
 
@@ -984,6 +1093,7 @@
               op (ret-op res)
               t2 (st-t res)
               l2b (st-l res)
+              _ (hir-locals-add bname)
               _ (put lines (str-concat "    assign " (str-concat bname (str-concat " " (op-fmt op)))))]
           (recur (+ i 2) t2 l2b))))))
 
@@ -1406,8 +1516,148 @@
     (do (put lines "    return const 0")
         r)))
 
+;; ---- Lambda lifting (closed only) — Phase 17.17 ----
+
+(defn free-collect [expr bound out]
+  (if (is-atom? expr)
+    (if (= (tag-of expr) 1)
+      (let [name (val-of expr)]
+        (if (hir-name-in? bound name) 0
+          (if (hir-is-fn? name) 0
+            (if (is-builtin-name? name) 0
+              (if (hir-name-in? out name) 0
+                (push out name))))))
+      0)
+    (let [n (count expr)
+          head (get expr 0)
+          tag (if (is-atom? head) (tag-of head) -1)]
+      (if (= tag 16)
+        (let [params (normalize-params (get expr 1))
+              b2 (vector)
+              _ (loop [i 0]
+                  (if (>= i (count bound)) 0
+                    (do (push b2 (get bound i)) (recur (+ i 1)))))
+              _ (loop [i 0]
+                  (if (>= i (count params)) 0
+                    (do (push b2 (val-of (get params i))) (recur (+ i 1)))))]
+          (loop [i 2]
+            (if (>= i n) 0
+              (do (free-collect (get expr i) b2 out)
+                  (recur (+ i 1))))))
+        (if (= tag 11)
+          (let [binds (unwrap-vec (get expr 1))
+                nb (count binds)
+                b2 (vector)
+                _ (loop [i 0]
+                    (if (>= i (count bound)) 0
+                      (do (push b2 (get bound i)) (recur (+ i 1)))))]
+            (do (loop [i 0]
+                  (if (>= i nb) 0
+                    (do (free-collect (get binds (+ i 1)) b2 out)
+                        (if (if (is-atom? (get binds i)) (= (tag-of (get binds i)) 1) false)
+                          (push b2 (val-of (get binds i)))
+                          0)
+                        (recur (+ i 2)))))
+                (loop [i 2]
+                  (if (>= i n) 0
+                    (do (free-collect (get expr i) b2 out)
+                        (recur (+ i 1)))))))
+          (loop [i 0]
+            (if (>= i n) 0
+              (do (free-collect (get expr i) bound out)
+                  (recur (+ i 1))))))))))
+
+(defn fn-is-closed? [expr]
+  (let [out (vector)
+        params (normalize-params (get expr 1))
+        bound (vector)
+        _ (loop [i 0]
+            (if (>= i (count params)) 0
+              (do (push bound (val-of (get params i)))
+                  (recur (+ i 1)))))
+        _ (loop [i 2]
+            (if (>= i (count expr)) 0
+              (do (free-collect (get expr i) bound out)
+                  (recur (+ i 1)))))]
+    (= (count out) 0)))
+
+(def __hir_lifted (vector))
+
+(defn mk-lifted-defn [name fn-expr]
+  (let [out (vector)
+        n (count fn-expr)]
+    (do (push out (hir-special 10 "defn"))
+        (push out (hir-sym name))
+        (loop [i 1]
+          (if (>= i n) out
+            (do (push out (get fn-expr i))
+                (recur (+ i 1))))))))
+
+(defn lift-expr [expr]
+  ;; Mutates __hir_fns / __hir_lam_n / __hir_lifted; returns rewritten expr.
+  (if (is-atom? expr) expr
+    (if (is-fn-form? expr)
+      (if (fn-is-closed? expr)
+        (let [id (hir-lam-next)
+              name (str-concat "__lam" (int-str id))
+              ar (count (normalize-params (get expr 1)))
+              _ (hir-fns-add name ar)
+              lifted (mk-lifted-defn name expr)]
+          (do (push __hir_lifted lifted)
+              (hir-sym name)))
+        ;; Open lambda (captures locals) — leave; may fail later
+        (let [n (count expr)
+              out (vector)]
+          (do (loop [i 0]
+                (if (>= i n) out
+                  (do (push out (lift-expr (get expr i)))
+                      (recur (+ i 1))))))))
+      (let [n (count expr)
+            out (vector)]
+        (do (loop [i 0]
+              (if (>= i n) out
+                (do (push out (lift-expr (get expr i)))
+                    (recur (+ i 1))))))))))
+
+(defn collect-top-fn-names [ast-list]
+  (let [n (count ast-list)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [e (get ast-list i)]
+          (do (if (is-defn-form? e)
+                (hir-fns-add (val-of (get e 1))
+                             (count (normalize-params (get e 2))))
+                0)
+              (recur (+ i 1))))))))
+
+(defn lift-program [ast-list]
+  (do (hir-fns-reset)
+      (hir-clear-vec __hir_lifted)
+      (hir-clear-vec __hir_lam_n)
+      (push __hir_lam_n 0)
+      (collect-top-fn-names ast-list)
+      (let [n (count ast-list)
+            body (vector)]
+        (do (loop [i 0]
+              (if (>= i n) 0
+                (do (push body (lift-expr (get ast-list i)))
+                    (recur (+ i 1)))))
+            ;; Prepend lifted defns
+            (let [out (vector)
+                  nl (count __hir_lifted)
+                  nb (count body)]
+              (do (loop [i 0]
+                    (if (>= i nl) 0
+                      (do (push out (get __hir_lifted i))
+                          (recur (+ i 1)))))
+                  (loop [i 0]
+                    (if (>= i nb) out
+                      (do (push out (get body i))
+                          (recur (+ i 1)))))))))))
+
 (defn lower-program [ast-list]
-  (let [lines (vector)
+  (let [ast-list (lift-program ast-list)
+        lines (vector)
         n (count ast-list)
         empty (vector)
         adt (collect-adt ast-list)
@@ -1420,7 +1670,10 @@
         t0 (get init-r 0)
         l0 (get init-r 1)
         tops (vector)
-        has-main (has-main-defn? ast-list)]
+        has-main (has-main-defn? ast-list)
+        ;; Refresh fn names after lift (includes __lamN)
+        _ (hir-fns-reset)
+        _ (collect-top-fn-names ast-list)]
     (loop [i 0 t t0 l l0]
       (if (>= i n)
         (do (if (if has-main false (> (count tops) 0))

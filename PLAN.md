@@ -441,7 +441,7 @@ bars/
 |---|--------|---------|-------------|
 | A | Macros | ~~User `defmacro` + template expansion~~ → **17.2 ✅**; ~~пълен macro interpreter~~ → **17.12 ✅** (list/cons/if/let) | — |
 | B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
-| C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
+| C | HOF | ~~map→bars_map_new~~ → **17.3a ✅**; ~~first-class closed fns~~ → **17.17 ✅** | capturing closures still later |
 | D | Types | ~~Soft string/void warnings~~ → **17.7–17.9 ✅** (str-схеми, accept-any, generalize/instantiate, interleaved solve, env_lookup fix: 294→3) | практически чисто |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
 | F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
@@ -641,6 +641,16 @@ bars/
 - [x] Docs: language guide + fix `{}` drift in why-bars / architecture
 - [x] Example `andor_demo.brs`
 
+### 17.17 First-class closed functions ✅
+
+- [x] Lambda lifting: closed `(fn [params] body)` → top-level `__lamN`
+- [x] HIR `funcref dest name arity` → i64 function pointer (LLVM/C)
+- [x] HIR `icall dest var f args…` when callee is a local
+- [x] Locals (params / let / loop) win over funcref (no shadowing bugs)
+- [x] Free-var analysis excludes builtins + top-level fns
+- [ ] Capturing closures (free locals) — later
+- [x] Example `fcfn_demo.brs`
+
 ---
 
-*План версия: 6.23 | Актуализиран: 2026-07-29*
+*План версия: 6.24 | Актуализиран: 2026-07-29*
