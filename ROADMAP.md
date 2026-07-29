@@ -247,7 +247,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.30** `if-not` / `complement` + macro index docs
 - [x] **17.31** `identity` runtime + `constantly` macro
 - [x] **17.32** `juxt` multi-fn applicator macro
+- [x] **17.33** `comp` function composition macro
 
 ---
 
-*Версия: 7.19 | Актуализирано: 2026-07-29*
+*Версия: 7.20 | Актуализирано: 2026-07-29*

@@ -746,6 +746,12 @@ bars/
 - [x] `(juxt f g …)` → `(fn [x] (vector (f x) (g x) …))`
 - [x] Example `juxt_demo.brs` → 10 25 6 3, 42
 
+### 17.33 `comp` function composition ✅
+
+- [x] `(comp f g h)` → `(fn [x] (f (g (h x))))` (rightmost first)
+- [x] `(comp f)` → `f`; `(comp)` → identity fn
+- [x] Example `comp_demo.brs` → 72 42 9
+
 ---
 
-*План версия: 6.39 | Актуализиран: 2026-07-29*
+*План версия: 6.40 | Актуализиран: 2026-07-29*
