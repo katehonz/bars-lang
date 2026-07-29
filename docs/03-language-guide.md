@@ -187,14 +187,23 @@ Keywords themselves lower to strings like `":foo"` when used as values.
 The `else-expr` is optional and defaults to `nil`. Non-zero integers are truthy
 (branch condition is `≠ 0`).
 
-### `when` / `unless` / `when-not` / `if-let` / `when-let`
+### Built-in macros (control & iteration)
 
-Built-in macros (no `require`):
+| Macro | Role |
+|-------|------|
+| `when` / `unless` / `when-not` | body when truthy / falsy |
+| `if-not` | `(if (not c) then else)` |
+| `if-let` / `when-let` | bind + truthy test |
+| `and` / `or` / `cond` / `case` | short-circuit / multi-way |
+| `doseq` / `for` / `dotimes` / `while` | iteration |
+| `partial` / `complement` / `apply` | first-class fn helpers |
+| `->` / `->>` | threading |
 
 ```clojure
 (when cond body...)          ;; (if cond (do body...) nil)
 (unless cond body...)        ;; (if (not cond) (do body...) nil)
 (when-not cond body...)      ;; alias of unless
+(if-not cond then else?)     ;; (if (not cond) then else)
 
 (if-let [x (maybe)]
   then-expr
@@ -202,6 +211,9 @@ Built-in macros (no `require`):
 
 (when-let [x (maybe)]
   body...)                   ;; (let [x (maybe)] (when x body...))
+
+(partial f a b)              ;; (fn [x] (apply f a b [x]))
+(complement pred)            ;; (fn [x] (not (pred x)))
 ```
 
 `if-let` / `when-let` bind a single name; the body runs only when the init
@@ -246,6 +258,7 @@ value is truthy.
 Pairs of `constant` / `result`. A list or vector of constants matches if **any**
 equals the scrutinee. An odd trailing form is the default (`nil` if omitted).
 The scrutinee is evaluated **once**.
+
 ### `do` — Sequence Expressions
 
 ```clojure

@@ -728,6 +728,13 @@ bars/
 - [x] `(case e (1 2 3) r …)` / `[1 2 3]` → `(or (= e 1) (= e 2) …)`
 - [x] Example `case_group_demo.brs` → 1 1 2 3 0 42
 
+### 17.30 `if-not` / `complement` + control-macro index ✅
+
+- [x] `(if-not c then else?)` → `(if (not c) then else)`
+- [x] `(complement f)` → `(fn [x] (not (f x)))`
+- [x] Language guide table of built-in macros
+- [x] Example `ifnot_demo.brs` → 1 2 0 1
+
 ---
 
-*План версия: 6.36 | Актуализиран: 2026-07-29*
+*План версия: 6.37 | Актуализиран: 2026-07-29*
