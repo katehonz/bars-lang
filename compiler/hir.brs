@@ -163,6 +163,9 @@
                                                                                                       (if (str-eq? name "assoc-in") true
                                                                                                         (if (str-eq? name "update-in") true
                                                                                                           (if (str-eq? name "reduce-kv") true
+                                                                                                            (if (str-eq? name "map-indexed") true
+                                                                                                              (if (str-eq? name "take-nth") true
+                                                                                                                (if (str-eq? name "dedupe") true
                                                                                                             (if (str-eq? name "keys") true
                                                                                                               (if (str-eq? name "vals") true
                                                                                                   (if (str-eq? name "update") true
@@ -199,7 +202,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1549,6 +1552,72 @@
           (hir-let (hir-vec (vector cur walk))
             finish))))))
 
+;; (map-indexed f coll) → like map, f takes [idx x]
+(defn desugar-map-indexed [f vec-ast uid]
+  (let [v (hir-sym (str-concat "__mxv" (int-str uid)))
+        c (hir-sym (str-concat "__mxc" (int-str uid)))
+        i (hir-sym (str-concat "__mxi" (int-str uid)))
+        r (hir-sym (str-concat "__mxr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        mapped (apply-callable f (vector i (hir-call "get" (vector v i))))
+        step (hir-let (hir-vec (vector r (hir-call "push" (vector r mapped))))
+               (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r)))
+        body (hir-if done r step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (take-nth n coll) → every n-th element, starting at index 0; n ≤ 0 → []
+(defn desugar-take-nth [n-ast vec-ast uid]
+  (let [v (hir-sym (str-concat "__tnv" (int-str uid)))
+        c (hir-sym (str-concat "__tnc" (int-str uid)))
+        st (hir-sym (str-concat "__tns" (int-str uid)))
+        i (hir-sym (str-concat "__tni" (int-str uid)))
+        r (hir-sym (str-concat "__tnr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 st n-ast
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        step (hir-let (hir-vec (vector r (hir-call "push" (vector r (hir-call "get" (vector v i))))))
+               (hir-recur (vector (hir-call "+" (vector i st)) r)))
+        main-loop (hir-loop binds (hir-if done r step))]
+    (hir-let outer
+      (hir-if (hir-call "<=" (vector st (hir-num 0)))
+        r
+        main-loop))))
+
+;; (dedupe coll) → remove consecutive duplicates
+(defn desugar-dedupe [vec-ast uid]
+  (let [v (hir-sym (str-concat "__ddv" (int-str uid)))
+        c (hir-sym (str-concat "__ddc" (int-str uid)))
+        i (hir-sym (str-concat "__ddi" (int-str uid)))
+        r (hir-sym (str-concat "__ddr" (int-str uid)))
+        x (hir-sym (str-concat "__ddx" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        is-dup (hir-if (hir-call ">" (vector i (hir-num 0)))
+                 (hir-call "=" (vector x (hir-call "get" (vector v (hir-call "-" (vector i (hir-num 1)))))))
+                 (hir-num 0))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        check (hir-let (hir-vec (vector x getx))
+                (hir-if is-dup
+                  rec
+                  (hir-let (hir-vec (vector r (hir-call "push" (vector r x))))
+                    rec)))
+        body (hir-if done r check)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; (update-in m ks f) → assoc-in m ks (f (get-in m ks))
 (defn desugar-update-in [map-ast ks-ast f uid]
   (let [m (hir-sym (str-concat "__uim" (int-str uid)))
@@ -1808,6 +1877,12 @@
       (lower-expr (desugar-update-in (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "reduce-kv") (= n 4) false)
       (lower-expr (desugar-reduce-kv (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "map-indexed") (= n 3) false)
+      (lower-expr (desugar-map-indexed (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "take-nth") (= n 3) false)
+      (lower-expr (desugar-take-nth (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "dedupe") (= n 2) false)
+      (lower-expr (desugar-dedupe (get ast 1) (hir-lam-next)) t l lines loops adt structs)
     ;; keys/vals are plain aliases of map-keys/map-values
     (if (if (str-eq? fname "keys") (= n 2) false)
       (lower-expr (hir-call "map-keys" (vector (get ast 1))) t l lines loops adt structs)
@@ -1882,7 +1957,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

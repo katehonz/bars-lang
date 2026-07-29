@@ -871,6 +871,14 @@ bars/
 - [x] `examples/math_stdlib.brs` (последният невалиден пример) в двата suite-а
 - [x] Output: 5, 256, 42
 
+### 17.50 `map-indexed` / `take-nth` / `dedupe` ✅
+
+- [x] `(map-indexed f coll)` → `(f idx x)` в loop desugar
+- [x] `(take-nth n coll)` → всеки n-ти от 0; `n ≤ 0` → [] (guard)
+- [x] `(dedupe coll)` → само последователни дубликати (сравнение с предишен)
+- [x] Example `indexed_demo.brs` → 3 0 20, 3 3 5, 0, 4 1 1, 3
+- [x] +8 проверки в `seq_lib_test.brs` (→ 40 общо)
+
 ---
 
-*План версия: 6.57 | Актуализиран: 2026-07-29*
+*План версия: 6.58 | Актуализиран: 2026-07-29*

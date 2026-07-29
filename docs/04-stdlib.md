@@ -143,6 +143,9 @@ Self-host HIR desugars (also in the C backend):
 | `get-in` | `(get-in coll ks)` | Walk a key/index path (maps + vectors) |
 | `update` | `(update m k f)` | `map-set m k (f (map-get m k))` |
 | `sort-by` | `(sort-by f coll)` | Sort ascending by `(f elem)` |
+| `map-indexed` | `(map-indexed f coll)` | Map with `(f idx x)` |
+| `take-nth` | `(take-nth n coll)` | Every n-th element (n ≤ 0 → []) |
+| `dedupe` | `(dedupe coll)` | Remove consecutive duplicates |
 | `merge` | `(merge a b …)` | Clone of first + others' keys (later wins) |
 | `dissoc` | `(dissoc m k …)` | Clone without the keys |
 | `assoc-in` | `(assoc-in m ks v)` | Nested assoc (intermediate maps cloned) |

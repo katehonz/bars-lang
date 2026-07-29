@@ -15,7 +15,14 @@
     (t/is-eq ctx 0 (count (partition 0 (vector 1 2 3))) "partition 0 guard")
     (t/is-eq ctx 4 (count (flatten (vector 1 (vector 2 (vector 3)) 4))) "flatten deep")
     (t/is-eq ctx 6 (count (mapcat (fn [x] (vector x x)) (vector 1 2 3))) "mapcat")
-    (t/is-eq ctx 2 (count (keep (fn [x] (if (> x 1) x 0)) (vector 1 2 3))) "keep")))
+    (t/is-eq ctx 2 (count (keep (fn [x] (if (> x 1) x 0)) (vector 1 2 3))) "keep")
+    (t/is-eq ctx 3 (count (map-indexed (fn [i x] (* i x)) (vector 1 1 1))) "map-indexed count")
+    (t/is-eq ctx 12 (get (map-indexed (fn [i x] (+ i x)) (vector 10 10 10)) 2) "map-indexed val")
+    (t/is-eq ctx 3 (count (take-nth 3 (vector 1 2 3 4 5 6 7))) "take-nth count")
+    (t/is-eq ctx 4 (get (take-nth 3 (vector 1 2 3 4 5 6 7)) 1) "take-nth val")
+    (t/is-eq ctx 0 (count (take-nth 0 (vector 1 2))) "take-nth 0 guard")
+    (t/is-eq ctx 4 (count (dedupe (vector 1 1 2 2 2 3 1 1))) "dedupe consecutive")
+    (t/is-eq ctx 3 (count (dedupe (vector 1 2 1))) "dedupe keeps non-consecutive")))
 
 (defn sort-tests [ctx]
   (do

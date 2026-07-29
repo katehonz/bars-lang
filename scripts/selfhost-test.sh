@@ -120,6 +120,7 @@ EXAMPLES=(
   examples/merge_demo.brs
   examples/reduce_kv_demo.brs
   examples/math_stdlib.brs
+  examples/indexed_demo.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -1064,6 +1065,7 @@ C_EXAMPLES=(
   examples/merge_demo.brs
   examples/reduce_kv_demo.brs
   examples/math_stdlib.brs
+  examples/indexed_demo.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

@@ -183,6 +183,9 @@ desugar to inline `loop`/`recur` (self-host):
 (get-in m [1 0])               ;; walk maps/vectors by key path
 (update m 5 f)                 ;; map-set m 5 (f (map-get m 5))
 (sort-by abs [-3 1 -2])        ;; [1 -2 -3] (key fn, ascending)
+(map-indexed f [a b])          ;; like map, f gets [idx x]
+(take-nth 2 [1 2 3 4 5])       ;; [1 3 5]
+(dedupe [1 1 2 2 1])           ;; [1 2 1] (consecutive only)
 (merge a b)                    ;; clone of a + b's keys (b wins)
 (dissoc m 2 3)                 ;; clone without keys 2 and 3
 (assoc-in m [1 6] 60)          ;; nested assoc, input kept
