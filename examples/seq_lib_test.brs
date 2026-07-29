@@ -58,10 +58,32 @@
     (t/is-eq ctx 3 (count (str-split "a,b,c" ",")) "str-split")
     (t/is ctx (str-eq? (str-join (str-split "a,b,c" ",") "-") "a-b-c") "str-join")))
 
+;; 17.53 review-fix coverage: arity gates, non-mutating update,
+;; assoc-in over non-map intermediate, vector-set, sqrt/pow
+(defn fix-tests [ctx]
+  (do
+    (t/section "review fixes")
+    (t/is-eq ctx 0 (map-count (merge)) "merge 0-arity → {}")
+    (t/is-eq ctx 7 (map-get (merge (zipmap (vector 1) (vector 7))) 1) "merge 1-arity → identity")
+    (t/is-eq ctx 2 (map-count (dissoc (zipmap (vector 1 2) (vector 10 20)))) "dissoc 1-key-arity → same")
+    (t/is-eq ctx 10
+      (let [m (zipmap (vector 1) (vector 10))]
+        (do (update m 1 (fn [x] (+ x 5)))
+            (map-get m 1)))
+      "update preserves input")
+    (t/is-eq ctx 15 (map-get (update (zipmap (vector 1) (vector 10)) 1 (fn [x] (+ x 5))) 1) "update result")
+    (t/is-eq ctx 9 (get-in (assoc-in (zipmap (vector 1) (vector 5)) (vector 1 2) 9) (vector 1 2)) "assoc-in over non-map")
+    (t/is-eq ctx 42 (get-in (assoc-in (map) (vector 1 2 3) 42) (vector 1 2 3)) "assoc-in 3-level")
+    (t/is-eq ctx 9 (let [v (vector 1 2 3)] (do (vector-set v 0 9) (get v 0))) "vector-set mutating")
+    (t/is-eq ctx 5 (sqrt 26) "sqrt trunc")
+    (t/is-eq ctx 1024 (pow 2 10) "pow")
+    (t/is-eq ctx 2 (map-count (zipmap (vector 1 2 3) (vector 10 20))) "zipmap shorter side")))
+
 (defn main []
   (let [ctx (t/suite "seq_lib")]
     (do (seq-tests ctx)
         (sort-tests ctx)
         (map-tests ctx)
         (str-tests ctx)
+        (fix-tests ctx)
         (t/finish ctx))))

@@ -274,10 +274,12 @@
           (do (lines-push lines "declare i64 @bars_tls_connect(i64, i64, i64)")
               (lines-push lines "declare i64 @bars_tls_send(i64, i64)")
               (lines-push lines "declare i64 @bars_tls_recv(i64, i64)")
-              (lines-push lines "declare i64 @bars_tls_close(i64)"))
+              (lines-push lines "declare i64 @bars_tls_close(i64)")
+              (lines-push lines "declare i64 @bars_tls_last_error()"))
           0)
         (lines-push lines "declare i64 @bars_sha256(i64)")
         (lines-push lines "declare i64 @bars_is_vector_i64(i64)")
+        (lines-push lines "declare i64 @bars_is_map_i64(i64)")
         (lines-push lines "declare i64 @bars_icall0(i64)")
         (lines-push lines "declare i64 @bars_icall1(i64, i64)")
         (lines-push lines "declare i64 @bars_icall2(i64, i64, i64)")
@@ -413,7 +415,8 @@
                       (if (str-eq? fname "apply") "bars_apply"
                         (if (str-eq? fname "bars_apply_join") "bars_apply_join"
                           (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
-                            ""))))))))))))))
+                            (if (str-eq? fname "bars_is_map_i64") "bars_is_map_i64"
+                              "")))))))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

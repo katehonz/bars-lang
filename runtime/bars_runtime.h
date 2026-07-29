@@ -86,6 +86,7 @@ void bars_print_any_i64(int64_t val);
 
 /* String operations */
 bars_string_t* bars_string_new(const char* cstr);
+bars_string_t* bars_string_new_len(const char* data, size_t len);
 bars_string_t* bars_string_from_i64(int64_t n);
 int64_t bars_string_len(const bars_string_t* s);
 
@@ -107,6 +108,7 @@ int64_t bars_vector_count_i64(bars_vector_t* vec);
 int64_t bars_count_any_i64(int64_t val);
 /* 1 if val is a Bars vector (magic), else 0 */
 int64_t bars_is_vector_i64(int64_t val);
+int64_t bars_is_map_i64(int64_t val);
 
 /* First-class call (17.18–17.20): f is bare fn ptr or closure [fnptr, env].
    n = number of user args (0..8). Capturing closures pass env as first param. */

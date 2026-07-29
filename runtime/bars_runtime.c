@@ -141,15 +141,18 @@ void bars_print_any_i64(int64_t val) {
 
 /* --- String --- */
 
-bars_string_t* bars_string_new(const char* cstr) {
-    size_t len = strlen(cstr);
+bars_string_t* bars_string_new_len(const char* data, size_t len) {
     bars_string_t* s = (bars_string_t*)bars_alloc(sizeof(bars_string_t));
     s->magic = BARS_MAGIC_STRING;
     s->data = (char*)bars_alloc(len + 1);
-    memcpy(s->data, cstr, len);
+    memcpy(s->data, data, len);
     s->data[len] = '\0';
     s->len = len;
     return s;
+}
+
+bars_string_t* bars_string_new(const char* cstr) {
+    return bars_string_new_len(cstr, strlen(cstr));
 }
 
 bars_string_t* bars_string_from_i64(int64_t n) {
@@ -234,6 +237,13 @@ int64_t bars_is_vector_i64(int64_t val) {
     if (val < 0x10000000L || val < 0) return 0;
     if ((val & 0x7) != 0) return 0;
     return (*(uint32_t*)(uintptr_t)val == BARS_MAGIC_VECTOR) ? 1 : 0;
+}
+
+int64_t bars_is_map_i64(int64_t val) {
+    if (val == 0) return 0;
+    if (val < 0x10000000L || val < 0) return 0;
+    if ((val & 0x7) != 0) return 0;
+    return (*(uint32_t*)(uintptr_t)val == BARS_MAGIC_MAP) ? 1 : 0;
 }
 
 /* Unpack f → (fp, env, has_env). Closure = vector [fnptr, env-vector]. */
@@ -1206,8 +1216,7 @@ int64_t bars_tcp_recv(int64_t fd, int64_t max_len) {
         free(buf);
         return 0;
     }
-    buf[n] = '\0';
-    bars_string_t* s = bars_string_new(buf);
+    bars_string_t* s = bars_string_new_len(buf, (size_t)n);
     free(buf);
     return (int64_t)(uintptr_t)s;
 }

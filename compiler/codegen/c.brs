@@ -181,7 +181,8 @@
                       (if (str-eq? fname "apply") "bars_apply"
                         (if (str-eq? fname "bars_apply_join") "bars_apply_join"
                           (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
-                            ""))))))))))))))
+                            (if (str-eq? fname "bars_is_map_i64") "bars_is_map_i64"
+                              "")))))))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
@@ -407,10 +408,9 @@
                   o1 (get er 0)
                   e1 (get er 1)
                   ;; Runtime fns that return void: call as statement, dest = 0.
-                  is-void (if (str-eq? fname "map-set") true
-                            (if (str-eq? fname "set-add") true
-                              (if (str-eq? fname "spit") true
-                                (if (str-eq? fname "exit") true false))))]
+                  ;; (map-set/set-add return the map/set since fix #27 — NOT void)
+                  is-void (if (str-eq? fname "spit") true
+                            (if (str-eq? fname "exit") true false))]
               (if is-void
                 (do (lines-push o1 (str-concat "  " (str-concat mapped (str-concat "(" (str-concat args ");")))))
                     (lines-push o1 (str-concat "  " (str-concat dest " = 0;")))
@@ -576,7 +576,8 @@
           (do (lines-push lines "int64_t bars_tls_connect(int64_t, int64_t, int64_t);")
               (lines-push lines "int64_t bars_tls_send(int64_t, int64_t);")
               (lines-push lines "int64_t bars_tls_recv(int64_t, int64_t);")
-              (lines-push lines "int64_t bars_tls_close(int64_t);"))
+              (lines-push lines "int64_t bars_tls_close(int64_t);")
+              (lines-push lines "int64_t bars_tls_last_error(void);"))
           0)
         (lines-push lines "")
         lines)))

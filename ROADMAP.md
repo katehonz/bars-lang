@@ -272,4 +272,12 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 
 ---
 
-*Версия: 7.38 | Актуализирано: 2026-07-29*
+- [x] **17.52** Review fixes — C backend `map-set`/`set-add` is-void; suite signal-death check + `seq_lib_test` под C; TLS hostname verification + handle validation; `bars_string_new_len` (бинарни тела)
+
+---
+
+- [x] **17.53** Review fixes 2 — merge/dissoc arity gates; non-mutating `update`; `assoc-in` върху non-map (`bars_is_map_i64`); TLS 1.2 floor + GC finalizer + `tls/last-error`; seq_lib_test 53 checks
+
+---
+
+*Версия: 7.40 | Актуализирано: 2026-07-29*

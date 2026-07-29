@@ -908,4 +908,51 @@ bars/
 
 ---
 
-*План версия: 6.60 | Актуализиран: 2026-07-29*
+### 17.52 Review fixes — C backend map ops + TLS hardening ✅
+
+Открити при пълно код-ревю (17.40–17.51), всички проверени емпирично:
+
+- [x] C backend: `map-set`/`set-add` извадени от `is-void` в `compiler/codegen/c.brs`
+  (след #27 връщат map/set; преди: segfault на zipmap/frequencies/group-by/
+  select-keys/keys/vals и тихо грешен `merge` под `BARS_BACKEND_C=1`)
+- [x] Suite: `run_one` фейлва при exit ≥ 128 (signal death) — преди `|| true`
+  криеше crash-ове; `seq_lib_test` вече върви и под C backend → **167/167**
+- [x] TLS hostname verification: `SSL_set1_host` при verify=1 — преди всеки
+  валиден CA сертификат (за чужд хост) минаваше (MITM). Проверено: вярна CA +
+  грешен хост → отхвърлен; верен хост → приет
+- [x] TLS handle validation: `BARS_MAGIC_TLS` + `GC_base` проверка в
+  send/recv/close (`tls_conn_from_handle`); `close` нулира magic-а
+- [x] `bars_string_new_len` (length-preserving) вместо `strlen`-base конструктор
+  в `bars_tls_recv` и `bars_tcp_recv` — бинарни тела с `\0` вече не се режат
+  (проверено: 1024/1024 байта през HTTPS loopback)
+
+Остава (от ревюто, не-критично): `(merge)`/`(dissoc m)` arity gates;
+`update` мутира входа (семантика за решение); `assoc-in` върху non-map ниво;
+TLS 1.2 floor; GC finalizer за TLS conn; `bars_tls_last_error`.
+
+---
+
+### 17.53 Review fixes part 2 — map семантика + TLS hardening ✅
+
+Затваря оставащите от 17.52 ревюто:
+
+- [x] `(merge)` → `{}`, `(merge a)` → `a`, `(dissoc m)` → clone на m
+  (gate-ове `(>= n 1)` / `(>= n 2)` в `hir.brs`; преди: undefined-symbol error)
+- [x] `update` вече е non-mutating — `map-set` върху `map-clone`
+  (консистентно с `update-in`/`merge`/`dissoc`; Clojure семантика)
+- [x] `assoc-in` върху non-map междинно ниво → fresh map вместо segfault
+  (нов runtime `bars_is_map_i64`, mirror на `bars_is_vector_i64`;
+  Clojure: `(assoc-in {:a 1} [:a :b] 2)` → `{:a {:b 2}}`)
+- [x] TLS 1.2 floor (`SSL_CTX_set_min_proto_version`) — проверено:
+  s_server `-tls1_1` → handshake отказан
+- [x] GC finalizer за TLS conn (`GC_register_finalizer` + общ
+  `tls_conn_teardown` с `close`) — drop-нат handle не тече fd/SSL
+- [x] `bars_tls_last_error` + `tls/last-error` — OpenSSL error string
+  (проверено: "tlsv1 alert protocol version" при 1.1 сървър)
+- [x] `seq_lib_test` +12 assertions (41 → 53): arity gates, update
+  non-mutating pin, assoc-in върху non-map + 3-ниво, vector-set,
+  sqrt/pow, zipmap shorter side
+
+---
+
+*План версия: 6.62 | Актуализиран: 2026-07-29*

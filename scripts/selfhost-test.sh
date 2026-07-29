@@ -44,9 +44,16 @@ run_one() {
     fail=$((fail + 1))
     return
   fi
-  # Run; non-zero exit is OK if stdout looks fine (some mains return n)
-  local stdout
-  stdout="$("$out" 2>"$TMP/$name.stderr" || true)"
+  # Run; non-zero exit is OK if stdout looks fine (some mains return n),
+  # but death by signal (exit >= 128) is always a failure.
+  local stdout rc
+  if stdout="$("$out" 2>"$TMP/$name.stderr")"; then rc=0; else rc=$?; fi
+  if [[ $rc -ge 128 ]]; then
+    echo "FAIL crash    $src${tag:+ ($tag)} (exit $rc, signal $((rc - 128)))"
+    tail -3 "$TMP/$name.stderr" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
   echo "OK   $src${tag:+ ($tag)}"
   if [[ -n "$stdout" ]]; then
     echo "$stdout" | sed 's/^/     | /' | head -6
@@ -137,26 +144,30 @@ for src in "${EXAMPLES[@]}"; do
 done
 
 # --- Phase 17.48: lib/test seq coverage (exit code matters) ---
+# Optional tag arg (e.g. "c") — used for the C-backend run; the caller
+# exports BARS_BACKEND_C=1 so compilation picks the C backend.
 run_seq_lib_test() {
+  local tag="${1:-}"
   local src="examples/seq_lib_test.brs"
-  local out="$TMP/seq_lib_test"
-  local log="$TMP/seq_lib_test.compile.log"
+  local out="$TMP/seq_lib_test${tag:+_$tag}"
+  local log="$TMP/seq_lib_test${tag:+_$tag}.compile.log"
+  local name="seq_lib_test${tag:+ ($tag)}"
   if [[ ! -f "$src" ]]; then
-    echo "SKIP seq_lib_test (missing)"
+    echo "SKIP $name (missing)"
     return
   fi
   if ! "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
-    echo "FAIL compile  $src"
+    echo "FAIL compile  $src${tag:+ ($tag)}"
     tail -5 "$log" | sed 's/^/  /'
     fail=$((fail + 1))
     return
   fi
-  if "$out" >"$TMP/seq_lib_test.out" 2>&1; then
-    echo "OK   examples/seq_lib_test.brs (lib/test exit 0)"
+  if "$out" >"$out.out" 2>&1; then
+    echo "OK   examples/seq_lib_test.brs${tag:+ ($tag)} (lib/test exit 0)"
     pass=$((pass + 1))
   else
-    echo "FAIL run      seq_lib_test (lib/test failures)"
-    tail -8 "$TMP/seq_lib_test.out" | sed 's/^/  /'
+    echo "FAIL run      $name (lib/test failures or crash)"
+    tail -8 "$out.out" | sed 's/^/  /'
     fail=$((fail + 1))
   fi
 }
@@ -1135,6 +1146,7 @@ else
       echo "SKIP missing  $src (c)"
     fi
   done
+  run_seq_lib_test "c"
   unset BARS_BACKEND_C
 fi
 

@@ -1520,7 +1520,9 @@
         (push exprs out)
         (hir-let outer (hir-do exprs)))))
 
-;; (assoc-in m ks v) → nested assoc; intermediate maps cloned (input kept)
+;; (assoc-in m ks v) → nested assoc; intermediate maps cloned (input kept).
+;; A non-map intermediate (missing, int, string, …) is replaced by a fresh
+;; map — same semantics as Clojure: (assoc-in {:a 1} [:a :b] 2) → {:a {:b 2}}.
 (defn desugar-assoc-in [map-ast ks-ast v-ast uid]
   (let [m (hir-sym (str-concat "__aim" (int-str uid)))
         a (hir-sym (str-concat "__aia" (int-str uid)))
@@ -1530,14 +1532,16 @@
         cur (hir-sym (str-concat "__aiu" (int-str uid)))
         k (hir-sym (str-concat "__aik" (int-str uid)))
         nxt (hir-sym (str-concat "__aix" (int-str uid)))
+        v2 (hir-sym (str-concat "__aiv" (int-str uid)))
         outer (hir-vec (vector
                  m map-ast
                  a ks-ast
                  n (hir-call "count" (vector a))))
         getk (hir-call "get" (vector a i))
-        inner (hir-if (hir-call "=" (vector (hir-call "map-get" (vector cur k)) (hir-num 0)))
-                (hir-call "map" (vector))
-                (hir-call "map-clone" (vector (hir-call "map-get" (vector cur k)))))
+        inner (hir-let (hir-vec (vector v2 (hir-call "map-get" (vector cur k))))
+                (hir-if (hir-call "bars_is_map_i64" (vector v2))
+                  (hir-call "map-clone" (vector v2))
+                  (hir-call "map" (vector))))
         step (hir-let (hir-vec (vector k getk))
                (hir-let (hir-vec (vector nxt inner))
                  (hir-do (vector (hir-call "map-set" (vector cur k nxt))
@@ -1676,14 +1680,17 @@
         body (hir-if done cur step)]
     (hir-let outer (hir-loop binds body))))
 
-;; (update m k f) → map-set m k (f (map-get m k))
+;; (update m k f) → map-set on a clone of m (input preserved, like update-in)
 (defn desugar-update [map-ast key-ast f uid]
   (let [m (hir-sym (str-concat "__udm" (int-str uid)))
         k (hir-sym (str-concat "__udk" (int-str uid)))
-        outer (hir-vec (vector m map-ast k key-ast))
+        out (hir-sym (str-concat "__udo" (int-str uid)))
+        outer (hir-vec (vector m map-ast
+                         k key-ast
+                         out (hir-call "map-clone" (vector m))))
         newv (apply-callable f (vector (hir-call "map-get" (vector m k))))]
     (hir-let outer
-      (hir-call "map-set" (vector m k newv)))))
+      (hir-call "map-set" (vector out k newv)))))
 
 ;; (sort-by f coll) → insertion sort on a clone, comparing (f elem)
 (defn desugar-sort-by [f vec-ast uid]
@@ -1871,9 +1878,9 @@
       (lower-expr (desugar-keep (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "get-in") (= n 3) false)
       (lower-expr (desugar-get-in (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
-    (if (if (str-eq? fname "merge") (>= n 2) false)
+    (if (if (str-eq? fname "merge") (>= n 1) false)
       (lower-expr (desugar-merge ast (hir-lam-next)) t l lines loops adt structs)
-    (if (if (str-eq? fname "dissoc") (>= n 3) false)
+    (if (if (str-eq? fname "dissoc") (>= n 2) false)
       (lower-expr (desugar-dissoc ast (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "assoc-in") (= n 4) false)
       (lower-expr (desugar-assoc-in (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)

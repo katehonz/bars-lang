@@ -31,3 +31,7 @@
 
 (defn close [h]
   (bars_tls_close h))
+
+;; last OpenSSL error as a string ("" if none) — handshake/verify failures
+(defn last-error []
+  (bars_tls_last_error))
