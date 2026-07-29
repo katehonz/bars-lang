@@ -31,6 +31,9 @@ pub struct Program {
     pub funcs: Vec<Func>,
     pub struct_registry: std::collections::HashMap<String, Vec<String>>,
     pub adt_registry: std::collections::HashMap<String, TypeInfo>,
+    /// Top-level `(def name …)` bindings — mutable module-level cells (Phase 17.5).
+    /// Backends emit writable data storage and load/store on use.
+    pub globals: Vec<String>,
 }
 
 /// A function: name, parameters, and a list of basic blocks

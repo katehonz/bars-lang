@@ -823,6 +823,8 @@
         out)))
 
 ;; (comp f g h) => (fn [x] (f (g (h x))))  — rightmost applied first
+;; Note: host ownership treats loop init as a move of the seed symbol, so the
+;; param symbol `x` and the loop seed must be separate AST nodes (same name).
 (defn expand-comp [expr macs]
   (let [n (count expr)
         x (mk-sym "__cpx")]
@@ -831,11 +833,11 @@
       (let [out (vector)]
         (do (push out (mk-special 16 "fn"))
             (push out (wrap-vec (vector x)))
-            (push out x)
+            (push out (mk-sym "__cpx"))
             out))
       (if (= n 2)
         (expand-expr (get expr 1) macs)
-        (let [body (loop [i (- n 1) acc x]
+        (let [body (loop [i (- n 1) acc (mk-sym "__cpx")]
                      (if (< i 1) acc
                        (let [f (expand-expr (get expr i) macs)
                              call (vector)]

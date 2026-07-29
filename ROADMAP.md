@@ -268,4 +268,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 
 ---
 
-*Версия: 7.37 | Актуализирано: 2026-07-29*
+- [x] **17.51** Host bootstrap restore — Cranelift real `def` globals + ownership UAM in `expand-comp`
+
+---
+
+*Версия: 7.38 | Актуализирано: 2026-07-29*

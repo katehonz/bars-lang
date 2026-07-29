@@ -96,6 +96,7 @@ impl LoweringCtx {
             }
         }
 
+        let mut globals = Vec::new();
         for expr in &program.exprs {
             match expr {
                 Expr::Defn { name, params, body, .. } => {
@@ -125,6 +126,13 @@ impl LoweringCtx {
                     };
                     funcs.push(func);
                 }
+                Expr::Def { name, .. } => {
+                    // Real module-level global (writable cell); init runs in main.
+                    if !globals.iter().any(|g| g == &name.0) {
+                        globals.push(name.0.clone());
+                    }
+                    main_exprs.push(expr.clone());
+                }
                 other => {
                     main_exprs.push(other.clone());
                 }
@@ -134,15 +142,38 @@ impl LoweringCtx {
         // Add lambda functions extracted during lowering
         funcs.append(&mut self.lambda_funcs);
 
-        // Implicit main if needed
+        // Top-level exprs (esp. `(def …)` inits) and implicit main.
+        // When an explicit `main` already exists, top-level inits become
+        // `__bars_init_globals` and are called at the start of main — never a
+        // second `main` (that would rename to duplicate `_bars_main` at link).
         let has_main = funcs.iter().any(|f| f.name == "main");
-        if !main_exprs.is_empty() || !has_main {
-            funcs.push(self.lower_implicit_main(&main_exprs)?);
+        if !main_exprs.is_empty() {
+            if has_main {
+                let init = self.lower_toplevel_fn("__bars_init_globals", &main_exprs)?;
+                funcs.push(init);
+                if let Some(main) = funcs.iter_mut().find(|f| f.name == "main") {
+                    let entry = main.entry_block.clone();
+                    if let Some(block) = main.blocks.iter_mut().find(|b| b.label == entry) {
+                        block.instrs.insert(
+                            0,
+                            Instr::Call {
+                                dest: "_init_g".to_string(),
+                                func: "__bars_init_globals".to_string(),
+                                args: vec![],
+                            },
+                        );
+                    }
+                }
+            } else {
+                funcs.push(self.lower_toplevel_fn("main", &main_exprs)?);
+            }
+        } else if !has_main {
+            funcs.push(self.lower_toplevel_fn("main", &[])?);
         }
 
         let struct_registry = std::mem::take(&mut self.struct_registry);
         let adt_registry = std::mem::take(&mut self.adt_registry);
-        Ok(Program { funcs, struct_registry, adt_registry })
+        Ok(Program { funcs, struct_registry, adt_registry, globals })
     }
 
     /// Rename variable references in an expression tree (for loop shadowing fix).
@@ -270,7 +301,8 @@ impl LoweringCtx {
         })
     }
 
-    fn lower_implicit_main(&mut self, exprs: &[Expr]) -> Result<Func> {
+    /// Zero-arg function from a sequence of top-level expressions (main or init).
+    fn lower_toplevel_fn(&mut self, name: &str, exprs: &[Expr]) -> Result<Func> {
         let entry_label = self.fresh_label("main_entry");
         self.start_block(entry_label.clone());
         self.current_params = HashSet::new();
@@ -288,7 +320,7 @@ impl LoweringCtx {
 
         let blocks = std::mem::take(&mut self.blocks);
         Ok(Func {
-            name: "main".to_string(),
+            name: name.to_string(),
             params: vec![],
             blocks,
             entry_block: entry_label,

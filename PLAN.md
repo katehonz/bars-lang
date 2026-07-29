@@ -421,6 +421,8 @@ bars/
 | 28 | `abs`/`inc`/`dec` известни на HIR/types, но без backend mapping → undefined `@abs`; `bars_map_get(NULL)` segfault при get-in през missing key | backend maps + inc/dec desugar; NULL guard в `bars_map_get` | ✅ |
 | 29 | Nested desugar на същата fn (напр. `zipmap` в `zipmap`) дели един и същ `uid` → генерираните символи се блъскат и дават грешни стойности | `compiler/hir.brs` (fresh `(hir-lam-next)` uid per dispatch) | ✅ |
 | 30 | C backend: `c-escape` не обработва `\r` (13) → raw CR в C string literal = compile error при `"\r\n"` (lib/http `crlf`) | `compiler/codegen/c.brs` (`\r` → `\\r`) | ✅ |
+| 31 | Host ownership: `expand-comp` loop seed move-ва `x`, после `(vector x)` → UAM → `make bars-self` fail | `compiler/macros.brs` (отделен `mk-sym` seed) | ✅ |
+| 32 | Host Cranelift: top-level `(def …)` не е реален global (от 17.5/17.17) → Gen1 не може да bootstrap-не self-host; + unaligned data cells → Boehm не вижда roots → UAF | `bootstrap` HIR globals + Cranelift writable 8-aligned cells + `__bars_init_globals` | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -896,4 +898,14 @@ bars/
 
 ---
 
-*План версия: 6.59 | Актуализиран: 2026-07-29*
+### 17.51 Host bootstrap restore ✅
+
+- [x] Host ownership UAM in `expand-comp` (loop seed ≠ param symbol)
+- [x] Host Cranelift real top-level `def` globals (writable data + load/store)
+- [x] `__bars_init_globals` when explicit `main` coexists with top-level defs
+- [x] 8-byte align on global cells (Boehm GC root scan)
+- [x] `make bars-self` (host → Gen1) works again; suite **166/166**
+
+---
+
+*План версия: 6.60 | Актуализиран: 2026-07-29*

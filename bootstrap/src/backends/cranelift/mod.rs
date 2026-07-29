@@ -172,6 +172,8 @@ impl CraneliftBackend {
             }
         }
 
+        let global_data_ids = declare_globals(&mut self.module, &program.globals)?;
+
         // Define all functions
         for func in &program.funcs {
             if func.is_extern {
@@ -183,6 +185,7 @@ impl CraneliftBackend {
                 &program.struct_registry,
                 &self.functions,
                 &HashMap::new(),
+                &global_data_ids,
             )?;
         }
 
@@ -236,12 +239,40 @@ fn declare_extern_function<M: Module>(
     Ok(())
 }
 
+
+fn declare_globals<M: Module>(
+    module: &mut M,
+    globals: &[String],
+) -> Result<HashMap<String, cranelift_module::DataId>> {
+    let mut global_data_ids = HashMap::new();
+    for (i, name) in globals.iter().enumerate() {
+        // Writable i64 cell, zero-initialized (nil until main assigns).
+        let safe = name.replace('-', "_").replace('/', "_");
+        let sym = format!("_bars_g_{}_{}", i, safe);
+        let data_id = module
+            .declare_data(&sym, Linkage::Local, true, false)
+            .map_err(|e| anyhow::anyhow!("declare_data global: {}", e))?;
+        let mut data_desc = DataDescription::new();
+        // 8-byte align is required: Boehm GC only conservatively scans aligned
+        // pointer slots in the data segment; unaligned cells are invisible roots
+        // → vectors get freed → use-after-free in push/get.
+        data_desc.set_align(8);
+        data_desc.define_zeroinit(8);
+        module
+            .define_data(data_id, &data_desc)
+            .map_err(|e| anyhow::anyhow!("define_data global: {}", e))?;
+        global_data_ids.insert(name.clone(), data_id);
+    }
+    Ok(global_data_ids)
+}
+
 fn define_function_generic<M: Module>(
     module: &mut M,
     func: &hir::Func,
     struct_registry: &HashMap<String, Vec<String>>,
     functions: &HashMap<String, cranelift_module::FuncId>,
     string_data_ids: &HashMap<String, cranelift_module::DataId>,
+    global_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> Result<()> {
     let func_id = *functions.get(&func.name).unwrap();
 
@@ -292,10 +323,11 @@ fn define_function_generic<M: Module>(
                 functions,
                 module,
                 string_data_ids,
+                global_data_ids,
             )?;
         }
 
-        compile_terminator(&block.terminator, &mut builder, &values, &blocks, func, &functions, module)?;
+        compile_terminator(&block.terminator, &mut builder, &values, &blocks, func, &functions, module, global_data_ids)?;
     }
 
     // Seal all blocks after all jumps are emitted
@@ -322,12 +354,19 @@ fn compile_instr<M: Module>(
     functions: &HashMap<String, cranelift_module::FuncId>,
     module: &mut M,
     string_data_ids: &HashMap<String, cranelift_module::DataId>,
+    global_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> Result<()> {
     match instr {
         hir::Instr::Assign { dest, value } => {
-            let val = operand_to_value(value, values, builder);
+            let val = operand_to_value(value, values, builder, module, global_data_ids);
             let var = get_or_declare_var(dest, values, builder);
             builder.def_var(var, val);
+            // Persist module-level `(def …)` cells (Phase 17.5 / host bootstrap).
+            if let Some(&data_id) = global_data_ids.get(dest) {
+                let gv = module.declare_data_in_func(data_id, builder.func);
+                let addr = builder.ins().global_value(types::I64, gv);
+                builder.ins().store(MemFlags::new(), val, addr, 0);
+            }
         }
         hir::Instr::Const { dest, value } => {
             let val = builder.ins().iconst(types::I64, *value);
@@ -342,18 +381,18 @@ fn compile_instr<M: Module>(
             builder.def_var(var, addr);
         }
         hir::Instr::Store { addr, value } => {
-            let a = operand_to_value(addr, values, builder);
-            let v = operand_to_value(value, values, builder);
+            let a = operand_to_value(addr, values, builder, module, global_data_ids);
+            let v = operand_to_value(value, values, builder, module, global_data_ids);
             builder.ins().store(MemFlags::new(), v, a, 0);
         }
         hir::Instr::Load { dest, addr } => {
-            let a = operand_to_value(addr, values, builder);
+            let a = operand_to_value(addr, values, builder, module, global_data_ids);
             let val = builder.ins().load(types::I64, MemFlags::new(), a, 0);
             let var = get_or_declare_var(dest, values, builder);
             builder.def_var(var, val);
         }
         hir::Instr::FieldLoad { dest, base, offset } => {
-            let base_val = operand_to_value(base, values, builder);
+            let base_val = operand_to_value(base, values, builder, module, global_data_ids);
             let offset_val = builder.ins().iconst(types::I64, *offset as i64);
             let addr = builder.ins().iadd(base_val, offset_val);
             let val = builder.ins().load(types::I64, MemFlags::new(), addr, 0);
@@ -361,15 +400,15 @@ fn compile_instr<M: Module>(
             builder.def_var(var, val);
         }
         hir::Instr::FieldStore { base, offset, value } => {
-            let base_val = operand_to_value(base, values, builder);
+            let base_val = operand_to_value(base, values, builder, module, global_data_ids);
             let offset_val = builder.ins().iconst(types::I64, *offset as i64);
             let addr = builder.ins().iadd(base_val, offset_val);
-            let v = operand_to_value(value, values, builder);
+            let v = operand_to_value(value, values, builder, module, global_data_ids);
             builder.ins().store(MemFlags::new(), v, addr, 0);
         }
         hir::Instr::BinOp { dest, op, lhs, rhs } => {
-            let lhs_val = operand_to_value(lhs, values, builder);
-            let rhs_val = operand_to_value(rhs, values, builder);
+            let lhs_val = operand_to_value(lhs, values, builder, module, global_data_ids);
+            let rhs_val = operand_to_value(rhs, values, builder, module, global_data_ids);
             let val = match op {
                 hir::BinOp::Add => builder.ins().iadd(lhs_val, rhs_val),
                 hir::BinOp::Sub => builder.ins().isub(lhs_val, rhs_val),
@@ -405,7 +444,7 @@ fn compile_instr<M: Module>(
             builder.def_var(var, val);
         }
         hir::Instr::UnOp { dest, op, operand } => {
-            let val = operand_to_value(operand, values, builder);
+            let val = operand_to_value(operand, values, builder, module, global_data_ids);
             match op {
                 hir::UnOp::Not => {
                     let zero = builder.ins().iconst(types::I64, 0);
@@ -417,7 +456,7 @@ fn compile_instr<M: Module>(
             }
         }
         hir::Instr::Call { dest, func: func_name, args } => {
-            let arg_vals: Vec<ClifValue> = args.iter().map(|a| operand_to_value(a, values, builder)).collect();
+            let arg_vals: Vec<ClifValue> = args.iter().map(|a| operand_to_value(a, values, builder, module, global_data_ids)).collect();
 
 
             // Check for struct constructor
@@ -667,6 +706,7 @@ fn compile_terminator<M: Module>(
     _func: &hir::Func,
     functions: &HashMap<String, cranelift_module::FuncId>,
     module: &mut M,
+    global_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> Result<()> {
     match term {
         hir::Terminator::Jump(label) => {
@@ -674,7 +714,7 @@ fn compile_terminator<M: Module>(
             builder.ins().jump(target, &[]);
         }
         hir::Terminator::Branch { cond, then_block, else_block } => {
-            let cond_val = operand_to_value(cond, values, builder);
+            let cond_val = operand_to_value(cond, values, builder, module, global_data_ids);
             let zero = builder.ins().iconst(types::I64, 0);
             let cond_bool = builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, cond_val, zero);
             let then_target = blocks[then_block];
@@ -682,7 +722,7 @@ fn compile_terminator<M: Module>(
             builder.ins().brif(cond_bool, then_target, &[], else_target, &[]);
         }
         hir::Terminator::Return(val) => {
-            let ret_val = operand_to_value(val, values, builder);
+            let ret_val = operand_to_value(val, values, builder, module, global_data_ids);
             builder.ins().return_(&[ret_val]);
         }
         hir::Terminator::Unreachable => {
@@ -693,7 +733,7 @@ fn compile_terminator<M: Module>(
             // (Cranelift TCO would require jump to entry block with block params,
             // which is complex to implement correctly.)
             let arg_vals: Vec<ClifValue> = args.iter()
-                .map(|a| operand_to_value(a, values, builder))
+                .map(|a| operand_to_value(a, values, builder, module, global_data_ids))
                 .collect();
             if let Some(&func_id) = functions.get(func_name) {
                 let func_ref = module.declare_func_in_func(func_id, builder.func);
@@ -708,17 +748,24 @@ fn compile_terminator<M: Module>(
     Ok(())
 }
 
-fn operand_to_value(
+fn operand_to_value<M: Module>(
     op: &hir::Operand,
     values: &HashMap<String, Variable>,
     builder: &mut FunctionBuilder,
+    module: &mut M,
+    global_data_ids: &HashMap<String, cranelift_module::DataId>,
 ) -> ClifValue {
     match op {
         hir::Operand::Var(v) => {
-            let var = values.get(v).copied().unwrap_or_else(|| {
+            if let Some(&var) = values.get(v) {
+                builder.use_var(var)
+            } else if let Some(&data_id) = global_data_ids.get(v) {
+                let gv = module.declare_data_in_func(data_id, builder.func);
+                let addr = builder.ins().global_value(types::I64, gv);
+                builder.ins().load(types::I64, MemFlags::new(), addr, 0)
+            } else {
                 panic!("Undefined variable in Cranelift backend: {}", v)
-            });
-            builder.use_var(var)
+            }
         }
         hir::Operand::Const(c) => builder.ins().iconst(types::I64, *c),
     }
@@ -837,6 +884,8 @@ pub fn compile_hir_to_object(
         }
     }
 
+    let global_data_ids = declare_globals(&mut module, &program.globals)?;
+
     // Define all functions
     for func in &program.funcs {
         if func.is_extern {
@@ -848,6 +897,7 @@ pub fn compile_hir_to_object(
             &program.struct_registry,
             &functions,
             &string_data_ids,
+            &global_data_ids,
         )?;
     }
 
