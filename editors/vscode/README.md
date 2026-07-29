@@ -1,22 +1,75 @@
 # Bars for VS Code
 
-Syntax highlighting and language configuration for `.brs` files.
+Syntax highlighting, language configuration, and **LSP** integration for `.brs` files.
+
+| Feature | Source |
+|---------|--------|
+| Syntax / brackets / comments | TextMate grammar + language-configuration |
+| Diagnostics (parse, types) | `bars lsp` (host binary) |
+| Hover (inferred types) | `bars lsp` |
+| Completion (keywords + top-level defs) | `bars lsp` |
+| Go to Definition | `bars lsp` |
+
+## Prerequisites
+
+1. **Host Bars binary** with the LSP subcommand:
+
+   ```bash
+   # from the Bars repo root
+   make host
+   # → target/release/bars
+   ./target/release/bars lsp   # stdio server (started by the extension)
+   ```
+
+2. **Node dependencies** (once, in this directory):
+
+   ```bash
+   cd editors/vscode
+   npm install
+   ```
 
 ## Install (development)
 
 ```bash
-# From this directory
+cd editors/vscode
+npm install
+
+# Option A — install as a local extension
 code --install-extension .
-# or symlink into ~/.vscode/extensions/bars-lang
-ln -s "$(pwd)" ~/.vscode/extensions/bars-lang-0.1.0
+
+# Option B — symlink (reload VS Code after)
+mkdir -p ~/.vscode/extensions
+ln -sfn "$(pwd)" ~/.vscode/extensions/bars-lang-0.2.0
 ```
 
-Then reload the window and open any `.brs` file.
+Then **Developer: Reload Window** and open any `.brs` file.
 
-## Features
+If `bars` is not on `PATH`, set:
 
-- Line comments: `;;`
-- Keywords: `defn`, `let`, `if`, `match`, `require`, …
-- Strings, numbers, booleans, keywords (`:as`)
+```json
+// settings.json
+{
+  "bars.lsp.path": "/absolute/path/to/bars/target/release/bars",
+  "bars.lsp.enabled": true
+}
+```
 
-For diagnostics and go-to-definition, run the host LSP: `bars lsp`.
+## Settings
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `bars.lsp.enabled` | `true` | Start the language server |
+| `bars.lsp.path` | `"bars"` | Path to the host `bars` executable |
+| `bars.lsp.trace` | `"off"` | `off` / `messages` / `verbose` LSP traffic log |
+
+Command palette: **Bars: Restart Language Server**.
+
+## Output
+
+View → Output → **Bars Language Server** for startup errors (binary not found, etc.).
+
+## Notes
+
+- The LSP is the **Rust host** (`bootstrap/`), not `bars-self`. Self-host remains the production compiler; host provides IDE services.
+- Diagnostics cover parse + type errors. Ownership is available via `./bars-self check` / `bars check`.
+- Syntax-only still works if the LSP fails to start.

@@ -4,10 +4,19 @@ Bars ships with a standard library written in Bars itself under `lib/`.
 
 ## Loading
 
+Prefer modules (self-host):
+
+```clojure
+(require "lib/core" :as core)
+(require "lib/test" :as t)
+(require "lib/https" :as https)
+```
+
+Legacy host form still works:
+
 ```clojure
 (load "lib/core.brs")
 (load "lib/math.brs")
-(load "lib/vector.brs")
 ```
 
 ## Built-in Collection Functions

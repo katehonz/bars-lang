@@ -1,19 +1,39 @@
 {
   "name": "bars-lang",
   "displayName": "Bars",
-  "description": "Language support for the Bars programming language (.brs)",
-  "version": "0.1.0",
+  "description": "Bars language support: syntax, configuration, and LSP (hover, completion, go-to-def, diagnostics)",
+  "version": "0.2.0",
   "publisher": "bars-lang",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.74.0"
   },
-  "categories": ["Programming Languages"],
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "bars",
+    "brs",
+    "lisp",
+    "clojure",
+    "lsp"
+  ],
+  "activationEvents": [
+    "onLanguage:bars"
+  ],
+  "main": "./extension.js",
   "contributes": {
     "languages": [
       {
         "id": "bars",
-        "aliases": ["Bars", "bars"],
-        "extensions": [".brs"],
+        "aliases": [
+          "Bars",
+          "bars"
+        ],
+        "extensions": [
+          ".brs"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -23,6 +43,43 @@
         "scopeName": "source.bars",
         "path": "./syntaxes/bars.tmLanguage.json"
       }
+    ],
+    "configuration": {
+      "title": "Bars",
+      "properties": {
+        "bars.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the Bars language server (`bars lsp`) for .brs files."
+        },
+        "bars.lsp.path": {
+          "type": "string",
+          "default": "bars",
+          "description": "Path to the host Bars binary that implements `bars lsp` (e.g. target/release/bars or absolute path)."
+        },
+        "bars.lsp.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication between VS Code and the Bars language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "bars.restartServer",
+        "title": "Bars: Restart Language Server"
+      }
     ]
+  },
+  "scripts": {
+    "postinstall": "node -e \"console.log('Bars VS Code extension deps ready. Open this folder or: code --install-extension .')\""
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

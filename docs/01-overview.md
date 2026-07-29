@@ -4,7 +4,7 @@ Bars is a systems programming language that combines:
 
 - **Clojure syntax** — S-expressions, homoiconicity, Lisp ergonomics
 - **Rust-like ownership** — borrow checking without lifetime annotations
-- **Native compilation** — QBE for AOT, Cranelift for JIT/REPL
+- **Native compilation** — self-hosted **LLVM IR** (+ optional C / WASM backends)
 
 ## Design Philosophy
 
@@ -28,39 +28,61 @@ Unlike Rust, Bars does not require explicit lifetime annotations. The ownership 
 - `Borrowed` — immutable borrow (shared read access)
 - `MutBorrowed` — exclusive mutable borrow
 - `Moved` — value has been transferred
+- `Copy` — trivially copyable (numbers, bools, …)
 
 ### Hybrid Memory Management
 
 | Type | Management | Example |
 |------|-----------|---------|
-| Stack | Automatic | `(let [x 42] ...)` |
-| Ownership | Manual + checked | `(def f (file/open "x.txt"))` |
-| GC | Automatic (Boehm) | `(def v [1 2 3])` |
+| Stack | Automatic | `(let [x 42] …)` |
+| Ownership | Checked moves/borrows | function args, locals |
+| GC | Automatic (Boehm) | vectors, maps, strings |
 
-The C runtime uses Boehm GC for vectors, maps, and strings.
+The C runtime uses Boehm GC for heap collections.
 
-## Compilation Pipeline
+## Two compilers
+
+| | Host (`target/release/bars`) | Self-host (`./bars-self`) |
+|--|------------------------------|---------------------------|
+| Language | Rust (`bootstrap/`) | Bars (`compiler/`) |
+| Role | Bootstrap, REPL, **LSP** | Day-to-day codegen |
+| Backends | Cranelift, QBE, optional LLVM | LLVM IR (default), C, WASM |
+
+After Stage 10 bootstrap, **new language work goes in `compiler/*.brs`**.
+
+## Compilation Pipeline (self-host)
 
 ```
 .brs source
     ↓
 Reader (lexer + parser)
     ↓
-AST
+Modules (require / Bars.toml deps)
     ↓
-Macro expansion
+Macro expansion (built-ins + user defmacro)
     ↓
-Ownership analysis
+Type inference (soft by default)
     ↓
-HIR lowering
+Ownership (light NLL)
+    ↓
+HIR lowering (HOF desugar, TCO, closures, …)
     ↓
 Backend
-    ├── QBE HIR → QBE IR → qbe assembler → cc → native binary
-    └── Cranelift HIR → JIT in-memory execution
+    ├── LLVM IR text → clang → native binary   (default)
+    ├── C source → cc                          (BARS_BACKEND_C=1)
+    └── WAT / WASM                             (BARS_BACKEND_WASM=1)
     ↓
-Runtime (C + Boehm GC)
+Runtime (C + Boehm GC; optional OpenSSL TLS object)
 ```
 
 ## File Extension
 
 Bars source files use `.brs`.
+
+## Further reading
+
+- [Language guide](03-language-guide.md)
+- [Standard library](04-stdlib.md)
+- [CLI reference](05-cli-reference.md)
+- [Installation](02-installation.md)
+- [ROADMAP](../ROADMAP.md) / [PLAN](../PLAN.md)

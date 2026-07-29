@@ -82,20 +82,56 @@ bars check --types examples/ownership.brs
 
 ### `lsp`
 
-Start the Bars Language Server Protocol (LSP) server over stdio.
+Start the Bars Language Server Protocol (LSP) server over **stdio**.
 
 ```bash
+# Host binary only (Rust bootstrap) — not bars-self
+./target/release/bars lsp
+# or, if on PATH:
 bars lsp
 ```
 
-Supported LSP features:
-- **Text document sync** — full document synchronization
-- **Diagnostics** — parse errors and type errors published automatically
-- **Hover** — show inferred type of symbols
-- **Completion** — top-level definitions + built-in keywords
-- **Go to Definition** — jump to definition of top-level names
+Supported features:
 
-Configure your editor to launch `bars lsp` as the language server for `.brs` files.
+| Capability | Behavior |
+|------------|----------|
+| **Text document sync** | Full document on open/change |
+| **Diagnostics** | Parse errors + type errors (published on edit) |
+| **Hover** | Inferred type of top-level names |
+| **Completion** | Keywords/macros + top-level `defn`/`def`/… |
+| **Go to Definition** | Jump to top-level definition in the same file |
+
+#### VS Code
+
+The in-repo extension wires this automatically:
+
+```bash
+make host
+cd editors/vscode && npm install
+code --install-extension .
+```
+
+```json
+// settings.json (optional)
+{
+  "bars.lsp.path": "/path/to/repo/target/release/bars",
+  "bars.lsp.enabled": true,
+  "bars.lsp.trace": "off"
+}
+```
+
+See [`editors/vscode/README.md`](../editors/vscode/README.md).
+
+#### Other editors
+
+Point any LSP client at:
+
+```text
+command: bars
+args:    ["lsp"]
+```
+
+for language id `bars` / file pattern `*.brs`.
 
 ## Self-hosted compiler (`bars-self`)
 

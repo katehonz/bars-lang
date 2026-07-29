@@ -16,3 +16,6 @@ bars-from-good
 *.deps
 target/bars-deps/
 examples/**/target/
+
+# VS Code extension (install with: cd editors/vscode && npm install)
+editors/vscode/node_modules/

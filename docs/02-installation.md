@@ -2,44 +2,32 @@
 
 ## Prerequisites
 
-| Dependency | Minimum Version | Purpose |
-|-----------|-----------------|---------|
-| Rust | 1.70 | Building the compiler |
-| QBE | 4.0.0 | AOT backend (SSA → assembler) |
-| `libgc-dev` | any | Boehm GC for runtime |
-| `cc` / `gcc` | any | Linking native binaries |
+| Dependency | Purpose |
+|------------|---------|
+| Rust 1.70+ | Host bootstrap compiler (`bootstrap/`) only |
+| `libgc-dev` | Boehm GC for the C runtime |
+| `clang` / `cc` | Link self-hosted LLVM / C output |
+| `make` | Build targets |
+| OpenSSL (`libssl-dev`) | Optional: HTTPS client (`make tls-runtime`) |
+| Node 18+ | Optional: VS Code extension (`editors/vscode`) |
 
-### Installing QBE
-
-```bash
-# From source
-git clone git://c9x.me/qbe.git
-cd qbe
-make
-sudo cp qbe /usr/local/bin/
-
-# Or install to ~/.local/bin
-make
-mkdir -p ~/.local/bin
-cp qbe ~/.local/bin/
-export PATH="$HOME/.local/bin:$PATH"
-```
+QBE is no longer required for day-to-day work. Production codegen is **LLVM IR → clang** via `bars-self` (or Cranelift on the host for bootstrap).
 
 ### Installing libgc-dev
 
 **Debian / Ubuntu:**
 ```bash
-sudo apt-get install libgc-dev
+sudo apt-get install libgc-dev clang libssl-dev
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install gc-devel
+sudo dnf install gc-devel clang openssl-devel
 ```
 
 **Arch:**
 ```bash
-sudo pacman -S gc
+sudo pacman -S gc clang openssl
 ```
 
 ### Installing Rust
@@ -48,46 +36,86 @@ sudo pacman -S gc
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-## Building Bars
+## Building Bars (recommended)
 
 ```bash
 git clone https://codeberg.org/bars-lang/bars-lang.git
 cd bars-lang
-cargo build --release
+
+make host          # cargo build --release → target/release/bars
+make runtime       # runtime/bars_runtime.o
+make bars-self     # host → ./bars-self (Gen1 self-hosted compiler)
+
+make self-test     # example suite (LLVM + C backend + HTTPS smoke)
+make identity      # Gen2.ll == Gen3.ll fixed point
 ```
 
-The binary will be at `target/release/bars`.
+| Binary | Role |
+|--------|------|
+| `target/release/bars` | Host (Rust): REPL, `check`, **`lsp`**, cold Gen1 bootstrap |
+| `./bars-self` | Day-to-day compiler written in Bars |
 
-You can add it to your PATH:
+Language development is **Bars-first** under `compiler/*.brs`.  
+The Rust tree is frozen for bring-up — see `bootstrap/FROZEN.md`.
+
+### Host only (no self-host)
 
 ```bash
-export PATH="$PWD/target/release:$PATH"
+cargo build --release
+./target/release/bars run examples/hello.brs
+```
+
+### PATH helpers
+
+```bash
+export PATH="$PWD/target/release:$PATH"   # bars
+# bars-self is used as ./bars-self from the repo root
 ```
 
 ## Verifying the Build
 
 ```bash
-bars run examples/hello.brs
-# Expected: Hello, World!
-
-bars run examples/math.brs
+./bars-self examples/math.brs /tmp/math && /tmp/math
 # Expected: 7\n120
 
-bars repl
+./target/release/bars repl
 bars> (+ 1 2)
 3
+
+./target/release/bars check --types examples/math.brs
 ```
 
-## Development Build
-
-For faster compile times during development:
+## Editor: VS Code + LSP
 
 ```bash
-cargo build
+make host
+cd editors/vscode && npm install
+code --install-extension .
+# or: ln -sfn "$(pwd)" ~/.vscode/extensions/bars-lang-0.2.0
 ```
 
-Run tests:
+Settings if `bars` is not on `PATH`:
+
+```json
+{
+  "bars.lsp.path": "/path/to/bars/target/release/bars",
+  "bars.lsp.enabled": true
+}
+```
+
+Details: [`editors/vscode/README.md`](../editors/vscode/README.md).
+
+## TLS runtime (HTTPS)
 
 ```bash
-cargo test
+make tls-runtime   # runtime/bars_tls.o
+# Linking is automatic when code references bars_tls_*
+```
+
+## Development
+
+```bash
+cargo build          # debug host
+cargo test           # host unit tests
+make self-test       # self-host suite
 ```

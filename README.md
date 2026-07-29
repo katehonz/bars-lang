@@ -70,6 +70,18 @@ The Rust tree under `bootstrap/` is frozen for bring-up only — see `bootstrap/
 ./target/release/bars repl
 ```
 
+### Editor (VS Code + LSP)
+
+```bash
+make host
+cd editors/vscode && npm install
+code --install-extension .
+```
+
+Set `bars.lsp.path` to `…/target/release/bars` if `bars` is not on `PATH`.  
+Features: syntax, diagnostics, hover types, completion, go-to-definition.  
+Details: [`editors/vscode/README.md`](editors/vscode/README.md) · CLI: `bars lsp`.
+
 ---
 
 ## Language Tour
@@ -301,65 +313,51 @@ $ bars check --types examples/hello.brs
 
 See [`lib/`](lib/) and [`docs/04-stdlib.md`](docs/04-stdlib.md).
 
-- `lib/core.brs` — numeric helpers, vector helpers, range, `or`, `and`
-- `lib/math.brs` — `square`, `cube`, `gcd`, `lcm`, `factorial`, `fib`, `sum`, `product`
-- `lib/vector.brs` — `last`, `rest`, `take`, `drop`, `reverse`, `contains?`, `index-of`
-- `lib/string.brs` — `str-empty?`, `str-count`
-- `lib/map.brs` — `map-empty?`, `map-has?`
-- `lib/adt.brs` — `Option`, `Result` типове с helper функции
-- `lib/test.brs` — `assert` макрос за тестове
-- `lib/crypto.brs` — `sha256` (hex digest)
+- `lib/core.brs` — numeric helpers, sequence ops, HOF-friendly helpers
+- `lib/math.brs` — `square`, `cube`, `gcd`, `lcm`, `factorial`, `fib`, …
+- `lib/vector.brs` / `lib/map.brs` / `lib/string.brs` — collection helpers
+- `lib/test.brs` — `suite` / `is` / `is-eq` / `deftest` / `finish`
+- `lib/net.brs` · `lib/http.brs` · `lib/http_server.brs` — TCP + HTTP/1.1
+- `lib/tls.brs` · `lib/https.brs` — OpenSSL client (opt-in link)
+- `lib/json.brs` · `lib/regex.brs` · `lib/io.brs` · `lib/crypto.brs` (`sha256`)
+- `lib/kw.brs` · `lib/persist.brs` · `lib/async.brs` · `lib/args.brs`
 
-### Built-in Runtime Functions
-
-| Функция | Описание |
-|---------|----------|
-| `sqrt n` | Корен квадратен |
-| `pow base exp` | Степенуване |
-| `abs n` | Абсолютна стойност |
-| `str-count s` | Дължина на низ |
-| `str-concat a b` | Конкатенация на низове |
-| `slurp path` | Прочита файл като низ |
-| `spit path content` | Записва низ във файл |
+Built-ins also include `map`/`filter`/`reduce`, `sort`/`sort-by`, `get-in`/`assoc-in`,
+string ops (`str-concat`, `str-replace`, `str-upper`, …), and more — see the stdlib doc.
 
 ---
 
 ## Architecture
 
 ```
-.brs → Reader → AST → Macro → Ownership → Types → HIR → Codegen → Native
-                                                                    ├── Cranelift → cc
-                                                                    └── LLVM IR → llc → cc
+.brs → Reader → Modules → Macros → Types → Ownership → HIR → Backend → Binary
+                                                         ├── LLVM IR → clang  (bars-self default)
+                                                         ├── C → cc
+                                                         └── WASM / host Cranelift
 ```
+
+Self-host lives in `compiler/`; Rust host in `bootstrap/` (LSP, REPL, Gen1 seed).
 
 ---
 
 ## Development Status
 
-See [ROADMAP.md](ROADMAP.md) for the full plan.
+See [ROADMAP.md](ROADMAP.md) / [PLAN.md](PLAN.md). Phases **0–17** are complete
+(self-host, stdlib seq/HOF, TLS/HTTPS, host Gen1 bootstrap restore).
 
 | Feature | Status |
 |---------|--------|
-| Reader (Lexer + Parser) | ✅ |
-| AST → HIR → LLVM IR | ✅ |
-| Functions & recursion | ✅ |
-| Ownership checker | ✅ |
-| Runtime + Boehm GC | ✅ |
-| REPL + Cranelift JIT | ✅ |
-| Built-in macros (`when`, `unless`, `cond`, `->`, `->>`) | ✅ |
-| `loop` / `recur` | ✅ |
-| `load` system | ✅ |
-| Stdlib | ✅ |
-| LLVM backend | ✅ |
-| User-defined macros (`defmacro`) | ✅ |
-| Type inference (`check --types`) | ✅ |
-| Lambda functions (`fn [x] body`) | ✅ |
-| Nested collections | ✅ |
-| Sets | ✅ |
-| Cranelift AOT | ✅ |
-| Generics (implicit polymorphism) | ✅ |
-| ADT (`deftype`, exhaustiveness check) | ✅ |
-| FFI (`extern` C functions) | ✅ |
+| Self-hosted compiler (`bars-self`, Gen1→Gen3 identity) | ✅ |
+| LLVM / C / WASM backends | ✅ |
+| Ownership + HM type inference | ✅ |
+| Closures, apply, HOF desugar, auto TCO | ✅ |
+| User `defmacro` + expand-time interpreter | ✅ |
+| Sequence / map API (Clojure-style) | ✅ |
+| TCP, HTTP, HTTPS (OpenSSL client) | ✅ |
+| Package path/git/registry | ✅ |
+| Test framework (`lib/test`) | ✅ |
+| LSP (`bars lsp`) + VS Code extension | ✅ |
+| REPL (host Cranelift) | ✅ |
 
 ---
 

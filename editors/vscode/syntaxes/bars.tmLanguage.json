@@ -6,6 +6,7 @@
     { "include": "#comment" },
     { "include": "#string" },
     { "include": "#keyword" },
+    { "include": "#macro" },
     { "include": "#special" },
     { "include": "#number" },
     { "include": "#bool-nil" },
@@ -30,7 +31,11 @@
     },
     "keyword": {
       "name": "keyword.control.bars",
-      "match": "\\b(defn|defmacro|def|let|if|do|loop|recur|fn|match|when|unless|cond|require|extern|defstruct|deftype|load)\\b"
+      "match": "(?x)\\b(\n        defn|defmacro|def|defconst|defstruct|deftype|deftrait|impl|\n        let|if|if-let|if-not|do|loop|recur|fn|match|\n        when|when-let|when-not|unless|cond|case|\n        require|extern|load|\n        doseq|for|dotimes|while|\n        and|or|not\n      )\\b"
+    },
+    "macro": {
+      "name": "support.function.macro.bars",
+      "match": "\\b(partial|complement|constantly|juxt|comp|fnil|some|every\\?|not-any\\?|not-every\\?|identity|apply)\\b|->>|->"
     },
     "special": {
       "name": "keyword.operator.bars",
@@ -38,7 +43,7 @@
     },
     "number": {
       "name": "constant.numeric.bars",
-      "match": "-?\\b\\d+\\b"
+      "match": "-?\\b\\d+(\\.\\d+)?\\b"
     },
     "bool-nil": {
       "name": "constant.language.bars",
