@@ -91,6 +91,25 @@ EXAMPLES=(
   examples/str_replace_demo.brs
   examples/map_ops_demo.brs
   examples/set_demo.brs
+  examples/iflet_demo.brs
+  examples/apply_demo.brs
+  examples/partial_demo.brs
+  examples/for_demo.brs
+  examples/for_multi_demo.brs
+  examples/dotimes_demo.brs
+  examples/while_demo.brs
+  examples/case_demo.brs
+  examples/case_group_demo.brs
+  examples/ifnot_demo.brs
+  examples/identity_demo.brs
+  examples/juxt_demo.brs
+  examples/comp_demo.brs
+  examples/fnil_demo.brs
+  examples/some_every_demo.brs
+  examples/not_any_demo.brs
+  examples/take_drop_demo.brs
+  examples/take_while_demo.brs
+  examples/range_demo.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -979,6 +998,25 @@ C_EXAMPLES=(
   examples/str_replace_demo.brs
   examples/map_ops_demo.brs
   examples/set_demo.brs
+  examples/iflet_demo.brs
+  examples/apply_demo.brs
+  examples/partial_demo.brs
+  examples/for_demo.brs
+  examples/for_multi_demo.brs
+  examples/dotimes_demo.brs
+  examples/while_demo.brs
+  examples/case_demo.brs
+  examples/case_group_demo.brs
+  examples/ifnot_demo.brs
+  examples/identity_demo.brs
+  examples/juxt_demo.brs
+  examples/comp_demo.brs
+  examples/fnil_demo.brs
+  examples/some_every_demo.brs
+  examples/not_any_demo.brs
+  examples/take_drop_demo.brs
+  examples/take_while_demo.brs
+  examples/range_demo.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

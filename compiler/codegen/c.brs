@@ -379,7 +379,7 @@
               (do (lines-push o1
                     (str-concat "  " (str-concat dest
                       (str-concat " = ((" (str-concat a (str-concat " " (str-concat op
-                        (str-concat " " (str-concat b (str-concat ") ? " (str-concat a (str-concat " : " (str-concat b ";")))))))))))))
+                        (str-concat " " (str-concat b (str-concat ") ? " (str-concat a (str-concat " : " (str-concat b ");")))))))))))))
                   [o1 e1]))
           (if (str-eq? fname "println")
             (let [arg (if (<= n 3) "0" (pair-op words 3))
@@ -609,6 +609,23 @@
                 [body env]))
           [body env])))))
 
+;; Forward declaration for a HIR `func` line: `static int64_t name(int64_t, …);`
+;; Lambdas are lifted before user functions, so bodies may call fns defined
+;; later in the file — without prototypes C99 implicit decls become errors.
+(defn func-proto [line]
+  (let [name (map-user-fname (extract-func-name line))
+        params (split-words (extract-params-str line))
+        nparams (count params)]
+    (if (= nparams 0)
+      (str-concat "static int64_t " (str-concat name "(void);"))
+      (let [plist (loop [i 0 acc ""]
+                    (if (>= i nparams) acc
+                      (if (= i 0)
+                        (recur (+ i 1) "int64_t")
+                        (recur (+ i 1) (str-concat acc ", int64_t")))))]
+        (str-concat "static int64_t " (str-concat name
+          (str-concat "(" (str-concat plist ");"))))))))
+
 (defn append-vec [dst src]
   (let [n (count src)]
     (loop [i 0]
@@ -620,7 +637,7 @@
   (let [n (count hir-lines)
         globs (scan-globals hir-lines)
         marks (gmarks-of globs)]
-    (loop [i 0 body (vector) in-func 0 env (vector) all (vector)]
+    (loop [i 0 body (vector) in-func 0 env (vector) all (vector) protos (vector)]
       (if (>= i n)
         (let [flushed (if (= in-func 1)
                         (do (lines-push body "}")
@@ -631,6 +648,8 @@
               wrap (c-main-wrapper)]
           (do (emit-gstorage out globs)
               (if (> (count globs) 0) (lines-push out "") 0)
+              (append-vec out protos)
+              (if (> (count protos) 0) (lines-push out "") 0)
               (append-vec out flushed)
               (append-vec out wrap)
               out))
@@ -642,9 +661,10 @@
                                 all)
                             all)
                   res (process-line (vector) line (append-vec (vector) marks))]
-              (recur (+ i 1) (get res 0) 1 (get res 1) flushed))
+              (do (push protos (func-proto line))
+                  (recur (+ i 1) (get res 0) 1 (get res 1) flushed protos)))
             (let [res (process-line body line env)]
-              (recur (+ i 1) (get res 0) in-func (get res 1) all))))))))
+              (recur (+ i 1) (get res 0) in-func (get res 1) all protos))))))))
 
 (defn join-lines [lines]
   (let [n (count lines)]

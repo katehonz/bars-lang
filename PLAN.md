@@ -415,6 +415,8 @@ bars/
 | 22 | `join-path`/`dirname` дублирани в `pkg.brs` и `build.brs` | `build.brs` → `pkg/*` | ✅ |
 | 23 | Няма unit тестове за parser, type checker, ownership | bootstrap tests expanded | ✅ |
 | 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `GC_base` guard | ✅ |
+| 25 | C backend: няма forward declarations — lambda вика fn дефинирана по-късно → implicit decl error | `compiler/codegen/c.brs` (`func-proto` в `hir-to-c`) | ✅ |
+| 26 | C backend: `min`/`max` ternary с липсваща затваряща скоба | `compiler/codegen/c.brs` | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -789,4 +791,4 @@ bars/
 
 ---
 
-*План версия: 6.46 | Актуализиран: 2026-07-29*
+*План версия: 6.47 | Актуализиран: 2026-07-29*
