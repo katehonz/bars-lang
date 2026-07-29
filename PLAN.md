@@ -442,7 +442,7 @@ bars/
 | A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
 | B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
 | C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
-| D | Types | Soft string/void warnings; soft-by-default | шум, но не блокира |
+| D | Types | ~~Soft string/void warnings~~ → **17.7 ✅** (str-схеми + println accept-any: 294→155) | оставащ шум: shared mono vars в generic plumbing (instantiate/generalize — 17.8 кандидат) |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
 | F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
 | G | Tests | До 17.1 — само soft `assert` macro | ✅ поправено |
@@ -532,6 +532,21 @@ bars/
   - LLVM declare + map, C backend map, types env (`slice3`), ownership copy-ops
   - Example `str_replace_demo.brs`; self-test 88/88
 
+### 17.7 Type env precision (по-малко soft-warning шум) ✅
+
+- [x] String builtins с реални str-схеми в `compiler/types.brs`
+  - `str-concat`/`str-trim`/`str-replace`/`str-slice`/`str-substring` → `…->str`
+  - `str-starts-with?`/`str-ends-with?` → `bool`; `str-index-of`/`str-get`/`str-count` → `i64`
+  - `slurp`/`getenv`/`sha256` → `str->str`; `code-char`/`str-from-i64`/`args-get` → `i64->str`
+  - Добавени липсващи: `str-count`/`str-trim`/`str-substring`/`str-split`/`str-join`/`char-code`
+  - tcp_* остават i64-схеми (idiom `string-or-0` при recv — иначе false positives)
+- [x] `println`/`print` accept-any — без constraint върху аргумента
+  (`print-any-fn?` special case в `infer_call`; runtime печата всяка стойност)
+- [x] Резултат: soft type warnings в examples suite **294 → 155** (−47%);
+  test/json/string/crypto demo-та вече са чисти
+- [ ] Оставащо: shared mono vars в generic plumbing (http/args) — истинското
+  решение е generalize на defn схеми + instantiate при lookup (17.8 кандидат)
+
 ### 17.3 Ecosystem
 
 - [x] HTTP server helper (`lib/http_server`) — 17.4
@@ -543,4 +558,4 @@ bars/
 
 ---
 
-*План версия: 6.17 | Актуализиран: 2026-07-29*
+*План версия: 6.18 | Актуализиран: 2026-07-29*

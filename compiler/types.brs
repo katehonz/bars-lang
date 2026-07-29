@@ -112,6 +112,12 @@
   (if (!= (count a) (count b)) false
     (= (str-starts-with? a b) 1)))
 
+;; println/print accept any value (runtime prints i64/str/vector/map/…).
+;; Their args get no type constraint — kills soft-warning noise (17.7).
+(defn print-any-fn? [name]
+  (if (str-eq? name "println") true
+    (str-eq? name "print")))
+
 ;; Not-found = empty vector (count 0). Found = scheme [vars ty].
 (defn env_lookup [env name]
   (loop [i 0]
@@ -387,6 +393,30 @@
   (let [v (vector)]
     (do (push v (T_I64)) (push v (T_I64)) (push v (T_I64)) v)))
 
+(defn str_vec []
+  (let [v (vector)]
+    (do (push v (T_Str)) v)))
+
+(defn str_str []
+  (let [v (vector)]
+    (do (push v (T_Str)) (push v (T_Str)) v)))
+
+(defn str_i64 []
+  (let [v (vector)]
+    (do (push v (T_Str)) (push v (T_I64)) v)))
+
+(defn i64_str []
+  (let [v (vector)]
+    (do (push v (T_I64)) (push v (T_Str)) v)))
+
+(defn str_i64-i64 []
+  (let [v (vector)]
+    (do (push v (T_Str)) (push v (T_I64)) (push v (T_I64)) v)))
+
+(defn str_str_str []
+  (let [v (vector)]
+    (do (push v (T_Str)) (push v (T_Str)) (push v (T_Str)) v)))
+
 (defn bool_vec []
   (let [v (vector)]
     (do (push v (T_Bool)) v)))
@@ -401,7 +431,17 @@
         bin   (mono_scheme (T_Fun (i64_i64) (T_I64)))
         i64-t (mono_scheme (T_I64))
         void-fn (mono_scheme (T_Fun (empty_vec) (T_Void)))
-        slice3 (mono_scheme (T_Fun (i64_i64-i64) (T_I64)))
+        ;; string-typed schemes (17.7 — less soft-warning noise)
+        s2i   (mono_scheme (T_Fun (str_vec) (T_I64)))
+        s2s   (mono_scheme (T_Fun (str_vec) (T_Str)))
+        ss2s  (mono_scheme (T_Fun (str_str) (T_Str)))
+        ss2i  (mono_scheme (T_Fun (str_str) (T_I64)))
+        ss2b  (mono_scheme (T_Fun (str_str) (T_Bool)))
+        si2i  (mono_scheme (T_Fun (str_i64) (T_I64)))
+        is2s  (mono_scheme (T_Fun (i64_str) (T_Str)))
+        i2s   (mono_scheme (T_Fun (i64_vec) (T_Str)))
+        sii2s (mono_scheme (T_Fun (str_i64-i64) (T_Str)))
+        sss2s (mono_scheme (T_Fun (str_str_str) (T_Str)))
         env (vector)]
     (do (env_insert env "+" arith)
         (env_insert env "-" arith)
@@ -429,48 +469,54 @@
         (env_insert env "not" (mono_scheme (T_Fun (bool_vec) (T_Bool))))
         (env_insert env "println" unary)
         (env_insert env "print" unary)
-        (env_insert env "print-str" unary)
-        (env_insert env "str-concat" bin)
-        (env_insert env "str-get" bin)
-        (env_insert env "str-slice" slice3)
-        (env_insert env "str-index-of" bin)
-        (env_insert env "str-replace" slice3)
-        (env_insert env "str-starts-with?" bin)
-        (env_insert env "str-ends-with?" bin)
+        (env_insert env "print-str" s2i)
+        (env_insert env "str-concat" ss2s)
+        (env_insert env "str-count" s2i)
+        (env_insert env "str-get" si2i)
+        (env_insert env "str-slice" sii2s)
+        (env_insert env "str-substring" sii2s)
+        (env_insert env "str-trim" s2s)
+        (env_insert env "str-index-of" ss2i)
+        (env_insert env "str-replace" sss2s)
+        (env_insert env "str-starts-with?" ss2b)
+        (env_insert env "str-ends-with?" ss2b)
+        (env_insert env "str-split" ss2i)
+        (env_insert env "str-join" is2s)
+        (env_insert env "char-code" s2i)
         (env_insert env "count" unary)
         (env_insert env "first" unary)
         (env_insert env "last" unary)
         (env_insert env "get" bin)
         (env_insert env "push" bin)
         (env_insert env "vector" (mono_scheme (T_Fun (empty_vec) (T_I64))))
-        (env_insert env "slurp" unary)
-        (env_insert env "spit" bin)
+        (env_insert env "slurp" s2s)
+        (env_insert env "spit" ss2i)
         (env_insert env "exit" void-fn)
-        (env_insert env "bars_system" unary)
-        (env_insert env "bars_env_is_set" unary)
-        (env_insert env "bars_getenv" unary)
-        (env_insert env "bars_file_mtime" unary)
+        (env_insert env "bars_system" s2i)
+        (env_insert env "bars_env_is_set" s2i)
+        (env_insert env "bars_getenv" s2s)
+        (env_insert env "bars_file_mtime" s2i)
         (env_insert env "bars_sleep_ms" unary)
-        (env_insert env "bars_file_exists" unary)
-        (env_insert env "bars_file_delete" unary)
-        (env_insert env "bars_file_append" bin)
+        (env_insert env "bars_file_exists" s2i)
+        (env_insert env "bars_file_delete" s2i)
+        (env_insert env "bars_file_append" ss2i)
         (env_insert env "bars_time_unix" (mono_scheme (T_Fun (empty_vec) (T_I64))))
         (env_insert env "bars_time_ms" (mono_scheme (T_Fun (empty_vec) (T_I64))))
         (env_insert env "bars_srand" unary)
         (env_insert env "bars_rand" (mono_scheme (T_Fun (empty_vec) (T_I64))))
-        (env_insert env "bars_re_is_match" bin)
-        (env_insert env "bars_re_find" bin)
+        (env_insert env "bars_re_is_match" ss2i)
+        (env_insert env "bars_re_find" ss2i)
         (env_insert env "bars_tcp_connect" bin)
         (env_insert env "bars_tcp_listen" unary)
         (env_insert env "bars_tcp_accept" unary)
         (env_insert env "bars_tcp_send" bin)
         (env_insert env "bars_tcp_recv" bin)
         (env_insert env "bars_tcp_close" unary)
-        (env_insert env "bars_sha256" unary)
-        (env_insert env "str-from-i64" unary)
-        (env_insert env "code-char" unary)
+        (env_insert env "bars_sha256" s2s)
+        (env_insert env "str-from-i64" i2s)
+        (env_insert env "code-char" i2s)
         (env_insert env "args-count" (mono_scheme (T_Fun (empty_vec) (T_I64))))
-        (env_insert env "args-get" unary)
+        (env_insert env "args-get" i2s)
         (env_insert env "nil" i64-t)
         (env_insert env "true" (mono_scheme (T_Bool)))
         (env_insert env "false" (mono_scheme (T_Bool)))
@@ -759,6 +805,8 @@
     (if (if (is_atom? head) (= (ast_tag head) 1) false)
       (let [name (ast_val head)
             found (env_lookup env name)]
+        (if (print-any-fn? name)
+          (infer_args env ctx expr 1 (T_I64))
         (if (> (count found) 0)
           (let [fn-ty (get found 1)]
             (if (is_fun? fn-ty)
@@ -775,7 +823,7 @@
                               (recur (+ i 1))))))
                     (ret2 ret-ty ctx)))
               (infer_args env ctx expr 1 (fresh_var ctx))))
-          (infer_args env ctx expr 1 (fresh_var ctx))))
+          (infer_args env ctx expr 1 (fresh_var ctx)))))
       (do (infer_expr env ctx head)
           (infer_args env ctx expr 1 (fresh_var ctx))))))
 ;; ====== Solving Constraints ======

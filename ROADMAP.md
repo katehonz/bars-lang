@@ -221,8 +221,9 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.4** `lib/http_server` — parse/route helpers, serve-once (no TLS)
 - [x] **17.5** Real top-level `def` globals (LLVM + C backend)
 - [x] **17.6** Auto TCO (self-tail-call → `recur`) + `str-replace` runtime/stdlib
-- [ ] **17.7** TLS / HTTPS (deferred)
+- [x] **17.7** Type env precision — str-схеми + println accept-any (warnings 294→155)
+- [ ] **17.8** TLS / HTTPS (deferred)
 
 ---
 
-*Версия: 6.8 | Актуализирано: 2026-07-29*
+*Версия: 6.9 | Актуализирано: 2026-07-29*
