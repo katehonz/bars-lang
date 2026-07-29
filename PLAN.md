@@ -769,6 +769,12 @@ bars/
 - [x] Macros → `(if (some …) 0 1)` / `(if (every? …) 0 1)`
 - [x] Example `not_any_demo.brs` → 1 0, 0 1 1
 
+### 17.37 `take` / `drop` ✅
+
+- [x] HIR desugar to loop building a new vector
+- [x] `(take n coll)` / `(drop n coll)` with `min` clamping
+- [x] Example `take_drop_demo.brs` → 3 1 3, 3 3, 5 0
+
 ---
 
-*План версия: 6.43 | Актуализиран: 2026-07-29*
+*План версия: 6.44 | Актуализиран: 2026-07-29*

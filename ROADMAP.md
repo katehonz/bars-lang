@@ -251,7 +251,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.34** `fnil` nil/0 default-arg wrapper
 - [x] **17.35** `some` / `every?` HOF predicates
 - [x] **17.36** `not-any?` / `not-every?` macros
+- [x] **17.37** `take` / `drop` vector slicing
 
 ---
 
-*Версия: 7.23 | Актуализирано: 2026-07-29*
+*Версия: 7.24 | Актуализирано: 2026-07-29*

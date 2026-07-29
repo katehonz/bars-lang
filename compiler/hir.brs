@@ -139,8 +139,10 @@
                                                       (if (str-eq? name "reduce") true
                                                         (if (str-eq? name "some") true
                                                           (if (str-eq? name "every?") true
-                                                            (if (str-eq? name "apply") true
-                                                              (if (str-eq? name "identity") true
+                                                            (if (str-eq? name "take") true
+                                                              (if (str-eq? name "drop") true
+                                                                (if (str-eq? name "apply") true
+                                                                  (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
                                                             (if (str-eq? name "true") true
                                                               (if (str-eq? name "false") true
@@ -167,7 +169,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -977,6 +979,46 @@
         body (hir-if cond (hir-num 1) step)]
     (hir-loop binds body)))
 
+;; (take n coll) → first min(n, count) elements
+(defn desugar-take [n-ast vec-ast uid]
+  (let [v (hir-sym (str-concat "__tkv" (int-str uid)))
+        nn (hir-sym (str-concat "__tkn" (int-str uid)))
+        m (hir-sym (str-concat "__tkm" (int-str uid)))
+        i (hir-sym (str-concat "__tki" (int-str uid)))
+        r (hir-sym (str-concat "__tkr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 nn n-ast
+                 m (hir-call "min" (vector nn (hir-call "count" (vector v))))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        cond (hir-call ">=" (vector i m))
+        pushed (hir-call "push" (vector r (hir-call "get" (vector v i))))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        step (hir-let (hir-vec (vector r pushed)) rec)
+        body (hir-if cond r step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (drop n coll) → elements from index n onward
+(defn desugar-drop [n-ast vec-ast uid]
+  (let [v (hir-sym (str-concat "__dpv" (int-str uid)))
+        nn (hir-sym (str-concat "__dpn" (int-str uid)))
+        c (hir-sym (str-concat "__dpc" (int-str uid)))
+        i (hir-sym (str-concat "__dpi" (int-str uid)))
+        r (hir-sym (str-concat "__dpr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 nn n-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-call "min" (vector nn c)) r r))
+        cond (hir-call ">=" (vector i c))
+        pushed (hir-call "push" (vector r (hir-call "get" (vector v i))))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        step (hir-let (hir-vec (vector r pushed)) rec)
+        body (hir-if cond r step)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1060,6 +1102,10 @@
       (lower-expr (desugar-some (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "every?") (= n 3) false)
       (lower-expr (desugar-every (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "take") (= n 3) false)
+      (lower-expr (desugar-take (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "drop") (= n 3) false)
+      (lower-expr (desugar-drop (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1114,7 +1160,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
