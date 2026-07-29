@@ -108,13 +108,17 @@ int64_t bars_count_any_i64(int64_t val);
 /* 1 if val is a Bars vector (magic), else 0 */
 int64_t bars_is_vector_i64(int64_t val);
 
-/* First-class call (17.18): f is bare fn ptr or closure vector [fnptr, env].
-   n = number of user args (0..4). Capturing closures pass env as first param. */
+/* First-class call (17.18–17.20): f is bare fn ptr or closure [fnptr, env].
+   n = number of user args (0..8). Capturing closures pass env as first param. */
 int64_t bars_icall0(int64_t f);
 int64_t bars_icall1(int64_t f, int64_t a0);
 int64_t bars_icall2(int64_t f, int64_t a0, int64_t a1);
 int64_t bars_icall3(int64_t f, int64_t a0, int64_t a1, int64_t a2);
 int64_t bars_icall4(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3);
+int64_t bars_icall5(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4);
+int64_t bars_icall6(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5);
+int64_t bars_icall7(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6);
+int64_t bars_icall8(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7);
 
 /* Persistent / COW vector ops (Phase 17.14) — originals never mutated */
 int64_t bars_vector_clone_i64(bars_vector_t* vec);

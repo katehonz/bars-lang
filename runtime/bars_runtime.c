@@ -292,6 +292,38 @@ int64_t bars_icall4(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3) {
     return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3);
 }
 
+int64_t bars_icall5(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2, a3, a4);
+    return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3, a4);
+}
+
+int64_t bars_icall6(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2, a3, a4, a5);
+    return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3, a4, a5);
+}
+
+int64_t bars_icall7(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2, a3, a4, a5, a6);
+    return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3, a4, a5, a6);
+}
+
+int64_t bars_icall8(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2, a3, a4, a5, a6, a7);
+    return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3, a4, a5, a6, a7);
+}
+
 /* Simple i64 vector helpers */
 
 bars_vector_t* bars_vector_new_i64(void) {

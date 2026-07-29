@@ -665,6 +665,16 @@ bars/
 - [x] Expanded builtin/runtime name allowlist (str-*/map-*/bars_*/args-*)
 - [x] Example `nested_closure.brs` → 13
 
+### 17.20 Higher-arity icall + locals tracking ✅
+
+- [x] Runtime `bars_icall5`…`bars_icall8` (closure unpack same as 0–4)
+- [x] LLVM/C backends declare + name-map icall5–8
+- [x] HIR: cap local icall at 8 args; hard error if local call > 8
+- [x] `lower-let-pattern` tracks destructured names as locals (icall/funcref/undef)
+- [x] Match arm binds (`hir-locals-add` on pattern fields / binding pats)
+- [x] Soft undef still emits the name (no more silent `const 0` rewrite)
+- [x] Example `icall_arity.brs` → 21, 150
+
 ---
 
-*План версия: 6.26 | Актуализиран: 2026-07-29*
+*План версия: 6.27 | Актуализиран: 2026-07-29*

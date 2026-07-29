@@ -450,9 +450,10 @@ through a local:
 ```
 
 Closed lambdas are lifted to top-level functions. Capturing lambdas pack free
-locals into an env vector; the runtime `bars_icallN` passes env as the first
-argument. Nested `fn` forms are lifted **bottom-up**, so an inner lambda can
-capture both outer free locals and the outer lambda’s parameters.
+locals into an env vector; the runtime `bars_icall0`…`bars_icall8` passes env
+as the first argument when the callee is a local (higher arities error). Nested
+`fn` forms are lifted **bottom-up**, so an inner lambda can capture both outer
+free locals and the outer lambda’s parameters.
 
 ```clojure
 (let [a 1]

@@ -234,6 +234,7 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.17** First-class closed fns (lambda lift + funcref/icall)
 - [x] **17.18** Capturing closures (env vector + bars_icallN)
 - [x] **17.19** Nested closures + HIR undefined-name diagnostics
+- [x] **17.20** Higher-arity icall (5–8) + let-pattern locals tracking
 
 ---
 

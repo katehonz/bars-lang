@@ -63,9 +63,8 @@
   (if (= (count __hir_undef_err) 0) 0 (get __hir_undef_err 0)))
 
 (defn hir-report-undef [kind name]
-  ;; Skip 1-char names: often temps/params missed by destructure tracking;
-  ;; real bugs are multi-char (unknown-var, no-such-fn).
-  (if (< (count name) 2) 0
+  ;; Empty names are not useful; 1-char is fine now that let-patterns track locals.
+  (if (if (= (count name) 0) true false) 0
     (do (println (str-concat "error: hir: undefined " (str-concat kind
                 (str-concat " `" (str-concat name "`")))))
         (hir-undef-bump)
@@ -458,8 +457,10 @@
                 (mk-ret name t l)
                 (if (is-builtin-name? name)
                   (mk-ret name t l)
+                  ;; Soft: still emit the name so match/let binds not yet
+                  ;; tracked (and LLVM pre-alloca) keep working.
                   (do (hir-report-undef "name" name)
-                      (mk-ret "0" t l)))))))
+                      (mk-ret name t l)))))))
         (if (= tag 2)
           (let [dest (fresh-temp t)]
             (do (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " (val-of ast)))))
@@ -1031,12 +1032,18 @@
                 known (if (hir-is-local? fname) true
                         (if (hir-is-fn? fname) true
                           (if (is-builtin-name? fname) true
-                            (if (hir-is-global? fname) true false))))]
+                            (if (hir-is-global? fname) true false))))
+                ;; Runtime has bars_icall0…bars_icall8 (17.20)
+                ncall (if (> nargs 8) 8 nargs)]
             (do (if known 0 (hir-report-undef "function" fname))
+                (if (if (hir-is-local? fname) (> nargs 8) false)
+                  (println (str-concat "error: hir: icall arity > 8 not supported (`"
+                    (str-concat fname "`)")))
+                  0)
                 (if (hir-is-local? fname)
                   ;; bars_icallN(f, a0…) — runtime unpacks closure vs bare ptr
                   (put lines (str-concat "    call " (str-concat dest
-                        (str-concat " bars_icall" (str-concat (int-str nargs)
+                        (str-concat " bars_icall" (str-concat (int-str ncall)
                           (str-concat " var " (str-concat fname
                             (if (= (count astr) 0) "" (str-concat " " astr)))))))))
                   (put lines (str-concat "    call " (str-concat dest
@@ -1102,7 +1109,8 @@
         (let [name (val-of pat)]
           (if (str-eq? name "_")
             [t l]
-            (do (put lines (str-concat "    assign " (str-concat name
+            (do (hir-locals-add name)
+                (put lines (str-concat "    assign " (str-concat name
                   (str-concat " " (op-fmt val-op)))))
                 [t l])))
         [t l]))
@@ -1311,6 +1319,7 @@
         (let [fname (get fields fi)
               gtmp (fresh-temp tcur)
               t5 (+ tcur 1)
+              _ (hir-locals-add fname)
               _ (put lines (str-concat "    call " (str-concat gtmp
                     (str-concat " get " (str-concat (op-fmt val)
                       (str-concat " const " (int-str (+ fi 1))))))))
@@ -1370,7 +1379,8 @@
                   _ (put lines (str-concat "  " (str-concat skip-lbl ":")))]
               (recur (+ i 1) t4 l3))
             (if (is-binding-pat? sub-pat)
-              (do (put lines (str-concat "    assign " (str-concat (val-of sub-pat) (str-concat " var " gtmp))))
+              (do (hir-locals-add (val-of sub-pat))
+                  (put lines (str-concat "    assign " (str-concat (val-of sub-pat) (str-concat " var " gtmp))))
                   (recur (+ i 1) t2 lcur))
               (recur (+ i 1) t2 lcur))))))))
 
@@ -1407,7 +1417,8 @@
                     (str-concat " " (str-concat (op-fmt val)
                       (str-concat " " (int-str offset)))))))
               t3 (if (is-binding-pat? sub-pat)
-                   (do (put lines (str-concat "    assign " (str-concat (val-of sub-pat) (str-concat " var " gtmp))))
+                   (do (hir-locals-add (val-of sub-pat))
+                       (put lines (str-concat "    assign " (str-concat (val-of sub-pat) (str-concat " var " gtmp))))
                        t2)
                    t2)]
           (recur (+ i 1) t3))))))
@@ -1420,7 +1431,8 @@
     (let [tl (match-arm-body body result join t l lines loops adt structs)]
       [(get tl 0) (get tl 1) 1])
   (if (is-binding-pat? pat)
-    (do (put lines (str-concat "    assign " (str-concat (val-of pat) (str-concat " " (op-fmt val)))))
+    (do (hir-locals-add (val-of pat))
+        (put lines (str-concat "    assign " (str-concat (val-of pat) (str-concat " " (op-fmt val)))))
         (let [tl (match-arm-body body result join t l lines loops adt structs)]
           [(get tl 0) (get tl 1) 1]))
   (if (is-const-pat? pat)
@@ -1522,7 +1534,8 @@
         binds (collect-match-binds ast)
         _ (loop [bi 0]
             (if (>= bi (count binds)) 0
-              (do (put lines (str-concat "    assign " (str-concat (get binds bi) " const 0")))
+              (do (hir-locals-add (get binds bi))
+                  (put lines (str-concat "    assign " (str-concat (get binds bi) " const 0")))
                   (recur (+ bi 1)))))]
     (loop [i 2 tcur t2 lcur l2]
       (if (>= i n)
