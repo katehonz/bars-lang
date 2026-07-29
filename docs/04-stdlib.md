@@ -130,6 +130,9 @@ Self-host HIR desugars (also in the C backend):
 | `partition` | `(partition n coll)` | Vector of n-sized chunks (tail dropped) |
 | `frequencies` | `(frequencies coll)` | Map element → occurrence count |
 | `sort` | `(sort coll)` | Fresh vector, ascending (input not mutated) |
+| `group-by` | `(group-by f coll)` | Map `(f x)` → vector of matching elems |
+| `zipmap` | `(zipmap ks vs)` | Map from keys to values (stops at shorter) |
+| `select-keys` | `(select-keys m ks)` | Sub-map with only the present keys |
 | `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 
 ### Boolean Helpers

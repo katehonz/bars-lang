@@ -257,7 +257,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.40** `reverse` / `concat` / `distinct` sequence ops
 - [x] **17.41** `interpose` / `partition` / `frequencies`
 - [x] **17.42** `sort` (insertion на clone) + mutating `vector-set`
+- [x] **17.43** `group-by` / `zipmap` / `select-keys`
 
 ---
 
-*Версия: 7.29 | Актуализирано: 2026-07-29*
+*Версия: 7.30 | Актуализирано: 2026-07-29*

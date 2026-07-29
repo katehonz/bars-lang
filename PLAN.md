@@ -811,6 +811,13 @@ bars/
 - [x] `(sort coll)` → insertion sort on a clone (input not mutated), ascending
 - [x] Example `sort_demo.brs` → 6 1 1 2 5, 3 1, 3, 1, -5, 3 1 3
 
+### 17.43 `group-by` / `zipmap` / `select-keys` ✅
+
+- [x] `(group-by f coll)` → map (f x) → bucket vector (named fn or inline lambda)
+- [x] `(zipmap ks vs)` → map, stops at shorter side
+- [x] `(select-keys m ks)` → sub-map, missing keys skipped
+- [x] Example `group_by_demo.brs` → 2 3 2, 3 3, 2 1 2, 2 100 300
+
 ---
 
-*План версия: 6.50 | Актуализиран: 2026-07-29*
+*План версия: 6.51 | Актуализиран: 2026-07-29*

@@ -151,6 +151,9 @@
                                                                               (if (str-eq? name "partition") true
                                                                                 (if (str-eq? name "frequencies") true
                                                                                   (if (str-eq? name "sort") true
+                                                                                    (if (str-eq? name "group-by") true
+                                                                                      (if (str-eq? name "zipmap") true
+                                                                                        (if (str-eq? name "select-keys") true
                                                                                     (if (str-eq? name "vector-set") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
@@ -180,7 +183,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1326,6 +1329,85 @@
         body (hir-if done m step)]
     (hir-let outer (hir-loop binds body))))
 
+;; (group-by f coll) → map (f x) → vector of elems with that key
+(defn desugar-group-by [f vec-ast uid]
+  (let [v (hir-sym (str-concat "__gbv" (int-str uid)))
+        c (hir-sym (str-concat "__gbc" (int-str uid)))
+        i (hir-sym (str-concat "__gbi" (int-str uid)))
+        m (hir-sym (str-concat "__gbm" (int-str uid)))
+        x (hir-sym (str-concat "__gbx" (int-str uid)))
+        k (hir-sym (str-concat "__gbk" (int-str uid)))
+        b (hir-sym (str-concat "__gbb" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 m (hir-call "map" (vector))))
+        binds (hir-vec (vector i (hir-num 0) m m))
+        done (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        key-c (apply-callable f (vector x))
+        ;; missing key (map-get → 0) starts a fresh bucket
+        bucket (hir-if (hir-call "=" (vector (hir-call "map-get" (vector m k)) (hir-num 0)))
+                 (hir-call "vector" (vector))
+                 (hir-call "map-get" (vector m k)))
+        store (hir-call "map-set" (vector m k (hir-call "push" (vector b x))))
+        step (hir-let (hir-vec (vector x getx))
+               (hir-let (hir-vec (vector k key-c))
+                 (hir-let (hir-vec (vector b bucket))
+                   (hir-let (hir-vec (vector m store))
+                     (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) m))))))
+        body (hir-if done m step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (zipmap ks vs) → map from key vector to val vector (stops at shorter)
+(defn desugar-zipmap [ks-ast vs-ast uid]
+  (let [a (hir-sym (str-concat "__zma" (int-str uid)))
+        b (hir-sym (str-concat "__zmb" (int-str uid)))
+        n (hir-sym (str-concat "__zmn" (int-str uid)))
+        i (hir-sym (str-concat "__zmi" (int-str uid)))
+        m (hir-sym (str-concat "__zmm" (int-str uid)))
+        outer (hir-vec (vector
+                 a ks-ast
+                 b vs-ast
+                 n (hir-call "min" (vector (hir-call "count" (vector a))
+                                           (hir-call "count" (vector b))))
+                 m (hir-call "map" (vector))))
+        binds (hir-vec (vector i (hir-num 0) m m))
+        done (hir-call ">=" (vector i n))
+        store (hir-call "map-set" (vector m
+                (hir-call "get" (vector a i))
+                (hir-call "get" (vector b i))))
+        step (hir-let (hir-vec (vector m store))
+               (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) m)))
+        body (hir-if done m step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (select-keys m ks) → map with only the keys ks present in m
+(defn desugar-select-keys [map-ast ks-ast uid]
+  (let [src (hir-sym (str-concat "__skm" (int-str uid)))
+        a (hir-sym (str-concat "__ska" (int-str uid)))
+        c (hir-sym (str-concat "__skc" (int-str uid)))
+        i (hir-sym (str-concat "__ski" (int-str uid)))
+        k (hir-sym (str-concat "__skk" (int-str uid)))
+        out (hir-sym (str-concat "__sko" (int-str uid)))
+        outer (hir-vec (vector
+                 src map-ast
+                 a ks-ast
+                 c (hir-call "count" (vector a))
+                 out (hir-call "map" (vector))))
+        binds (hir-vec (vector i (hir-num 0) out out))
+        done (hir-call ">=" (vector i c))
+        getk (hir-call "get" (vector a i))
+        has (hir-call "map-contains?" (vector src k))
+        copy (hir-call "map-set" (vector out k (hir-call "map-get" (vector src k))))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) out))
+        step (hir-let (hir-vec (vector k getk))
+               (hir-if has
+                 (hir-let (hir-vec (vector out copy)) rec)
+                 rec))
+        body (hir-if done out step)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1435,6 +1517,12 @@
       (lower-expr (desugar-frequencies (get ast 1) l) t l lines loops adt structs)
     (if (if (str-eq? fname "sort") (= n 2) false)
       (lower-expr (desugar-sort (get ast 1) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "group-by") (= n 3) false)
+      (lower-expr (desugar-group-by (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "zipmap") (= n 3) false)
+      (lower-expr (desugar-zipmap (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "select-keys") (= n 3) false)
+      (lower-expr (desugar-select-keys (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1489,7 +1577,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
