@@ -451,7 +451,19 @@ through a local:
 
 Closed lambdas are lifted to top-level functions. Capturing lambdas pack free
 locals into an env vector; the runtime `bars_icallN` passes env as the first
-argument. Nested `fn` forms that capture are lifted independently.
+argument. Nested `fn` forms are lifted **bottom-up**, so an inner lambda can
+capture both outer free locals and the outer lambda’s parameters.
+
+```clojure
+(let [a 1]
+  (let [f (fn [x]
+            (let [g (fn [y] (+ (+ a x) y))]
+              (g 10)))]
+    (f 2)))   ;; → 13
+```
+
+Undefined names print `error: hir: undefined …` at compile time (link still
+fails). Set `BARS_STRICT_HIR=1` to skip the backend after HIR errors.
 
 HOF `map`/`filter`/`reduce` still beta-reduce inline lambdas (no allocation).
 

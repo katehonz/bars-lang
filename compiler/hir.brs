@@ -36,8 +36,47 @@
         (if (str-eq? (get v i) name) true
           (recur (+ i 1)))))))
 
+(def __hir_globals (vector))
+(def __hir_undef_err (vector))  ;; [count] — soft counter for undefined names
+
 (defn hir-is-local? [name] (hir-name-in? __hir_locals name))
 (defn hir-is-fn? [name] (hir-name-in? __hir_fns name))
+(defn hir-is-global? [name] (hir-name-in? __hir_globals name))
+
+(defn hir-globals-reset []
+  (hir-clear-vec __hir_globals))
+
+(defn hir-globals-add [name]
+  (if (hir-is-global? name) 0
+    (push __hir_globals name)))
+
+(defn hir-undef-reset []
+  (do (hir-clear-vec __hir_undef_err)
+      (push __hir_undef_err 0)))
+
+(defn hir-undef-bump []
+  (let [n (get __hir_undef_err 0)]
+    (do (pop __hir_undef_err)
+        (push __hir_undef_err (+ n 1)))))
+
+(defn hir-undef-count []
+  (if (= (count __hir_undef_err) 0) 0 (get __hir_undef_err 0)))
+
+(defn hir-report-undef [kind name]
+  ;; Skip 1-char names: often temps/params missed by destructure tracking;
+  ;; real bugs are multi-char (unknown-var, no-such-fn).
+  (if (< (count name) 2) 0
+    (do (println (str-concat "error: hir: undefined " (str-concat kind
+                (str-concat " `" (str-concat name "`")))))
+        (hir-undef-bump)
+        0)))
+
+(defn hir-known-value? [name]
+  (if (hir-is-local? name) true
+    (if (hir-is-fn? name) true
+      (if (hir-is-global? name) true
+        (if (is-builtin-name? name) true
+          false)))))
 
 (defn hir-fn-arity [name]
   (let [n (count __hir_fns)]
@@ -70,6 +109,7 @@
           (push __hir_lam_n (+ n 1))
           n))))
 
+;; Names that resolve without a user defn (ops, runtime, specials).
 (defn is-builtin-name? [name]
   (if (str-eq? name "+") true
     (if (str-eq? name "-") true
@@ -87,16 +127,44 @@
                             (if (str-eq? name "or") true
                               (if (str-eq? name "println") true
                                 (if (str-eq? name "print") true
-                                  (if (str-eq? name "vector") true
-                                    (if (str-eq? name "push") true
-                                      (if (str-eq? name "get") true
-                                        (if (str-eq? name "count") true
-                                          (if (str-eq? name "map") true
-                                            (if (str-eq? name "filter") true
-                                              (if (str-eq? name "reduce") true
-                                                (if (str-eq? name "nil") true
-                                                  (if (str-eq? name "true") true
-                                                    (str-eq? name "false")))))))))))))))))))))))))))
+                                  (if (str-eq? name "print-str") true
+                                    (if (str-eq? name "vector") true
+                                      (if (str-eq? name "push") true
+                                        (if (str-eq? name "pop") true
+                                          (if (str-eq? name "get") true
+                                            (if (str-eq? name "count") true
+                                              (if (str-eq? name "first") true
+                                                (if (str-eq? name "last") true
+                                                  (if (str-eq? name "map") true
+                                                    (if (str-eq? name "filter") true
+                                                      (if (str-eq? name "reduce") true
+                                                        (if (str-eq? name "nil") true
+                                                          (if (str-eq? name "true") true
+                                                            (if (str-eq? name "false") true
+                                                              (if (str-eq? name "__env") true
+                                                                (if (str-eq? name "__mkclos") true
+                                                                  (if (str-eq? name "kwargs") true
+                                                                    (if (str-eq? name "set") true
+                                                                      (if (str-eq? name "conj") true
+                                                                        (if (str-eq? name "vector-clone") true
+                                                                          (if (str-eq? name "slurp") true
+                                                                            (if (str-eq? name "spit") true
+                                                                              (if (str-eq? name "exit") true
+                                                                                (if (str-eq? name "args-count") true
+                                                                                  (if (str-eq? name "args-get") true
+                                                                                    (if (str-eq? name "code-char") true
+                                                                                      (if (str-eq? name "char-code") true
+                                                                                        (if (str-eq? name "inc") true
+                                                                                          (if (str-eq? name "dec") true
+                                                                                            (if (str-eq? name "abs") true
+                                                                                              (if (str-eq? name "min") true
+                                                                                                (if (str-eq? name "max") true
+                                                                                                  (if (str-starts-with? name "str-") true
+                                                                                                    (if (str-starts-with? name "map-") true
+                                                                                                      (if (str-starts-with? name "set-") true
+                                                                                                        (if (str-starts-with? name "bars_") true
+                                                                                                          (if (str-starts-with? name "v-") true
+                                                                                                            false))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
@@ -386,7 +454,12 @@
             (mk-ret name t l)
             (if (hir-is-fn? name)
               (lower-mkclos-empty name t l lines)
-              (mk-ret name t l))))
+              (if (hir-is-global? name)
+                (mk-ret name t l)
+                (if (is-builtin-name? name)
+                  (mk-ret name t l)
+                  (do (hir-report-undef "name" name)
+                      (mk-ret "0" t l)))))))
         (if (= tag 2)
           (let [dest (fresh-temp t)]
             (do (put lines (str-concat "    stringlit " (str-concat dest (str-concat " " (val-of ast)))))
@@ -954,8 +1027,13 @@
           (let [dest (fresh-temp tcur)
                 tnext (+ tcur 1)
                 astr (join-args args 0)
-                nargs (- n 1)]
-            (do (if (hir-is-local? fname)
+                nargs (- n 1)
+                known (if (hir-is-local? fname) true
+                        (if (hir-is-fn? fname) true
+                          (if (is-builtin-name? fname) true
+                            (if (hir-is-global? fname) true false))))]
+            (do (if known 0 (hir-report-undef "function" fname))
+                (if (hir-is-local? fname)
                   ;; bars_icallN(f, a0…) — runtime unpacks closure vs bare ptr
                   (put lines (str-concat "    call " (str-concat dest
                         (str-concat " bars_icall" (str-concat (int-str nargs)
@@ -1703,23 +1781,30 @@
                 (recur (+ i 1))))))))
 
 (defn lift-expr [expr]
-  ;; Mutates __hir_fns / __hir_lam_n / __hir_lifted; returns rewritten expr.
+  ;; Bottom-up: lift nested fns first so outer free-vars see __mkclos forms.
   (if (is-atom? expr) expr
     (if (is-fn-form? expr)
-      (let [frees (fn-free-names expr)
+      (let [n (count expr)
+            rebuilt (vector)
+            _ (push rebuilt (get expr 0))
+            _ (push rebuilt (get expr 1))
+            _ (loop [i 2]
+                (if (>= i n) 0
+                  (do (push rebuilt (lift-expr (get expr i)))
+                      (recur (+ i 1)))))
+            frees (fn-free-names rebuilt)
             id (hir-lam-next)
             name (str-concat "__lam" (int-str id))
-            nparams (count (normalize-params (get expr 1)))]
+            nparams (count (normalize-params (get rebuilt 1)))]
         (if (= (count frees) 0)
           (let [ar nparams
                 _ (hir-fns-add name ar)
-                lifted (mk-lifted-defn name expr)]
+                lifted (mk-lifted-defn name rebuilt)]
             (do (push __hir_lifted lifted)
                 (hir-sym name)))
-          ;; Capturing: env is first param → arity nparams+1
           (let [ar (+ nparams 1)
                 _ (hir-fns-add name ar)
-                lifted (mk-open-lifted name expr frees)]
+                lifted (mk-open-lifted name rebuilt frees)]
             (do (push __hir_lifted lifted)
                 (mk-clos-form name frees)))))
       (let [n (count expr)
@@ -1783,13 +1868,31 @@
         has-main (has-main-defn? ast-list)
         ;; Refresh fn names after lift (includes __lamN)
         _ (hir-fns-reset)
-        _ (collect-top-fn-names ast-list)]
+        _ (collect-top-fn-names ast-list)
+        _ (hir-globals-reset)
+        _ (loop [i 0]
+            (if (>= i (count gdefs)) 0
+              (do (hir-globals-add (get (get gdefs i) 0))
+                  (recur (+ i 1)))))
+        _ (hir-undef-reset)]
     (loop [i 0 t t0 l l0]
       (if (>= i n)
         (do (if (if has-main false (> (count tops) 0))
               (lower-toplevel-main tops t l lines empty adt structs)
               0)
-            lines)
+            (if (if (> (hir-undef-count) 0)
+                  (= (bars_env_is_set "BARS_STRICT_HIR") 1)
+                  false)
+              (do (println (str-concat "error: hir: "
+                    (str-concat (int-str (hir-undef-count))
+                      " undefined name(s) — set BARS_STRICT_HIR=0 to continue")))
+                  (vector))
+              (do (if (> (hir-undef-count) 0)
+                    (println (str-concat "warning: hir: "
+                      (str-concat (int-str (hir-undef-count))
+                        " undefined name(s) (BARS_STRICT_HIR=1 to hard-fail)")))
+                    0)
+                  lines)))
         (let [expr (get ast-list i)]
           (if (is-defn-form? expr)
             (let [res (lower-expr expr t l lines empty adt structs)]

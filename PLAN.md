@@ -657,6 +657,14 @@ bars/
 - [x] Runtime `bars_icall0`…`bars_icall4` unpack bare ptr vs closure
 - [x] Examples `closure_demo.brs`, capturing case in `fcfn_demo.brs`
 
+### 17.19 Nested closures + HIR undefined-name diagnostics ✅
+
+- [x] Bottom-up lambda lift (inner `fn` first) so nested capture works
+- [x] Compile-time `error: hir: undefined name/function \`…\``
+- [x] Soft by default; `BARS_STRICT_HIR=1` returns empty HIR (skip backend)
+- [x] Expanded builtin/runtime name allowlist (str-*/map-*/bars_*/args-*)
+- [x] Example `nested_closure.brs` → 13
+
 ---
 
-*План версия: 6.25 | Актуализиран: 2026-07-29*
+*План версия: 6.26 | Актуализиран: 2026-07-29*

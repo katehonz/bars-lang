@@ -233,7 +233,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.16** `and`/`or` macros + if truthiness (icmp ne) + true/false/nil literals
 - [x] **17.17** First-class closed fns (lambda lift + funcref/icall)
 - [x] **17.18** Capturing closures (env vector + bars_icallN)
+- [x] **17.19** Nested closures + HIR undefined-name diagnostics
 
 ---
 
-*Версия: 7.6 | Актуализирано: 2026-07-29*
+*Версия: 7.7 | Актуализирано: 2026-07-29*
