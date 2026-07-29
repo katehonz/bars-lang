@@ -713,6 +713,11 @@ bars/
 - [x] `when-not` alias of `unless`
 - [x] Example `for_multi_demo.brs` → 11 21 12 22, 4 3 8, 99
 
+### 17.27 `while` ✅
+
+- [x] `(while cond body…)` → `loop`/`recur` with dummy binding
+- [x] Example `while_demo.brs` → 0 1 2 3, 30 20 10
+
 ---
 
-*План версия: 6.33 | Актуализиран: 2026-07-29*
+*План версия: 6.34 | Актуализиран: 2026-07-29*

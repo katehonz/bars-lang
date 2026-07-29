@@ -557,7 +557,19 @@ multiple expressions (`do`-style); `for` collects the **last** expression
   (println i))               ;; prints 0 1 2 3; returns nil
 ```
 
-Binding is `[name n]`; `n` is evaluated once. `name` runs from `0` to `n-1`.### Threading Macros
+Binding is `[name n]`; `n` is evaluated once. `name` runs from `0` to `n-1`.
+
+### `while` — loop while condition is truthy
+
+```clojure
+(let [xs (vector 1 2 3)]
+  (while (> (count xs) 0)
+    (println (first xs))
+    (pop xs)))               ;; returns nil when condition is false
+```
+
+Expands to a `loop`/`recur`. The condition is re-evaluated every iteration.
+Prefer `loop`/`recur` when you need pure functional accumulators.### Threading Macros
 
 ```clojure
 (-> x
