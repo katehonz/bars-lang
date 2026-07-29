@@ -240,7 +240,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.23** Multi-arg `apply` + `partial` macro
 - [x] **17.24** `doseq` / `for` vector iteration macros
 - [x] **17.25** `dotimes` index loop macro
+- [x] **17.26** Multi-binding doseq/for + when-not
 
 ---
 
-*Версия: 7.12 | Актуализирано: 2026-07-29*
+*Версия: 7.13 | Актуализирано: 2026-07-29*

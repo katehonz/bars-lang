@@ -187,13 +187,14 @@ Keywords themselves lower to strings like `":foo"` when used as values.
 The `else-expr` is optional and defaults to `nil`. Non-zero integers are truthy
 (branch condition is `≠ 0`).
 
-### `when` / `unless` / `if-let` / `when-let`
+### `when` / `unless` / `when-not` / `if-let` / `when-let`
 
 Built-in macros (no `require`):
 
 ```clojure
 (when cond body...)          ;; (if cond (do body...) nil)
 (unless cond body...)        ;; (if (not cond) (do body...) nil)
+(when-not cond body...)      ;; alias of unless
 
 (if-let [x (maybe)]
   then-expr
@@ -536,10 +537,18 @@ Returns a **one-argument** function. Useful for specializing HOFs:
 
 (for [n coll]
   (* n 10))                  ;; → vector of body results
+
+;; Multiple binding pairs nest (cartesian product):
+(doseq [x xs y ys]
+  (println (+ x y)))
+
+(for [a as b bs]
+  (* a b))                   ;; flattened result vector
 ```
 
-Single binding `[name coll]` only. `coll` must be a vector. Bodies may be
-multiple expressions (`do`-style); `for` collects the **last** expression.
+Bindings are pairs `[name coll …]`. Each `coll` must be a vector. Bodies may be
+multiple expressions (`do`-style); `for` collects the **last** expression
+(flattened when there is more than one binding pair).
 
 ### `dotimes` — repeat n times
 

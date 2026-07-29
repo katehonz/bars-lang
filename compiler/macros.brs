@@ -584,44 +584,46 @@
     (expand-when expr macs)
     (if (str-eq? name "unless")
       (expand-unless expr macs)
-      (if (str-eq? name "if-let")
-        (expand-if-let expr macs)
-        (if (str-eq? name "when-let")
-          (expand-when-let expr macs)
-          (if (str-eq? name "partial")
-            (expand-partial expr macs)
-            (if (str-eq? name "doseq")
-              (expand-doseq expr macs)
-              (if (str-eq? name "for")
-                (expand-for expr macs)
-                (if (str-eq? name "dotimes")
-                  (expand-dotimes expr macs)
-                  (if (str-eq? name "cond")
-                    (expand-cond expr macs)
-                    (if (str-eq? name "and")
-                      (expand-and expr macs)
-                      (if (str-eq? name "or")
-                        (expand-or expr macs)
-                        (if (str-eq? name "->")
-                          (expand-thread expr macs)
-                          (if (str-eq? name "->>")
-                            (expand-thread-last expr macs)
-                            (if (str-eq? name "deftrait")
-                              (expand-deftrait expr)
-                              (if (str-eq? name "impl")
-                                (expand-impl expr (vector) macs)
-                                (if (str-eq? name "defconst")
-                                  (expand-defconst expr macs)
-                                  (if (str-eq? name "trait-call")
-                                    (expand-trait-call expr macs)
-                                    (if (str-eq? name "tcall")
+      (if (str-eq? name "when-not")
+        (expand-unless expr macs)
+        (if (str-eq? name "if-let")
+          (expand-if-let expr macs)
+          (if (str-eq? name "when-let")
+            (expand-when-let expr macs)
+            (if (str-eq? name "partial")
+              (expand-partial expr macs)
+              (if (str-eq? name "doseq")
+                (expand-doseq expr macs)
+                (if (str-eq? name "for")
+                  (expand-for expr macs)
+                  (if (str-eq? name "dotimes")
+                    (expand-dotimes expr macs)
+                    (if (str-eq? name "cond")
+                      (expand-cond expr macs)
+                      (if (str-eq? name "and")
+                        (expand-and expr macs)
+                        (if (str-eq? name "or")
+                          (expand-or expr macs)
+                          (if (str-eq? name "->")
+                            (expand-thread expr macs)
+                            (if (str-eq? name "->>")
+                              (expand-thread-last expr macs)
+                              (if (str-eq? name "deftrait")
+                                (expand-deftrait expr)
+                                (if (str-eq? name "impl")
+                                  (expand-impl expr (vector) macs)
+                                  (if (str-eq? name "defconst")
+                                    (expand-defconst expr macs)
+                                    (if (str-eq? name "trait-call")
                                       (expand-trait-call expr macs)
-                                      (let [entry (macro-lookup macs name)]
-                                        (if (= entry 0)
-                                          (expand-children-from expr 0 macs)
-                                          (let [args (expand-call-args expr macs)
-                                                expanded (apply-user-macro entry args)]
-                                            (expand-expr expanded macs)))))))))))))))))))))))
+                                      (if (str-eq? name "tcall")
+                                        (expand-trait-call expr macs)
+                                        (let [entry (macro-lookup macs name)]
+                                          (if (= entry 0)
+                                            (expand-children-from expr 0 macs)
+                                            (let [args (expand-call-args expr macs)
+                                                  expanded (apply-user-macro entry args)]
+                                              (expand-expr expanded macs))))))))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -780,68 +782,106 @@
           (if (= (count body-exprs) 1) (get body-exprs 0)
             (mk-do body-exprs))))))
 
-;; (doseq [x coll] body...) => index loop; returns nil
+;; Single-binding doseq core: x may be atom (name); coll + body already expanded ASTs.
+(defn expand-doseq-1 [x coll body]
+  (let [xname (if (is-atom? x) (ast-val x) "x")
+        v (str-concat "__dv_" xname)
+        i (str-concat "__di_" xname)
+        cn (str-concat "__dn_" xname)
+        getc (mk-call "get" (vector (mk-sym v) (mk-sym i)))
+        rec (mk-recur1 (vector (mk-call "+" (vector (mk-sym i) (mk-num 1)))))
+        step (mk-do (vector body rec))
+        inner (mk-let1 xname getc step)
+        test (mk-call ">=" (vector (mk-sym i) (mk-sym cn)))
+        lbody (mk-if test (mk-nil) inner)
+        lbinds (wrap-vec (vector (mk-sym i) (mk-num 0)))
+        loopf (mk-loop1 lbinds lbody)
+        cnt (mk-call "count" (vector (mk-sym v)))]
+    (mk-letn (vector (mk-sym v) coll (mk-sym cn) cnt) loopf)))
+
+;; Nest doseq pairs right-to-left: [x xs y ys] body => (doseq [x xs] (doseq [y ys] body))
+(defn nest-doseq-binds [binds body]
+  (let [nb (count binds)]
+    (loop [i (- nb 2) b body]
+      (if (< i 0) b
+        (let [x (get binds i)
+              coll (get binds (+ i 1))
+              nested (expand-doseq-1 x coll b)]
+          (recur (- i 2) nested))))))
+
+;; (doseq [x coll] body...) / (doseq [x xs y ys] body...) => nested index loops; nil
 (defn expand-doseq [expr macs]
   (let [n (count expr)]
     (if (< n 3)
       (mk-nil)
-      (let [binds (unwrap-vec (get expr 1))]
-        (if (< (count binds) 2)
+      (let [binds (unwrap-vec (get expr 1))
+            nb (count binds)]
+        (if (< nb 2)
           (mk-nil)
-          (let [x (get binds 0)
-                coll (expand-expr (get binds 1) macs)
-                xname (if (is-atom? x) (ast-val x) "x")
-                v (str-concat "__dv_" xname)
-                i (str-concat "__di_" xname)
-                cn (str-concat "__dn_" xname)
-                body (expand-body-exprs expr 2 macs)
-                getc (mk-call "get" (vector (mk-sym v) (mk-sym i)))
-                rec (mk-recur1 (vector (mk-call "+" (vector (mk-sym i) (mk-num 1)))))
-                step (mk-do (vector body rec))
-                inner (mk-let1 xname getc step)
-                test (mk-call ">=" (vector (mk-sym i) (mk-sym cn)))
-                lbody (mk-if test (mk-nil) inner)
-                lbinds (wrap-vec (vector (mk-sym i) (mk-num 0)))
-                loopf (mk-loop1 lbinds lbody)
-                cnt (mk-call "count" (vector (mk-sym v)))]
-            (mk-letn (vector (mk-sym v) coll (mk-sym cn) cnt) loopf)))))))
+          (if (!= (% nb 2) 0)
+            (mk-nil)
+            (let [body (expand-body-exprs expr 2 macs)
+                  exp-binds (vector)
+                  _ (loop [i 0]
+                      (if (>= i nb) 0
+                        (do (push exp-binds (get binds i))
+                            (push exp-binds (expand-expr (get binds (+ i 1)) macs))
+                            (recur (+ i 2)))))]
+              (nest-doseq-binds exp-binds body))))))))
 
-;; (for [x coll] body) => vector of body results (last body expr)
+;; Single-binding for: collect body results into a vector
+(defn expand-for-1 [x coll body]
+  (let [xname (if (is-atom? x) (ast-val x) "x")
+        v (str-concat "__fv_" xname)
+        i (str-concat "__fi_" xname)
+        cn (str-concat "__fn_" xname)
+        acc (str-concat "__fa_" xname)
+        getc (mk-call "get" (vector (mk-sym v) (mk-sym i)))
+        pushed (mk-call "push" (vector (mk-sym acc) body))
+        rec (mk-recur1 (vector
+              (mk-call "+" (vector (mk-sym i) (mk-num 1)))
+              (mk-sym acc)))
+        step (mk-let1 acc pushed rec)
+        inner (mk-let1 xname getc step)
+        test (mk-call ">=" (vector (mk-sym i) (mk-sym cn)))
+        lbody (mk-if test (mk-sym acc) inner)
+        lbinds (wrap-vec (vector
+                  (mk-sym i) (mk-num 0)
+                  (mk-sym acc) (mk-sym acc)))
+        loopf (mk-loop1 lbinds lbody)
+        cnt (mk-call "count" (vector (mk-sym v)))
+        empty (mk-call "vector" (vector))]
+    (mk-letn (vector (mk-sym v) coll
+                     (mk-sym cn) cnt
+                     (mk-sym acc) empty)
+             loopf)))
+
+;; (for [x coll] body) / (for [x xs y ys] body) — multi flattens via nested doseq + push
 (defn expand-for [expr macs]
   (let [n (count expr)]
     (if (< n 3)
       (mk-call "vector" (vector))
-      (let [binds (unwrap-vec (get expr 1))]
-        (if (< (count binds) 2)
+      (let [binds (unwrap-vec (get expr 1))
+            nb (count binds)]
+        (if (< nb 2)
           (mk-call "vector" (vector))
-          (let [x (get binds 0)
-                coll (expand-expr (get binds 1) macs)
-                xname (if (is-atom? x) (ast-val x) "x")
-                v (str-concat "__fv_" xname)
-                i (str-concat "__fi_" xname)
-                cn (str-concat "__fn_" xname)
-                acc (str-concat "__fa_" xname)
-                body (expand-body-exprs expr 2 macs)
-                getc (mk-call "get" (vector (mk-sym v) (mk-sym i)))
-                pushed (mk-call "push" (vector (mk-sym acc) body))
-                rec (mk-recur1 (vector
-                      (mk-call "+" (vector (mk-sym i) (mk-num 1)))
-                      (mk-sym acc)))
-                ;; rebind acc after push then recur — use let for acc update
-                step (mk-let1 acc pushed rec)
-                inner (mk-let1 xname getc step)
-                test (mk-call ">=" (vector (mk-sym i) (mk-sym cn)))
-                lbody (mk-if test (mk-sym acc) inner)
-                lbinds (wrap-vec (vector
-                          (mk-sym i) (mk-num 0)
-                          (mk-sym acc) (mk-sym acc)))
-                loopf (mk-loop1 lbinds lbody)
-                cnt (mk-call "count" (vector (mk-sym v)))
-                empty (mk-call "vector" (vector))]
-            (mk-letn (vector (mk-sym v) coll
-                             (mk-sym cn) cnt
-                             (mk-sym acc) empty)
-                     loopf)))))))
+          (if (!= (% nb 2) 0)
+            (mk-call "vector" (vector))
+            (let [body (expand-body-exprs expr 2 macs)
+                  exp-binds (vector)
+                  _ (loop [i 0]
+                      (if (>= i nb) 0
+                        (do (push exp-binds (get binds i))
+                            (push exp-binds (expand-expr (get binds (+ i 1)) macs))
+                            (recur (+ i 2)))))]
+              (if (= nb 2)
+                (expand-for-1 (get exp-binds 0) (get exp-binds 1) body)
+                ;; Multi: (let [acc []] (doseq … (push acc body)) acc)
+                (let [acc "__facc"
+                      push-step (mk-call "push" (vector (mk-sym acc) body))
+                      nested (nest-doseq-binds exp-binds push-step)]
+                  (mk-let1 acc (mk-call "vector" (vector))
+                    (mk-do (vector nested (mk-sym acc)))))))))))))
 
 ;; (dotimes [i n] body...) => (let [__dn n] (loop [i 0] (if (>= i __dn) nil (do body (recur (+ i 1))))))
 (defn expand-dotimes [expr macs]

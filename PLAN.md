@@ -707,6 +707,12 @@ bars/
 - [x] `(dotimes [i n] body…)` → `let` bound n + index `loop`/`recur`
 - [x] Example `dotimes_demo.brs` → 0 1 2 3, 0 4 3
 
+### 17.26 Multi-binding `doseq`/`for` + `when-not` ✅
+
+- [x] Nested pairs `[x xs y ys …]` for doseq (cartesian) and for (flattened)
+- [x] `when-not` alias of `unless`
+- [x] Example `for_multi_demo.brs` → 11 21 12 22, 4 3 8, 99
+
 ---
 
-*План версия: 6.32 | Актуализиран: 2026-07-29*
+*План версия: 6.33 | Актуализиран: 2026-07-29*
