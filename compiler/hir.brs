@@ -143,8 +143,9 @@
                                                               (if (str-eq? name "drop") true
                                                                 (if (str-eq? name "take-while") true
                                                                   (if (str-eq? name "drop-while") true
-                                                                    (if (str-eq? name "apply") true
-                                                                      (if (str-eq? name "identity") true
+                                                                    (if (str-eq? name "range") true
+                                                                      (if (str-eq? name "apply") true
+                                                                        (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
                                                             (if (str-eq? name "true") true
                                                               (if (str-eq? name "false") true
@@ -171,7 +172,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1044,6 +1045,41 @@
         body (hir-if done r check)]
     (hir-let outer (hir-loop binds body))))
 
+;; (range end) / (range start end) / (range start end step)
+(defn desugar-range-3 [start-ast end-ast step-ast uid]
+  (let [s (hir-sym (str-concat "__rgs" (int-str uid)))
+        e (hir-sym (str-concat "__rge" (int-str uid)))
+        st (hir-sym (str-concat "__rgst" (int-str uid)))
+        i (hir-sym (str-concat "__rgi" (int-str uid)))
+        r (hir-sym (str-concat "__rgr" (int-str uid)))
+        outer (hir-vec (vector
+                 s start-ast
+                 e end-ast
+                 st step-ast
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i s r r))
+        ;; stop when past end (direction depends on step); step 0 → empty
+        stop (hir-if (hir-call ">" (vector st (hir-num 0)))
+               (hir-call ">=" (vector i e))
+               (hir-if (hir-call "<" (vector st (hir-num 0)))
+                 (hir-call "<=" (vector i e))
+                 (hir-num 1)))
+        pushed (hir-call "push" (vector r i))
+        rec (hir-recur (vector (hir-call "+" (vector i st)) r))
+        stepb (hir-let (hir-vec (vector r pushed)) rec)
+        body (hir-if stop r stepb)]
+    (hir-let outer (hir-loop binds body))))
+
+(defn desugar-range [ast uid]
+  (let [n (count ast)]
+    (if (= n 2)
+      (desugar-range-3 (hir-num 0) (get ast 1) (hir-num 1) uid)
+      (if (= n 3)
+        (desugar-range-3 (get ast 1) (get ast 2) (hir-num 1) uid)
+        (if (= n 4)
+          (desugar-range-3 (get ast 1) (get ast 2) (get ast 3) uid)
+          (hir-call "vector" (vector)))))))
+
 ;; (drop-while pred coll) → suffix after pred becomes falsy
 (defn desugar-drop-while [pred vec-ast uid]
   (let [v (hir-sym (str-concat "__dwv" (int-str uid)))
@@ -1168,6 +1204,10 @@
       (lower-expr (desugar-take-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "drop-while") (= n 3) false)
       (lower-expr (desugar-drop-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "range") true false)
+      (if (if (>= n 2) (<= n 4) false)
+        (lower-expr (desugar-range ast l) t l lines loops adt structs)
+        (lower-expr (hir-call "vector" (vector)) t l lines loops adt structs))
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1222,7 +1262,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

@@ -781,6 +781,12 @@ bars/
 - [x] LLVM/C: inline `min`/`max` via select / ternary
 - [x] Example `take_while_demo.brs` → 2 1 2, 3 0, 3, 3 7
 
+### 17.39 `range` ✅
+
+- [x] `(range end)` / `(range start end)` / `(range start end step)`
+- [x] Positive and negative step; step 0 → empty vector
+- [x] Example `range_demo.brs` → 4 0 3, 4 2 5, 4 6, 3 5 1, 20
+
 ---
 
-*План версия: 6.45 | Актуализиран: 2026-07-29*
+*План версия: 6.46 | Актуализиран: 2026-07-29*

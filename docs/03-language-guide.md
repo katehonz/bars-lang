@@ -161,6 +161,10 @@ desugar to inline `loop`/`recur` (self-host):
 (drop 2 [1 2 3 4 5])           ;; [3 4 5]
 (take-while pos? [1 2 0 4])    ;; [1 2]
 (drop-while pos? [1 2 0 4])    ;; [0 4]
+(range 4)                      ;; [0 1 2 3]
+(range 2 6)                    ;; [2 3 4 5]
+(range 0 10 3)                 ;; [0 3 6 9]
+(range 5 0 -2)                 ;; [5 3 1]
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):
