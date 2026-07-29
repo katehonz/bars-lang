@@ -360,6 +360,8 @@ int64_t bars_apply(int64_t f, int64_t args_vec) {
     }
 }
 
+int64_t bars_identity(int64_t x) { return x; }
+
 /* Concat fixed_vec ++ rest_vec, then bars_apply. rest may be empty vector. */
 int64_t bars_apply_join(int64_t f, int64_t fixed_vec, int64_t rest_vec) {
     bars_vector_t* out = bars_vector_new();

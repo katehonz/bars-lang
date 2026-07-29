@@ -196,7 +196,7 @@ The `else-expr` is optional and defaults to `nil`. Non-zero integers are truthy
 | `if-let` / `when-let` | bind + truthy test |
 | `and` / `or` / `cond` / `case` | short-circuit / multi-way |
 | `doseq` / `for` / `dotimes` / `while` | iteration |
-| `partial` / `complement` / `apply` | first-class fn helpers |
+| `partial` / `complement` / `constantly` / `identity` / `apply` | first-class fn helpers |
 | `->` / `->>` | threading |
 
 ```clojure
@@ -214,6 +214,8 @@ The `else-expr` is optional and defaults to `nil`. Non-zero integers are truthy
 
 (partial f a b)              ;; (fn [x] (apply f a b [x]))
 (complement pred)            ;; (fn [x] (not (pred x)))
+(constantly v)               ;; (fn [_] v)  — v evaluated once
+(identity x)                 ;; → x (runtime builtin)
 ```
 
 `if-let` / `when-let` bind a single name; the body runs only when the init

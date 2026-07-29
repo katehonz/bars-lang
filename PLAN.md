@@ -735,6 +735,12 @@ bars/
 - [x] Language guide table of built-in macros
 - [x] Example `ifnot_demo.brs` → 1 2 0 1
 
+### 17.31 `identity` + `constantly` ✅
+
+- [x] Runtime `bars_identity` + LLVM/C mapping
+- [x] `(constantly v)` → `(let [__cv v] (fn [__cu] __cv))`
+- [x] Example `identity_demo.brs` → 42 0 7 7 11
+
 ---
 
-*План версия: 6.37 | Актуализиран: 2026-07-29*
+*План версия: 6.38 | Актуализиран: 2026-07-29*

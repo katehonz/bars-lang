@@ -138,6 +138,7 @@
                                                     (if (str-eq? name "filter") true
                                                       (if (str-eq? name "reduce") true
                                                         (if (str-eq? name "apply") true
+                                                          (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
                                                             (if (str-eq? name "true") true
                                                               (if (str-eq? name "false") true
@@ -164,7 +165,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))

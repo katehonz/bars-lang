@@ -124,10 +124,11 @@
       (if (str-eq? fname "exit") "bars_exit"
         (if (str-eq? fname "args-count") "bars_args_count"
           (if (str-eq? fname "args-get") "bars_args_get"
-            (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
-              (if (str-eq? fname "bars_getenv") "bars_getenv"
-                (if (str-eq? fname "bars_system") "bars_system"
-                  "")))))))))
+            (if (str-eq? fname "identity") "bars_identity"
+              (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
+                (if (str-eq? fname "bars_getenv") "bars_getenv"
+                  (if (str-eq? fname "bars_system") "bars_system"
+                    ""))))))))))
 
 (defn map-file-ops [fname]
   (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"

@@ -245,7 +245,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.28** `case` equality dispatch macro
 - [x] **17.29** `case` multi-const groups (list/vector)
 - [x] **17.30** `if-not` / `complement` + macro index docs
+- [x] **17.31** `identity` runtime + `constantly` macro
 
 ---
 
-*Версия: 7.17 | Актуализирано: 2026-07-29*
+*Версия: 7.18 | Актуализирано: 2026-07-29*

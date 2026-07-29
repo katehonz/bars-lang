@@ -596,8 +596,10 @@
                 (expand-partial expr macs)
                 (if (str-eq? name "complement")
                   (expand-complement expr macs)
-                  (if (str-eq? name "doseq")
-                    (expand-doseq expr macs)
+                  (if (str-eq? name "constantly")
+                    (expand-constantly expr macs)
+                    (if (str-eq? name "doseq")
+                      (expand-doseq expr macs)
                     (if (str-eq? name "for")
                       (expand-for expr macs)
                       (if (str-eq? name "dotimes")
@@ -631,7 +633,7 @@
                                                     (expand-children-from expr 0 macs)
                                                     (let [args (expand-call-args expr macs)
                                                           expanded (apply-user-macro entry args)]
-                                                      (expand-expr expanded macs))))))))))))))))))))))))))))
+                                                      (expand-expr expanded macs)))))))))))))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -774,6 +776,21 @@
             (push out (wrap-vec (vector x)))
             (push out notc)
             out)))))
+
+;; (constantly v) => (let [__cv v] (fn [__cu] __cv))  — v evaluated once
+(defn expand-constantly [expr macs]
+  (let [n (count expr)]
+    (if (< n 2)
+      (mk-nil)
+      (let [v (expand-expr (get expr 1) macs)
+            cv "__cv"
+            u (mk-sym "__cu")
+            body (mk-sym cv)
+            fnf (vector)
+            _ (push fnf (mk-special 16 "fn"))
+            _ (push fnf (wrap-vec (vector u)))
+            _ (push fnf body)]
+        (mk-let1 cv v fnf)))))
 
 ;; ---- AST builders for doseq/for ----
 

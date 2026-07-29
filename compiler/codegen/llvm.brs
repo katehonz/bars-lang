@@ -265,6 +265,7 @@
         (lines-push lines "declare i64 @bars_icall8(i64, i64, i64, i64, i64, i64, i64, i64, i64)")
         (lines-push lines "declare i64 @bars_apply(i64, i64)")
         (lines-push lines "declare i64 @bars_apply_join(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_identity(i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "declare i8* @bars_alloc(i64)")
         (lines-push lines "")
@@ -331,10 +332,11 @@
         (if (str-eq? fname "args-count") "bars_args_count"
           (if (str-eq? fname "args-get") "bars_args_get"
             (if (str-eq? fname "println") "bars_print_any_i64"
-              (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
-                (if (str-eq? fname "bars_getenv") "bars_getenv"
-                  (if (str-eq? fname "bars_system") "bars_system"
-                    ""))))))))))
+              (if (str-eq? fname "identity") "bars_identity"
+                (if (str-eq? fname "bars_env_is_set") "bars_env_is_set"
+                  (if (str-eq? fname "bars_getenv") "bars_getenv"
+                    (if (str-eq? fname "bars_system") "bars_system"
+                      "")))))))))))
 
 (defn map-file-ops [fname]
   (if (str-eq? fname "bars_file_mtime") "bars_file_mtime"

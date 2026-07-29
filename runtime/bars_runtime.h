@@ -125,6 +125,9 @@ int64_t bars_apply(int64_t f, int64_t args_vec);
 /* (apply f a b … rest-vec) — fixed args then spread rest (17.23) */
 int64_t bars_apply_join(int64_t f, int64_t fixed_vec, int64_t rest_vec);
 
+/* identity x → x (17.31) */
+int64_t bars_identity(int64_t x);
+
 /* Persistent / COW vector ops (Phase 17.14) — originals never mutated */
 int64_t bars_vector_clone_i64(bars_vector_t* vec);
 int64_t bars_vector_conj_i64(bars_vector_t* vec, int64_t val);
