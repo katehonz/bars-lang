@@ -142,6 +142,9 @@ Self-host HIR desugars (also in the C backend):
 | `merge` | `(merge a b …)` | Clone of first + others' keys (later wins) |
 | `dissoc` | `(dissoc m k …)` | Clone without the keys |
 | `assoc-in` | `(assoc-in m ks v)` | Nested assoc (intermediate maps cloned) |
+| `update-in` | `(update-in m ks f)` | `assoc-in` with `(f (get-in m ks))` |
+| `reduce-kv` | `(reduce-kv f init m)` | Fold `(f acc k v)` over entries |
+| `keys` / `vals` | `(keys m)` | Aliases of `map-keys` / `map-values` |
 | `map-delete` | `(map-delete m k)` | Remove key in place; returns the map |
 | `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 

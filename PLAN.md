@@ -848,6 +848,13 @@ bars/
   липсващи нива се създават; `ks = []` → m
 - [x] Example `merge_demo.brs` → 10 99 30 20, 3, 1 10 0, 60 50 0, 42
 
+### 17.47 `update-in` / `reduce-kv` / `keys` / `vals` ✅
+
+- [x] `(update-in m ks f)` → `assoc-in m ks (f (get-in m ks))` (композиция)
+- [x] `(reduce-kv f init m)` → fold `(f acc k v)` през `map-keys`
+- [x] `keys`/`vals` aliases към `map-keys`/`map-values`
+- [x] Example `reduce_kv_demo.brs` → 15, 1, 3 3, 60 3 6, 7
+
 ---
 
-*План версия: 6.54 | Актуализиран: 2026-07-29*
+*План версия: 6.55 | Актуализиран: 2026-07-29*

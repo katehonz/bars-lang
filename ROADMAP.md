@@ -261,7 +261,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.44** `mapcat` / `keep` / `flatten`
 - [x] **17.45** `get-in` / `update` / `sort-by`
 - [x] **17.46** `merge` / `dissoc` / `assoc-in` + `map-delete`
+- [x] **17.47** `update-in` / `reduce-kv` / `keys` / `vals`
 
 ---
 
-*Версия: 7.33 | Актуализирано: 2026-07-29*
+*Версия: 7.34 | Актуализирано: 2026-07-29*

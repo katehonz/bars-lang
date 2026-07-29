@@ -161,6 +161,10 @@
                                                                                                   (if (str-eq? name "merge") true
                                                                                                     (if (str-eq? name "dissoc") true
                                                                                                       (if (str-eq? name "assoc-in") true
+                                                                                                        (if (str-eq? name "update-in") true
+                                                                                                          (if (str-eq? name "reduce-kv") true
+                                                                                                            (if (str-eq? name "keys") true
+                                                                                                              (if (str-eq? name "vals") true
                                                                                                   (if (str-eq? name "update") true
                                                                                                     (if (str-eq? name "sort-by") true
                                                                                                       (if (str-eq? name "bars_is_vector_i64") true
@@ -193,7 +197,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1541,6 +1545,37 @@
           (hir-let (hir-vec (vector cur walk))
             finish))))))
 
+;; (update-in m ks f) → assoc-in m ks (f (get-in m ks))
+(defn desugar-update-in [map-ast ks-ast f uid]
+  (let [m (hir-sym (str-concat "__uim" (int-str uid)))
+        a (hir-sym (str-concat "__uia" (int-str uid)))
+        outer (hir-vec (vector m map-ast a ks-ast))]
+    (hir-let outer
+      (hir-call "assoc-in" (vector m a
+        (apply-callable f (vector (hir-call "get-in" (vector m a)))))))))
+
+;; (reduce-kv f init m) → fold f over [acc k v] of each map entry
+(defn desugar-reduce-kv [f init-ast map-ast uid]
+  (let [m (hir-sym (str-concat "__rkm" (int-str uid)))
+        ks (hir-sym (str-concat "__rkk" (int-str uid)))
+        n (hir-sym (str-concat "__rkn" (int-str uid)))
+        i (hir-sym (str-concat "__rki" (int-str uid)))
+        k (hir-sym (str-concat "__rkx" (int-str uid)))
+        acc (hir-sym (str-concat "__rka" (int-str uid)))
+        outer (hir-vec (vector
+                 m map-ast
+                 ks (hir-call "map-keys" (vector m))
+                 n (hir-call "count" (vector ks))))
+        binds (hir-vec (vector i (hir-num 0) acc init-ast))
+        done (hir-call ">=" (vector i n))
+        getk (hir-call "get" (vector ks i))
+        call (apply-callable f (vector acc k (hir-call "map-get" (vector m k))))
+        step (hir-let (hir-vec (vector k getk))
+               (hir-let (hir-vec (vector acc call))
+                 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) acc))))
+        body (hir-if done acc step)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; (get-in coll ks) — walk ks (vector of keys/indices); maps and vectors mixed
 (defn desugar-get-in [coll-ast ks-ast uid]
   (let [cur (hir-sym (str-concat "__gic" (int-str uid)))
@@ -1759,6 +1794,15 @@
       (lower-expr (desugar-dissoc ast (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "assoc-in") (= n 4) false)
       (lower-expr (desugar-assoc-in (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "update-in") (= n 4) false)
+      (lower-expr (desugar-update-in (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "reduce-kv") (= n 4) false)
+      (lower-expr (desugar-reduce-kv (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
+    ;; keys/vals are plain aliases of map-keys/map-values
+    (if (if (str-eq? fname "keys") (= n 2) false)
+      (lower-expr (hir-call "map-keys" (vector (get ast 1))) t l lines loops adt structs)
+    (if (if (str-eq? fname "vals") (= n 2) false)
+      (lower-expr (hir-call "map-values" (vector (get ast 1))) t l lines loops adt structs)
     (if (if (str-eq? fname "update") (= n 4) false)
       (lower-expr (desugar-update (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "sort-by") (= n 3) false)
@@ -1822,7 +1866,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

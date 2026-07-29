@@ -185,6 +185,9 @@ desugar to inline `loop`/`recur` (self-host):
 (merge a b)                    ;; clone of a + b's keys (b wins)
 (dissoc m 2 3)                 ;; clone without keys 2 and 3
 (assoc-in m [1 6] 60)          ;; nested assoc, input kept
+(update-in m [1 6] f)          ;; assoc-in with (f current)
+(reduce-kv f 0 m)              ;; fold over [acc k v]
+(keys m) (vals m)              ;; key / value vectors
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):
