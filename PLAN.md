@@ -716,7 +716,7 @@ bars/
 ### 17.27 `while` ✅
 
 - [x] `(while cond body…)` → `loop`/`recur` with dummy binding
-- [x] Example `while_demo.brs` → 0 1 2 3, 30 20 10
+- [x] Example `while_demo.brs` → 3 2 1 0, 30 20 10
 
 ---
 

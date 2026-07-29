@@ -564,8 +564,8 @@ Binding is `[name n]`; `n` is evaluated once. `name` runs from `0` to `n-1`.
 ```clojure
 (let [xs (vector 1 2 3)]
   (while (> (count xs) 0)
-    (println (first xs))
-    (pop xs)))               ;; returns nil when condition is false
+    (println (last xs))
+    (pop xs)))               ;; pop removes last; prints 3 2 1
 ```
 
 Expands to a `loop`/`recur`. The condition is re-evaluated every iteration.

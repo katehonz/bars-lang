@@ -1,12 +1,11 @@
 ;; while (Phase 17.27) — condition re-checked each iteration
 
 (defn main []
-  ;; Drain a vector with mutating pop
+  ;; Drain from the end (pop removes last)
   (let [xs (vector 0 1 2 3)]
     (while (> (count xs) 0)
-      (println (first xs))
+      (println (last xs))
       (pop xs)))
-  ;; Build then drain
   (let [ys (vector)]
     (push ys 10)
     (push ys 20)
