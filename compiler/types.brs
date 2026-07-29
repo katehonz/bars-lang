@@ -601,6 +601,10 @@
         (env_insert env "map-contains?" cmp)
         (env_insert env "map-keys" unary)
         (env_insert env "map-values" unary)
+        (env_insert env "set" (mono_scheme (T_Fun (empty_vec) (T_I64))))
+        (env_insert env "set-add" bin)
+        (env_insert env "set-contains?" cmp)
+        (env_insert env "set-count" unary)
         (env_insert env "def" (id_scheme))
         ;; do removed from builtin — it's a special form
         env))

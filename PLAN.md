@@ -580,6 +580,18 @@ bars/
   - `lib/map` map-has? делегира към map-contains? (вече не греши при стойност 0)
   - Example `map_ops_demo.brs`; self-test 90/90
 
+### 17.10 Sets + first/last в self-host ✅
+
+- [x] Set операции в self-host backend-ите (runtime-ът ги имаше, но не бяха свързани)
+  - LLVM declares + maps: `set`/`set-add`/`set-contains?`/`set-count` → `bars_set_*`
+  - C backend maps + void-извикване на `set-add` (като `map-set`)
+  - HIR: `(set a b c)` → new + set-add на всеки елемент (като `(vector …)`)
+- [x] `first`/`last` — `bars_vector_first_i64`/`bars_vector_last_i64` в runtime,
+  maps в двата backend-а (преди: link error при директна употреба)
+- [x] types env (set-ops; first/last в coll-any), ownership copy-ops
+- [x] `examples/set_demo.brs` разширен (литерална форма), `vector.brs` + first/last;
+  set_demo в self-test suite
+
 ### 17.3 Ecosystem
 
 - [x] HTTP server helper (`lib/http_server`) — 17.4
@@ -591,4 +603,4 @@ bars/
 
 ---
 
-*План версия: 6.20 | Актуализиран: 2026-07-29*
+*План версия: 6.21 | Актуализиран: 2026-07-29*

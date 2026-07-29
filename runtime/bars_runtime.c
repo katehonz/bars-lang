@@ -200,6 +200,15 @@ int64_t bars_vector_get_i64(bars_vector_t* vec, int64_t idx) {
     return 0;
 }
 
+int64_t bars_vector_first_i64(bars_vector_t* vec) {
+    return bars_vector_get_i64(vec, 0);
+}
+
+int64_t bars_vector_last_i64(bars_vector_t* vec) {
+    if (!vec || vec->len == 0) return 0;
+    return bars_vector_get_i64(vec, (int64_t)vec->len - 1);
+}
+
 int64_t bars_vector_count_i64(bars_vector_t* vec) {
     return vec ? (int64_t)vec->len : 0;
 }

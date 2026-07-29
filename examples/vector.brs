@@ -4,4 +4,6 @@
   (push nums 40)
   (println (count nums))
   (println (get nums 0))
-  (println (get nums 3)))
+  (println (get nums 3))
+  (println (first nums))
+  (println (last nums)))

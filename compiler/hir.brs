@@ -281,6 +281,25 @@
                       (str-concat " " (op-fmt op)))))))]
           (recur (+ i 1) (+ t2 1) l2))))))
 
+;; Lower set elements from index `start` → set + set-add
+(defn lower-set-from [ast start t l lines loops adt structs]
+  (let [n (count ast)
+        dest (fresh-temp t)
+        t1 (+ t 1)
+        _ (put lines (str-concat "    call " (str-concat dest " set")))]
+    (loop [i start tcur t1 lcur l]
+      (if (>= i n)
+        (mk-ret dest tcur lcur)
+        (let [res (lower-expr (get ast i) tcur lcur lines loops adt structs)
+              op (ret-op res)
+              t2 (st-t res)
+              l2 (st-l res)
+              tmp (fresh-temp t2)
+              _ (put lines (str-concat "    call " (str-concat tmp
+                    (str-concat " set-add var " (str-concat dest
+                      (str-concat " " (op-fmt op)))))))]
+          (recur (+ i 1) (+ t2 1) l2))))))
+
 (defn lower-form [ast t l lines loops adt structs]
   (let [head (list-head ast)
         tag (if (is-atom? head) (tag-of head) -1)]
@@ -745,6 +764,9 @@
     (if (str-eq? fname "vector")
       ;; (vector a b c) → new + push each (not multi-arg runtime new)
       (lower-vector-from ast 1 t l lines loops adt structs)
+    (if (str-eq? fname "set")
+      ;; (set a b c) → new + set-add each
+      (lower-set-from ast 1 t l lines loops adt structs)
     ;; (kwargs :k v ...) → flat vector of string keys + values
     (if (if (str-eq? fname "kwargs") true (str-eq? fname "kw-pack"))
       (lower-expr (desugar-kwargs-form ast) t l lines loops adt structs)
@@ -790,7 +812,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

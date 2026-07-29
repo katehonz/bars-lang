@@ -55,7 +55,7 @@ Maps can hold vectors and other collections:
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `set` | `(set)` | Create empty set |
+| `set` | `(set)` or `(set a b c)` | Create set (optionally with initial elements) |
 | `set-add` | `(set-add s val)` | Add element to set |
 | `set-contains?` | `(set-contains? s val)` | Check membership (1 or 0) |
 | `set-count` | `(set-count s)` | Number of unique elements |

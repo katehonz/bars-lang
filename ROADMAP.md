@@ -224,8 +224,9 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.7** Type env precision — str-схеми + println accept-any (warnings 294→155)
 - [x] **17.8** HM generalize + instantiate за defn (warnings →128; fix apply_subst/ty_free_vars)
 - [x] **17.9** Interleaved solve + env_lookup last-match fix + map-contains?/keys/values (warnings →3)
-- [ ] **17.10** TLS / HTTPS (deferred)
+- [x] **17.10** Set ops + first/last свързани в self-host backend-ите
+- [ ] **17.11** TLS / HTTPS (deferred)
 
 ---
 
-*Версия: 7.1 | Актуализирано: 2026-07-29*
+*Версия: 7.2 | Актуализирано: 2026-07-29*

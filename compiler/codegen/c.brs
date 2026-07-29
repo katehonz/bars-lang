@@ -93,8 +93,10 @@
     (if (str-eq? fname "push") "bars_vector_push_i64"
       (if (str-eq? fname "pop") "bars_vector_pop_i64"
         (if (str-eq? fname "get") "bars_vector_get_i64"
-          (if (str-eq? fname "vector") "bars_vector_new_i64"
-            ""))))))
+          (if (str-eq? fname "first") "bars_vector_first_i64"
+            (if (str-eq? fname "last") "bars_vector_last_i64"
+              (if (str-eq? fname "vector") "bars_vector_new_i64"
+                ""))))))))
 
 (defn map-map-ops [fname]
   (if (str-eq? fname "map") "bars_map_new_i64"
@@ -104,7 +106,11 @@
           (if (str-eq? fname "map-contains?") "bars_map_contains_i64"
             (if (str-eq? fname "map-keys") "bars_map_keys_i64"
               (if (str-eq? fname "map-values") "bars_map_values_i64"
-                ""))))))))
+                (if (str-eq? fname "set") "bars_set_new_i64"
+                  (if (str-eq? fname "set-add") "bars_set_add_i64"
+                    (if (str-eq? fname "set-contains?") "bars_set_contains_i64"
+                      (if (str-eq? fname "set-count") "bars_set_count_i64"
+                        ""))))))))))))
 
 (defn map-io-ops [fname]
   (if (str-eq? fname "slurp") "bars_slurp"
@@ -355,8 +361,9 @@
                   e1 (get er 1)
                   ;; Runtime fns that return void: call as statement, dest = 0.
                   is-void (if (str-eq? fname "map-set") true
-                            (if (str-eq? fname "spit") true
-                              (if (str-eq? fname "exit") true false)))]
+                            (if (str-eq? fname "set-add") true
+                              (if (str-eq? fname "spit") true
+                                (if (str-eq? fname "exit") true false))))]
               (if is-void
                 (do (lines-push o1 (str-concat "  " (str-concat mapped (str-concat "(" (str-concat args ");")))))
                     (lines-push o1 (str-concat "  " (str-concat dest " = 0;")))
