@@ -46,7 +46,7 @@ Bars is the first project to say: *"What if we kept everything that makes Clojur
 - **REPL-driven development** — evaluate expressions instantly via Cranelift JIT
 - **Homoiconic macros** — `when`, `unless`, `cond`, `->`, `->>` as AST transformations
 - **Immutable-by-default philosophy** — functional composition, explicit mutation
-- **Vectors `[]` and Maps `{}`** — literal syntax for common data structures
+- **Vectors `[]` and maps via `(map)`** — common data structures (no `{}` syntax)
 - **Keyword `:foo`** — self-describing identifiers
 
 ### What We Add for Systems Programming

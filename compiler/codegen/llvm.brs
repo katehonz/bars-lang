@@ -603,9 +603,11 @@
         then-lbl (get words 3)
         else-lbl (get words 4)
         tmp (str-concat then-lbl "_c")]
+    ;; Truthiness: any non-zero i64 is true. `trunc … to i1` only keeps the
+    ;; low bit, so values like 2/4/… were wrongly falsy (17.16).
     (do (lines-push o1
           (str-concat "  " (str-concat (llvm-local tmp)
-            (str-concat " = trunc i64 " (str-concat c " to i1")))))
+            (str-concat " = icmp ne i64 " (str-concat c ", 0")))))
         (lines-push o1
           (str-concat "  br i1 " (str-concat (llvm-local tmp)
             (str-concat ", label %" (str-concat then-lbl

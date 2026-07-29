@@ -261,7 +261,14 @@
       (if (= tag 0) true
         (if (= tag 2) true
           (if (= tag 4) true
-            (= tag 5)))))
+            (if (= tag 5) true
+              ;; true/false/nil as symbols (legacy reader) are still Copy
+              (if (= tag 1)
+                (let [n (ast-val expr)]
+                  (if (str-eq? n "true") true
+                    (if (str-eq? n "false") true
+                      (str-eq? n "nil"))))
+                false))))))
     (let [head (get expr 0)]
       (if (if (is-atom? head) (= (ast-tag head) 1) false)
         (name-in-copy-ops? (ast-val head))

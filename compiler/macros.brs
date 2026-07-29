@@ -586,26 +586,30 @@
       (expand-unless expr macs)
       (if (str-eq? name "cond")
         (expand-cond expr macs)
-        (if (str-eq? name "->")
-          (expand-thread expr macs)
-          (if (str-eq? name "->>")
-            (expand-thread-last expr macs)
-            (if (str-eq? name "deftrait")
-              (expand-deftrait expr)
-              (if (str-eq? name "impl")
-                (expand-impl expr (vector) macs)
-                (if (str-eq? name "defconst")
-                  (expand-defconst expr macs)
-                  (if (str-eq? name "trait-call")
-                    (expand-trait-call expr macs)
-                    (if (str-eq? name "tcall")
-                      (expand-trait-call expr macs)
-                      (let [entry (macro-lookup macs name)]
-                        (if (= entry 0)
-                          (expand-children-from expr 0 macs)
-                          (let [args (expand-call-args expr macs)
-                                expanded (apply-user-macro entry args)]
-                            (expand-expr expanded macs)))))))))))))))
+        (if (str-eq? name "and")
+          (expand-and expr macs)
+          (if (str-eq? name "or")
+            (expand-or expr macs)
+            (if (str-eq? name "->")
+              (expand-thread expr macs)
+              (if (str-eq? name "->>")
+                (expand-thread-last expr macs)
+                (if (str-eq? name "deftrait")
+                  (expand-deftrait expr)
+                  (if (str-eq? name "impl")
+                    (expand-impl expr (vector) macs)
+                    (if (str-eq? name "defconst")
+                      (expand-defconst expr macs)
+                      (if (str-eq? name "trait-call")
+                        (expand-trait-call expr macs)
+                        (if (str-eq? name "tcall")
+                          (expand-trait-call expr macs)
+                          (let [entry (macro-lookup macs name)]
+                            (if (= entry 0)
+                              (expand-children-from expr 0 macs)
+                              (let [args (expand-call-args expr macs)
+                                    expanded (apply-user-macro entry args)]
+                                (expand-expr expanded macs)))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -657,6 +661,47 @@
                           (do (push body-exprs (expand-expr (get expr i) macs))
                               (recur (+ i 1)))))
                       (mk-if cond (mk-do body-exprs) (mk-nil)))))))))))
+
+;; (and) => true; (and x) => x; (and a b c) => (if a (if b c false) false)
+(defn expand-and [expr macs]
+  (let [n (count expr)]
+    (if (< n 2)
+      (mk-bool 1)
+      (if (= n 2)
+        (expand-expr (get expr 1) macs)
+        (loop [i (- n 2) res (expand-expr (get expr (- n 1)) macs)]
+          (if (< i 1)
+            res
+            (recur (- i 1)
+              (mk-if (expand-expr (get expr i) macs) res (mk-bool 0)))))))))
+
+;; (let [name val] body) single binding — for or short-circuit without double-eval
+(defn mk-let1 [name val body]
+  (let [binds (vector)
+        out (vector)]
+    (do (push binds (mk-sym name))
+        (push binds val)
+        (push out (mk-special 11 "let"))
+        (push out (wrap-vec binds))
+        (push out body)
+        out)))
+
+;; (or) => false; (or x) => x; (or a b c) => (let [t a] (if t t (or b c…)))
+(defn expand-or [expr macs]
+  (let [n (count expr)]
+    (if (< n 2)
+      (mk-bool 0)
+      (if (= n 2)
+        (expand-expr (get expr 1) macs)
+        (loop [i (- n 2) res (expand-expr (get expr (- n 1)) macs) k 0]
+          (if (< i 1)
+            res
+            (let [arg (expand-expr (get expr i) macs)
+                  tname (str-concat "__or" (str-from-i64 k))
+                  tsym (mk-sym tname)]
+              (recur (- i 1)
+                (mk-let1 tname arg (mk-if tsym tsym res))
+                (+ k 1)))))))))
 
 ;; Flat cond (host style):
 ;;   (cond test1 expr1 test2 expr2 :else default)

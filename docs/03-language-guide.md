@@ -420,6 +420,19 @@ Bars has built-in macros that expand before code generation:
   nil)
 ```
 
+### `and` / `or`
+
+Short-circuiting macros (not function calls):
+
+```clojure
+(and a b c)   ;; (if a (if b c false) false)
+(or a b c)    ;; (let [t a] (if t t (or b c))) — no double-eval
+(and)         ;; true
+(or)          ;; false
+```
+
+Any non-zero / non-`false` / non-`nil` value is truthy (including integers other than 0).
+
 ### Threading Macros
 
 ```clojure

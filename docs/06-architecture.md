@@ -27,7 +27,7 @@ C Runtime (Boehm GC)
 ### Reader (`src/reader/`)
 
 - **Lexer** (`lexer.rs`) — Tokenizes source into `Token` enum (symbols, numbers, strings, keywords, brackets, `^` for borrows).
-- **Parser** (`parser.rs`) — Recursive descent parser producing `Expr`. Handles special forms (`let`, `if`, `defn`, `def`, `do`, `loop`, `recur`, `quote`) and data structures (vectors `[]`, maps `{}`).
+- **Parser** (`parser.rs`) — Recursive descent parser producing `Expr`. Handles special forms (`let`, `if`, `defn`, `def`, `do`, `loop`, `recur`, `quote`) and data structures (vectors `[]`; maps via `(map)`, not `{}`).
 
 ### AST (`src/ast/mod.rs`)
 

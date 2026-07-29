@@ -230,7 +230,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.13** Incremental dep-graph (`.deps` sidecar beyond mtime)
 - [x] **17.14** Persistent/COW vectors & maps (`conj` / `map-assoc` / …)
 - [x] **17.15** `tools/gen_types.py` synced (validate + identity emit)
+- [x] **17.16** `and`/`or` macros + if truthiness (icmp ne) + true/false/nil literals
 
 ---
 
-*Версия: 7.3 | Актуализирано: 2026-07-29*
+*Версия: 7.4 | Актуализирано: 2026-07-29*

@@ -214,15 +214,27 @@
             (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1))))
             (do (emit-tok tokens spans (TNumber (parse-int acc)) off) i)))))))
 
+;; Emit true/false as bool, nil as nil — not ordinary symbols (17.16).
+;; Otherwise ownership treats them as Owned and (let [x false] … false)
+;; becomes a false use-after-move.
+(defn emit-symbol-or-lit [tokens spans acc off]
+  (if (name-eq? acc "true")
+    (emit-tok tokens spans (TBool 1) off)
+    (if (name-eq? acc "false")
+      (emit-tok tokens spans (TBool 0) off)
+      (if (name-eq? acc "nil")
+        (emit-tok tokens spans (TNilType) off)
+        (emit-tok tokens spans (TSymbol acc) off)))))
+
 (defn lex-read-symbol-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]
     (loop [i pos acc ""]
       (if (>= i len)
-        (do (emit-tok tokens spans (TSymbol acc) off) i)
+        (do (emit-symbol-or-lit tokens spans acc off) i)
         (let [c (str-get text i)]
           (if (sym-char? c)
             (recur (+ i 1) (str-concat acc (str-slice text i (+ i 1))))
-            (do (emit-tok tokens spans (TSymbol acc) off) i)))))))
+            (do (emit-symbol-or-lit tokens spans acc off) i)))))))
 
 (defn lex-read-keyword-at [state tokens spans off]
   (let [text (get state 0) pos (get state 1) len (get state 2)]

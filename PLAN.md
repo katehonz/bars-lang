@@ -632,6 +632,15 @@ bars/
   - types.brs is source of truth; tool checks paren balance and identity-emits
   - `python3 tools/gen_types.py --check` for CI-style validation
 
+### 17.16 `and`/`or` + if truthiness + true/false literals ✅
+
+- [x] Built-in macros `and` / `or` (short-circuit → nested `if` / `let`)
+- [x] LLVM branch: `icmp ne i64 %c, 0` (was `trunc … to i1` — even ints like 2 were falsy)
+- [x] Reader: `true`/`false`/`nil` → bool/nil tokens (not symbols) so ownership won't UAM
+- [x] Ownership: treat true/false/nil names as Copy (legacy safety net)
+- [x] Docs: language guide + fix `{}` drift in why-bars / architecture
+- [x] Example `andor_demo.brs`
+
 ---
 
-*План версия: 6.22 | Актуализиран: 2026-07-29*
+*План версия: 6.23 | Актуализиран: 2026-07-29*
