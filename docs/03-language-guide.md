@@ -485,7 +485,9 @@ See `docs/04-stdlib.md` (`lib/test.brs`) and `examples/deftest_demo.brs`.
 
 ### User macros (`defmacro`)
 
-The self-hosted expander supports user `defmacro` with syntax-quote templates:
+The self-hosted expander supports user `defmacro` in two styles:
+
+**1. Syntax-quote templates** (most macros):
 
 ```clojure
 (defmacro twice [x]
@@ -495,6 +497,23 @@ The self-hosted expander supports user `defmacro` with syntax-quote templates:
   `(if (not ~cond) ~body nil))
 ```
 
-Unquote (`~`) and splice (`~@`) work inside `` ` `` templates. Macro definitions
-are compile-time only (stripped after expansion). Modules rename `defmacro`
-names like `defn`, so `(require "lib/test" :as t)` + `(t/deftest …)` works.
+Unquote (`~`) and splice (`~@`) work inside `` ` `` templates. `~` evaluates
+expressions at expand-time (not only symbol lookup).
+
+**2. Expand-time interpreter** (list/cons/if/let bodies):
+
+```clojure
+(defmacro my-or [a b]
+  (list (quote if) a a b))
+
+(defmacro thrice [x]
+  (let [v x]
+    (list (quote *) v 3)))
+```
+
+Builtins at expand-time: `list`, `cons`, `first`, `rest`, `count`, `=`, `+`/`-`/`*`,
+`not`, `symbol?`/`list?`/`vector?`, plus `if`/`let`/`do`/`quote`.
+
+Macro definitions are compile-time only (stripped after expansion). Modules
+rename `defmacro` names like `defn`, so `(require "lib/test" :as t)` +
+`(t/deftest …)` works.

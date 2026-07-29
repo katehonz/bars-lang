@@ -106,6 +106,12 @@ int64_t bars_vector_count_i64(bars_vector_t* vec);
 /* Polymorphic count: string length or vector length by magic */
 int64_t bars_count_any_i64(int64_t val);
 
+/* Persistent / COW vector ops (Phase 17.14) — originals never mutated */
+int64_t bars_vector_clone_i64(bars_vector_t* vec);
+int64_t bars_vector_conj_i64(bars_vector_t* vec, int64_t val);
+int64_t bars_vector_assoc_i64(bars_vector_t* vec, int64_t idx, int64_t val);
+int64_t bars_vector_pop_copy_i64(bars_vector_t* vec);
+
 /* Map operations */
 bars_map_t* bars_map_new(void);
 void bars_map_set(bars_map_t* map, bars_value_t key, bars_value_t val);
@@ -120,6 +126,10 @@ int64_t bars_map_count_i64(bars_map_t* map);
 int64_t bars_map_contains_i64(bars_map_t* map, int64_t key);
 bars_vector_t* bars_map_keys_i64(bars_map_t* map);
 bars_vector_t* bars_map_values_i64(bars_map_t* map);
+
+/* Persistent / COW map ops (Phase 17.14) */
+int64_t bars_map_clone_i64(bars_map_t* map);
+int64_t bars_map_assoc_i64(bars_map_t* map, int64_t key, int64_t val);
 
 /* Simple i64 set helpers (backed by map) */
 bars_map_t* bars_set_new_i64(void);

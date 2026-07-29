@@ -3,7 +3,7 @@
 ;;
 ;; Exit codes: 0 ok, 1 usage/input/parse, 2 link (clang), 3 typecheck, 4 ownership
 ;; Skip: BARS_SKIP_TYPECHECK / BARS_SKIP_OWNERSHIP (non-empty env)
-;; Incremental: skip link if output newer than all loaded sources (BARS_FORCE=1 to rebuild)
+;; Incremental: .deps graph + mtime; skip rebuild if up to date (BARS_FORCE=1 to rebuild)
 ;; Watch: bars-self watch <in.brs> <out>
 ;; Debug/profile: BARS_DEBUG=1 (DWARF), BARS_PROFILE=1 (-pg), BARS_TIMINGS=1 (stage ms)
 
@@ -291,7 +291,11 @@
                   (push out visited)
                   out)))))))
 
-;; ---- incremental (Phase 13.3) ----
+;; ---- incremental (Phase 13.3 + dep-graph 17.13) ----
+;; Sidecar `<output>.deps`: one `path\tmtime` line per loaded source.
+;; Rebuild when: missing output/deps, path set drifts, or any mtime mismatches.
+;; Flat max-mtime alone could miss a source that was touched then restored to an
+;; older stamp while the dep set changed; the graph records exact edges.
 
 (defn max-mtime [paths]
   (let [n (count paths)]
@@ -300,11 +304,79 @@
         (let [t (bars_file_mtime (get paths i))]
           (recur (+ i 1) (if (> t m) t m)))))))
 
-;; True when output exists and is at least as new as every loaded source.
+(defn deps-path [output-path]
+  (str-concat output-path ".deps"))
+
+(defn write-deps [sources output-path]
+  (let [n (count sources)
+        acc (loop [i 0 s ""]
+              (if (>= i n) s
+                (let [p (get sources i)
+                      t (bars_file_mtime p)
+                      line (str-concat p (str-concat "\t" (str-concat (str-from-i64 t) "\n")))]
+                  (recur (+ i 1) (str-concat s line)))))]
+    (spit (deps-path output-path) acc)
+    0))
+
+;; Parse one `path\tmtime` line → [path mtime-str] or 0.
+(defn parse-deps-line [line]
+  (let [n (count line)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (if (= (str-get line i) 9)
+          (let [p (str-slice line 0 i)
+                t (str-slice line (+ i 1) n)
+                v (vector)]
+            (do (push v p) (push v t) v))
+          (recur (+ i 1)))))))
+
+;; Split deps file text on newlines into a vector of lines.
+(defn deps-lines [text]
+  (let [n (count text)
+        out (vector)]
+    (do (loop [i 0 start 0]
+          (if (>= i n)
+            (if (< start n)
+              (do (push out (str-slice text start n)) out)
+              out)
+            (if (= (str-get text i) 10)
+              (do (if (> i start)
+                    (push out (str-slice text start i))
+                    0)
+                  (recur (+ i 1) (+ i 1)))
+              (recur (+ i 1) start))))
+        out)))
+
+;; True when every recorded edge still matches and covers `sources` exactly.
+(defn deps-up-to-date? [sources output-path]
+  (let [dp (deps-path output-path)
+        out-m (bars_file_mtime output-path)
+        dep-m (bars_file_mtime dp)]
+    (if (if (= out-m 0) true (= dep-m 0))
+      false
+      (let [text (slurp dp)
+            lines (deps-lines text)
+            nl (count lines)
+            ns (count sources)]
+        (if (!= nl ns) false
+          (loop [i 0]
+            (if (>= i nl) true
+              (let [parsed (parse-deps-line (get lines i))]
+                (if (= parsed 0) false
+                  (let [p (get parsed 0)
+                        old-t (get parsed 1)
+                        now (bars_file_mtime p)]
+                    (if (= now 0) false
+                      (if (not (path-in? sources p)) false
+                        (if (not (str-eq? old-t (str-from-i64 now))) false
+                          (recur (+ i 1)))))))))))))))
+
+;; True when output exists, is ≥ max source mtime, and the dep-graph matches.
 (defn up-to-date? [sources output-path]
   (let [out-m (bars_file_mtime output-path)]
     (if (= out-m 0) false
-      (>= out-m (max-mtime sources)))))
+      (if (< out-m (max-mtime sources)) false
+        (deps-up-to-date? sources output-path)))))
 
 (defn run-typecheck [ast path text]
   (if (skip-typecheck?)
@@ -517,7 +589,11 @@
                                     hir-lines (hir/lower-program expanded)
                                     _h (timing-note "hir" t4)
                                     code (emit-and-link hir-lines output-path input-path triple)]
-                                (do (timing-note "total" t-all) code))))))))))))))))
+                                (do (if (= code 0)
+                                      (write-deps sources output-path)
+                                      0)
+                                    (timing-note "total" t-all)
+                                    code))))))))))))))))
 
 ;; ---- watch (Phase 13.4) ----
 ;; Poll source mtimes; recompile when any source is newer than the binary.

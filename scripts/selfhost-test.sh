@@ -76,6 +76,8 @@ EXAMPLES=(
   examples/deftest_demo.brs
   examples/defmacro_demo.brs
   examples/defmacro_demo2.brs
+  examples/defmacro_interp.brs
+  examples/persist_demo.brs
   examples/hof_demo.brs
   examples/hof_lambda.brs
   examples/kwargs_demo.brs
@@ -958,6 +960,8 @@ C_EXAMPLES=(
   examples/deftest_demo.brs
   examples/defmacro_demo.brs
   examples/defmacro_demo2.brs
+  examples/defmacro_interp.brs
+  examples/persist_demo.brs
   examples/hof_demo.brs
   examples/hof_lambda.brs
   examples/kwargs_demo.brs

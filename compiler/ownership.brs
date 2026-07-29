@@ -241,6 +241,8 @@
         (push v "str-replace")
         (push v "int-str") (push v "vector")
         (push v "map-contains?") (push v "map-keys") (push v "map-values")
+        (push v "vector-clone") (push v "conj") (push v "v-assoc") (push v "v-pop")
+        (push v "map-clone") (push v "map-assoc")
         (push v "set-contains?") (push v "set-count")
         v)))
 

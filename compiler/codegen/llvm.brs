@@ -207,6 +207,10 @@
         (lines-push lines "declare i64 @bars_vector_first_i64(i64)")
         (lines-push lines "declare i64 @bars_vector_last_i64(i64)")
         (lines-push lines "declare i64 @bars_vector_count_i64(i64)")
+        (lines-push lines "declare i64 @bars_vector_clone_i64(i64)")
+        (lines-push lines "declare i64 @bars_vector_conj_i64(i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_assoc_i64(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_vector_pop_copy_i64(i64)")
         (lines-push lines "declare i64 @bars_count_any_i64(i64)")
         (lines-push lines "declare i64 @bars_map_new_i64()")
         (lines-push lines "declare i64 @bars_map_set_i64(i64, i64, i64)")
@@ -215,6 +219,8 @@
         (lines-push lines "declare i64 @bars_map_contains_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_map_keys_i64(i64)")
         (lines-push lines "declare i64 @bars_map_values_i64(i64)")
+        (lines-push lines "declare i64 @bars_map_clone_i64(i64)")
+        (lines-push lines "declare i64 @bars_map_assoc_i64(i64, i64, i64)")
         (lines-push lines "declare i64 @bars_set_new_i64()")
         (lines-push lines "declare i64 @bars_set_add_i64(i64, i64)")
         (lines-push lines "declare i64 @bars_set_contains_i64(i64, i64)")
@@ -284,7 +290,11 @@
           (if (str-eq? fname "first") "bars_vector_first_i64"
             (if (str-eq? fname "last") "bars_vector_last_i64"
               (if (str-eq? fname "vector") "bars_vector_new_i64"
-                ""))))))))
+                (if (str-eq? fname "vector-clone") "bars_vector_clone_i64"
+                  (if (str-eq? fname "conj") "bars_vector_conj_i64"
+                    (if (str-eq? fname "v-assoc") "bars_vector_assoc_i64"
+                      (if (str-eq? fname "v-pop") "bars_vector_pop_copy_i64"
+                        ""))))))))))))
 
 (defn map-map-ops [fname]
   (if (str-eq? fname "map") "bars_map_new_i64"
@@ -294,11 +304,13 @@
           (if (str-eq? fname "map-contains?") "bars_map_contains_i64"
             (if (str-eq? fname "map-keys") "bars_map_keys_i64"
               (if (str-eq? fname "map-values") "bars_map_values_i64"
-                (if (str-eq? fname "set") "bars_set_new_i64"
-                  (if (str-eq? fname "set-add") "bars_set_add_i64"
-                    (if (str-eq? fname "set-contains?") "bars_set_contains_i64"
-                      (if (str-eq? fname "set-count") "bars_set_count_i64"
-                        ""))))))))))))
+                (if (str-eq? fname "map-clone") "bars_map_clone_i64"
+                  (if (str-eq? fname "map-assoc") "bars_map_assoc_i64"
+                    (if (str-eq? fname "set") "bars_set_new_i64"
+                      (if (str-eq? fname "set-add") "bars_set_add_i64"
+                        (if (str-eq? fname "set-contains?") "bars_set_contains_i64"
+                          (if (str-eq? fname "set-count") "bars_set_count_i64"
+                            ""))))))))))))))
 
 (defn map-io-ops [fname]
   (if (str-eq? fname "slurp") "bars_slurp"

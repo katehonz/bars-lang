@@ -1,6 +1,7 @@
 ;; Bars Macro Expander — Stage 8 of self-hosting
-;; Built-in + user defmacro expansion (syntax-quote templates)
+;; Built-in + user defmacro expansion (syntax-quote templates + expand-time eval)
 ;; Built-ins: when, unless, cond, ->, ->>, traits, defconst
+;; User macros: template `` ` `` / ~ / ~@, or full interpreter (list/cons/if/let/…)
 ;; Transforms AST before HIR lowering.
 ;;
 ;; AST format:
@@ -152,24 +153,308 @@
                   (recur (+ i 1))))))
         env)))
 
+(defn env-extend [env name val]
+  (let [pair (vector)]
+    (do (push pair name)
+        (push pair val)
+        (push env pair)
+        env)))
+
+;; ===========================================================================
+;; Macro interpreter (Phase 17.2 leftover → 17.12)
+;; Evaluate non-template defmacro bodies at expand-time (list/cons/if/let/…).
+;; Values are AST nodes (homoiconic). Special-form heads are re-tagged so HIR
+;; sees tag 12/13/… rather than a bare symbol call.
+;; ===========================================================================
+
+(defn promote-special-head [head]
+  (if (if (is-atom? head) (= (ast-tag head) 1) false)
+    (let [name (ast-val head)]
+      (if (str-eq? name "if") (mk-special 12 "if")
+        (if (str-eq? name "do") (mk-special 13 "do")
+          (if (str-eq? name "let") (mk-special 11 "let")
+            (if (str-eq? name "loop") (mk-special 14 "loop")
+              (if (str-eq? name "quote") (mk-special 22 "quote")
+                (if (str-eq? name "fn") (mk-special 16 "fn")
+                  head)))))))
+    head))
+
+(defn macro-truthy? [v]
+  (if (is-atom? v)
+    (let [tag (ast-tag v)]
+      (if (= tag 4) false
+        (if (= tag 5) (!= (ast-val v) 0)
+          true)))
+    true))
+
+(defn macro-num? [v]
+  (if (is-atom? v) (= (ast-tag v) 0) false))
+
+(defn macro-as-num [v]
+  (if (macro-num? v) (ast-val v) 0))
+
+(defn is-vec-marker? [x]
+  (if (is-atom? x) false
+    (let [head (get x 0)]
+      (if (is-atom? head)
+        (= (ast-tag head) 28)
+        false))))
+
+(defn list-elems [v]
+  ;; Strip vector marker if present; otherwise compound is already a list.
+  (if (is-atom? v) (vector)
+    (if (is-vec-marker? v)
+      (let [n (count v) out (vector)]
+        (do (loop [i 1]
+              (if (>= i n) 0
+                (do (push out (get v i)) (recur (+ i 1)))))
+            out))
+      v)))
+
+(defn mk-list-from [elems]
+  (let [out (vector)
+        n (count elems)]
+    (do (loop [i 0]
+          (if (>= i n) out
+            (do (if (= i 0)
+                  (push out (promote-special-head (get elems i)))
+                  (push out (get elems i)))
+                (recur (+ i 1))))))))
+
+;; Forward: macro-eval defined below; expand-synquote uses it for ~expr.
+
+(defn macro-eval-args [args env]
+  (let [n (count args)
+        out (vector)]
+    (do (loop [i 0]
+          (if (>= i n) out
+            (do (push out (macro-eval (get args i) env))
+                (recur (+ i 1))))))))
+
+(defn macro-builtin-list [args env]
+  (mk-list-from (macro-eval-args args env)))
+
+(defn macro-builtin-cons [args env]
+  (if (< (count args) 2) (mk-nil)
+    (let [h (macro-eval (get args 0) env)
+          t (macro-eval (get args 1) env)
+          elems (list-elems t)
+          out (vector)]
+      (do (push out (promote-special-head h))
+          (loop [i 0]
+            (if (>= i (count elems)) out
+              (do (push out (get elems i))
+                  (recur (+ i 1)))))))))
+
+(defn macro-builtin-first [args env]
+  (if (< (count args) 1) (mk-nil)
+    (let [v (macro-eval (get args 0) env)
+          elems (list-elems v)]
+      (if (= (count elems) 0) (mk-nil) (get elems 0)))))
+
+(defn macro-builtin-rest [args env]
+  (if (< (count args) 1) (mk-list-from (vector))
+    (let [v (macro-eval (get args 0) env)
+          elems (list-elems v)
+          out (vector)
+          n (count elems)]
+      (do (loop [i 1]
+            (if (>= i n) (mk-list-from out)
+              (do (push out (get elems i))
+                  (recur (+ i 1)))))))))
+
+(defn macro-builtin-nth [args env idx]
+  (if (< (count args) 1) (mk-nil)
+    (let [v (macro-eval (get args 0) env)
+          elems (list-elems v)]
+      (if (>= idx (count elems)) (mk-nil) (get elems idx)))))
+
+(defn macro-builtin-count [args env]
+  (if (< (count args) 1) (mk-num 0)
+    (let [v (macro-eval (get args 0) env)]
+      (if (is-atom? v)
+        (if (= (ast-tag v) 2) (mk-num (count (ast-val v))) (mk-num 0))
+        (mk-num (count (list-elems v)))))))
+
+(defn macro-builtin-eq [args env]
+  (if (< (count args) 2) (mk-bool 0)
+    (let [a (macro-eval (get args 0) env)
+          b (macro-eval (get args 1) env)]
+      (if (if (macro-num? a) (macro-num? b) false)
+        (mk-bool (if (= (ast-val a) (ast-val b)) 1 0))
+        (if (if (is-atom? a) (is-atom? b) false)
+          (if (if (= (ast-tag a) (ast-tag b)) true false)
+            (if (= (ast-tag a) 1)
+              (mk-bool (if (str-eq? (ast-val a) (ast-val b)) 1 0))
+              (if (= (ast-tag a) 2)
+                (mk-bool (if (str-eq? (ast-val a) (ast-val b)) 1 0))
+                (mk-bool (if (= (ast-val a) (ast-val b)) 1 0))))
+            (mk-bool 0))
+          (mk-bool 0))))))
+
+(defn macro-builtin-arith [op args env]
+  (let [n (count args)]
+    (if (= n 0) (mk-num (if (str-eq? op "*") 1 0))
+      (let [first (macro-as-num (macro-eval (get args 0) env))]
+        (if (= n 1)
+          (if (str-eq? op "-") (mk-num (- 0 first)) (mk-num first))
+          (loop [i 1 acc first]
+            (if (>= i n) (mk-num acc)
+              (let [x (macro-as-num (macro-eval (get args i) env))]
+                (if (str-eq? op "+") (recur (+ i 1) (+ acc x))
+                  (if (str-eq? op "-") (recur (+ i 1) (- acc x))
+                    (if (str-eq? op "*") (recur (+ i 1) (* acc x))
+                      (recur (+ i 1) acc))))))))))))
+
+(defn macro-builtin-not [args env]
+  (if (< (count args) 1) (mk-bool 1)
+    (mk-bool (if (macro-truthy? (macro-eval (get args 0) env)) 0 1))))
+
+(defn macro-builtin-pred [kind args env]
+  (if (< (count args) 1) (mk-bool 0)
+    (let [v (macro-eval (get args 0) env)]
+      (if (str-eq? kind "symbol?")
+        (mk-bool (if (if (is-atom? v) (= (ast-tag v) 1) false) 1 0))
+        (if (str-eq? kind "list?")
+          (mk-bool (if (if (not (is-atom? v)) (not (is-vec-marker? v)) false) 1 0))
+          (if (str-eq? kind "vector?")
+            (mk-bool (if (is-vec-marker? v) 1 0))
+            (mk-bool 0)))))))
+
+(defn macro-eval-let [expr env]
+  ;; (let [n1 v1 n2 v2 ...] body...) — bindings may be vec-marker or flat.
+  (let [binds-raw (get expr 1)
+        plain (if (is-vec-marker? binds-raw)
+                (let [n (count binds-raw) out (vector)]
+                  (do (loop [i 1]
+                        (if (>= i n) 0
+                          (do (push out (get binds-raw i)) (recur (+ i 1)))))
+                      out))
+                binds-raw)
+        nb (count plain)
+        env2 (loop [i 0 e env]
+               (if (>= i nb) e
+                 (let [name-a (get plain i)
+                       val-a (if (< (+ i 1) nb) (get plain (+ i 1)) (mk-nil))
+                       nm (if (if (is-atom? name-a) (= (ast-tag name-a) 1) false)
+                            (ast-val name-a) "")
+                       vv (macro-eval val-a e)]
+                   (recur (+ i 2) (env-extend e nm vv)))))
+        n (count expr)]
+    (if (<= n 2) (mk-nil)
+      (loop [i 2 last (mk-nil)]
+        (if (>= i n) last
+          (recur (+ i 1) (macro-eval (get expr i) env2)))))))
+
+(defn macro-eval-if [expr env]
+  (let [c (macro-eval (get expr 1) env)]
+    (if (macro-truthy? c)
+      (macro-eval (get expr 2) env)
+      (if (>= (count expr) 4)
+        (macro-eval (get expr 3) env)
+        (mk-nil)))))
+
+(defn macro-eval-do [expr env]
+  (let [n (count expr)]
+    (loop [i 1 last (mk-nil)]
+      (if (>= i n) last
+        (recur (+ i 1) (macro-eval (get expr i) env))))))
+
+(defn collect-from [expr start]
+  (let [n (count expr)
+        out (vector)]
+    (do (loop [i start]
+          (if (>= i n) 0
+            (do (push out (get expr i))
+                (recur (+ i 1)))))
+        out)))
+
+(defn macro-rebuild-call [head args env]
+  (let [ev (macro-eval-args args env)
+        all (vector)
+        n (count ev)]
+    (do (push all head)
+        (loop [i 0]
+          (if (>= i n) (mk-list-from all)
+            (do (push all (get ev i))
+                (recur (+ i 1))))))))
+
+(defn macro-eval-symbol-call [name expr args env]
+  (if (str-eq? name "list") (macro-builtin-list args env)
+    (if (str-eq? name "cons") (macro-builtin-cons args env)
+      (if (str-eq? name "first") (macro-builtin-first args env)
+        (if (str-eq? name "rest") (macro-builtin-rest args env)
+          (if (str-eq? name "second") (macro-builtin-nth args env 1)
+            (if (str-eq? name "third") (macro-builtin-nth args env 2)
+          (if (str-eq? name "count") (macro-builtin-count args env)
+            (if (str-eq? name "=") (macro-builtin-eq args env)
+              (if (str-eq? name "+") (macro-builtin-arith "+" args env)
+                (if (str-eq? name "-") (macro-builtin-arith "-" args env)
+                  (if (str-eq? name "*") (macro-builtin-arith "*" args env)
+                    (if (str-eq? name "not") (macro-builtin-not args env)
+                      (if (str-eq? name "symbol?") (macro-builtin-pred "symbol?" args env)
+                        (if (str-eq? name "list?") (macro-builtin-pred "list?" args env)
+                          (if (str-eq? name "vector?") (macro-builtin-pred "vector?" args env)
+                            (if (str-eq? name "if") (macro-eval-if expr env)
+                              (if (str-eq? name "do") (macro-eval-do expr env)
+                                (if (str-eq? name "let") (macro-eval-let expr env)
+                                  (if (str-eq? name "quote")
+                                    (if (>= (count expr) 2) (get expr 1) (mk-nil))
+                                    (macro-rebuild-call (get expr 0) args env)))))))))))))))))))))
+
+(defn macro-eval-call [expr env]
+  (let [head (get expr 0)
+        n (count expr)
+        args (collect-from expr 1)]
+    (if (not (is-atom? head))
+      ;; Data list — evaluate every element
+      (let [all (collect-from expr 0)]
+        (mk-list-from (macro-eval-args all env)))
+      (let [tag (ast-tag head)
+            name (ast-val head)]
+        (if (= tag 12) (macro-eval-if expr env)
+          (if (= tag 13) (macro-eval-do expr env)
+            (if (= tag 11) (macro-eval-let expr env)
+              (if (= tag 22)
+                (if (>= n 2) (get expr 1) (mk-nil))
+                (if (= tag 1)
+                  (macro-eval-symbol-call name expr args env)
+                  expr)))))))))
+
+(defn macro-eval [expr env]
+  (if (is-atom? expr)
+    (let [tag (ast-tag expr)]
+      (if (= tag 1)
+        (let [found (env-lookup env (ast-val expr))]
+          (if (= found 0) expr found))
+        (if (= tag 22)
+          ;; bare quote atom shouldn't happen; return as-is
+          expr
+          (if (= tag 23)
+            (expand-synquote (ast-val expr) env)
+            (if (= tag 24)
+              (macro-eval (ast-val expr) env)
+              expr)))))
+    (if (is-vec-marker? expr)
+      (let [n (count expr)
+            out (vector)]
+        (do (push out (get expr 0))
+            (loop [i 1]
+              (if (>= i n) out
+                (do (push out (macro-eval (get expr i) env))
+                    (recur (+ i 1)))))))
+      (macro-eval-call expr env))))
+
 ;; Expand syntax-quote template with unquote/splice under env.
 (defn expand-synquote [expr env]
   (if (is-atom? expr)
     (let [tag (ast-tag expr)]
       (if (= tag 24)
-        ;; ~x — if symbol, lookup; else recurse
-        (let [inner (ast-val expr)]
-          (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
-            (let [found (env-lookup env (ast-val inner))]
-              (if (= found 0) inner found))
-            (expand-synquote inner env)))
+        ;; ~x — eval (symbol lookup or full macro-eval)
+        (macro-eval (ast-val expr) env)
         (if (= tag 25)
           ;; bare splice outside list — treat as unquote
-          (let [inner (ast-val expr)]
-            (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
-              (let [found (env-lookup env (ast-val inner))]
-                (if (= found 0) inner found))
-              (expand-synquote inner env)))
+          (macro-eval (ast-val expr) env)
           (if (= tag 23)
             (expand-synquote (ast-val expr) env)
             expr))))
@@ -181,19 +466,15 @@
               (let [child (get expr i)]
                 (if (is-reader-form? child 25)
                   ;; splice elements of looked-up list/vector into out
-                  (let [inner (ast-val child)
-                        val (if (if (is-atom? inner) (= (ast-tag inner) 1) false)
-                              (let [found (env-lookup env (ast-val inner))]
-                                (if (= found 0) inner found))
-                              (expand-synquote inner env))]
+                  (let [val (macro-eval (ast-val child) env)]
                     (if (is-atom? val)
                       (do (push out val)
                           (recur (+ i 1)))
-                      (let [vn (count val)
-                            start (if (is-vec-marker? val) 1 0)]
-                        (do (loop [j start]
+                      (let [elems (list-elems val)
+                            vn (count elems)]
+                        (do (loop [j 0]
                               (if (>= j vn) 0
-                                (do (push out (get val j))
+                                (do (push out (get elems j))
                                     (recur (+ j 1)))))
                             (recur (+ i 1))))))
                   (do (push out (expand-synquote child env))
@@ -206,11 +487,8 @@
         env (env-bind params args)]
     (if (is-reader-form? body 23)
       (expand-synquote (ast-val body) env)
-      ;; Non-template body: if symbol param, return binding; else leave
-      (if (if (is-atom? body) (= (ast-tag body) 1) false)
-        (let [found (env-lookup env (ast-val body))]
-          (if (= found 0) body found))
-        (expand-synquote body env)))))
+      ;; Full expand-time evaluation (list/cons/if/let/…)
+      (macro-eval body env))))
 
 (defn expand-call-args [expr macs]
   ;; expand args of (f a b c) → vector of expanded args (skip head)
@@ -223,13 +501,7 @@
 
 ;; ---- expand helpers for special forms ----
 ;; Vector marker tag 28: [[28] e0 e1 ...] from reader
-
-(defn is-vec-marker? [x]
-  (if (is-atom? x) false
-    (let [head (get x 0)]
-      (if (is-atom? head)
-        (= (ast-tag head) 28)
-        false))))
+;; (is-vec-marker? defined above with macro interpreter)
 
 (defn unwrap-vec [v]
   (if (is-vec-marker? v)

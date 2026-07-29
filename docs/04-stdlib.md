@@ -19,9 +19,15 @@ These are implemented in the C runtime and available without `load`:
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `vector` | `(vector x y z ...)` | Create a vector with elements |
-| `push` | `(push vec val)` | Append value to vector |
+| `push` | `(push vec val)` | Append value to vector (**mutates**) |
 | `get` | `(get vec idx)` | Element at index (0-based) |
 | `count` | `(count vec)` | Number of elements |
+| `vector-clone` | `(vector-clone v)` | Shallow copy |
+| `conj` | `(conj v x)` | Copy + append `x` (original untouched) |
+| `v-assoc` | `(v-assoc v i x)` | Copy with index `i` set to `x` |
+| `v-pop` | `(v-pop v)` | Copy without last element |
+
+Persistent ops are COW (clone then mutate the copy), not full structural sharing.
 
 Vectors can be nested:
 
@@ -35,12 +41,14 @@ Vectors can be nested:
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `map` | `(map)` | Create empty map |
-| `map-set` | `(map-set m key val)` | Set key-value pair |
+| `map-set` | `(map-set m key val)` | Set key-value pair (**mutates**) |
 | `map-get` | `(map-get m key)` | Get value by key |
 | `map-count` | `(map-count m)` | Number of entries |
 | `map-contains?` | `(map-contains? m key)` | `1` if key exists (even mapped to `0`), else `0` |
 | `map-keys` | `(map-keys m)` | Vector of keys |
 | `map-values` | `(map-values m)` | Vector of values |
+| `map-clone` | `(map-clone m)` | Shallow copy |
+| `map-assoc` | `(map-assoc m k v)` | Copy with `k → v` (original untouched) |
 
 Maps can hold vectors and other collections:
 

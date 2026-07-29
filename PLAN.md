@@ -66,7 +66,7 @@ compiler/
 
 **Защо първо:** Без type checker self-hosted компилаторът не може да валидира входния код. Това е критично за надеждност.
 
-**Статус:** ~680 реда, генериран чрез `tools/gen_types.py`. Компилира се с `BARS_SKIP_TYPECHECK=1` (bootstrap pattern — като Go/Rust/Nim).
+**Статус:** ~990 реда, hand-tuned (17.7–17.9); `tools/gen_types.py --check` гарантира paren balance. Компилира се с `BARS_SKIP_TYPECHECK=1` (bootstrap pattern — като Go/Rust/Nim).
 Бинарният файл работи. Интеграцията в build.brs е блокирана от Cranelift hyphen issue (`_m_types_var-id`).
 Всички self-recursive функции са конвертирани към `loop`/`recur`.
 
@@ -421,12 +421,12 @@ bars/
 2. Error recovery в парсера → **17.5 ✅** (multi-error + skip-form sync)
 3. Pattern matching в `let` (destructuring) → ✅ (commit destructuring)
 4. Keyword arguments за функции
-5. Persistent/immutable data structures
+5. Persistent/immutable data structures → **17.14 ✅** (COW clone/conj/v-assoc/map-assoc; not full HAMT)
 6. Автоматично TCO за рекурсивни функции → **17.6 ✅** (self-tail-call → recur в `lower-defn`)
 7. Documentation strings за `defn`
 8. Истински typeclass/protocol механизъм (не само macros)
 9. По-добри compile-time грешки вместо `panic!()`/`unwrap()`
-10. Incremental compilation с dependency graph (не само mtime)
+10. Incremental compilation с dependency graph (не само mtime) → **17.13 ✅** (`.deps` sidecar)
 
 ---
 
@@ -439,7 +439,7 @@ bars/
 
 | # | Област | Проблем | Въздействие |
 |---|--------|---------|-------------|
-| A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
+| A | Macros | ~~User `defmacro` + template expansion~~ → **17.2 ✅**; ~~пълен macro interpreter~~ → **17.12 ✅** (list/cons/if/let) | — |
 | B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
 | C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
 | D | Types | ~~Soft string/void warnings~~ → **17.7–17.9 ✅** (str-схеми, accept-any, generalize/instantiate, interleaved solve, env_lookup fix: 294→3) | практически чисто |
@@ -463,7 +463,7 @@ bars/
 - [x] Modules: `collect-names` includes tag 21 so `alias/macro` renames match
 - [x] `lib/test` — `(deftest name body)` → `(defn name [ctx] body)`
 - [x] Examples: `defmacro_demo`, `defmacro_demo2`, `deftest_demo`
-- [ ] Full macro interpreter (list/cons/if at expand-time) — later if needed
+- [x] Full macro interpreter (list/cons/if/let at expand-time) → **17.12**
 
 ### 17.3a HOF + docs ✅
 
@@ -599,8 +599,39 @@ bars/
   - `bars_sha256` in C runtime (single-shot, hex digest; verified vs known vectors)
   - `lib/crypto.brs` — `sha256`; LLVM declare + types env; C backend passthrough
   - Example `crypto_demo.brs` ("" / "abc" / quick-brown-fox); self-test 84/84
-- [ ] TLS / HTTPS (OpenSSL or similar) — later
+- [ ] TLS / HTTPS (OpenSSL or similar) — later (deferred)
+
+### 17.12 Full macro interpreter ✅
+
+- [x] Expand-time eval for non-template `defmacro` bodies (`compiler/macros.brs`)
+  - Builtins: `list` / `cons` / `first` / `rest` / `second` / `third` / `count` / `=` / `+` `-` `*` / `not`
+  - Predicates: `symbol?` / `list?` / `vector?`
+  - Special forms: `if` / `let` / `do` / `quote`; syntax-quote still via `expand-synquote`
+  - Special-form heads promoted (symbol `if` → tag 12) so HIR sees real specials
+  - Unquote `~` now runs full `macro-eval` (not only symbol lookup)
+- [x] Example `defmacro_interp.brs` (`pick` / `my-or` / `thrice` / `when-pos` via list)
+- [x] self-test **96/96** (LLVM + C + tooling; Gen2≡Gen3 identity)
+
+### 17.13 Incremental dep-graph ✅
+
+- [x] Sidecar `<output>.deps`: one `path\tmtime` edge per loaded source
+- [x] `deps-up-to-date?` — exact set + per-file mtime match (beyond flat max-mtime)
+- [x] Written after successful link; `BARS_FORCE` / `BARS_NO_INCREMENTAL` still force rebuild
+
+### 17.14 Persistent / COW data structures ✅
+
+- [x] Runtime: `bars_vector_{clone,conj,assoc,pop_copy}_i64`, `bars_map_{clone,assoc}_i64`
+- [x] Builtins: `vector-clone` / `conj` / `v-assoc` / `v-pop` / `map-clone` / `map-assoc`
+- [x] Wired in LLVM + C backends, types env, ownership copy-ops
+- [x] `lib/persist.brs` thin aliases; example `persist_demo.brs`
+- [ ] Full structural sharing (HAMT / RRB trees) — later if needed
+
+### 17.15 gen_types.py sync ✅
+
+- [x] `tools/gen_types.py` revalidated against hand-tuned `compiler/types.brs` (17.7–17.9)
+  - types.brs is source of truth; tool checks paren balance and identity-emits
+  - `python3 tools/gen_types.py --check` for CI-style validation
 
 ---
 
-*План версия: 6.21 | Актуализиран: 2026-07-29*
+*План версия: 6.22 | Актуализиран: 2026-07-29*

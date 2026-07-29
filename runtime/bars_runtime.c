@@ -235,6 +235,50 @@ bars_vector_t* bars_vector_new_i64(void) {
     return bars_vector_new();
 }
 
+/* --- Persistent / COW vectors (shallow structural copy) --- */
+
+int64_t bars_vector_clone_i64(bars_vector_t* vec) {
+    bars_vector_t* out = bars_vector_new();
+    if (!vec) return (int64_t)(uintptr_t)out;
+    size_t n = vec->len;
+    if (n > out->cap) {
+        size_t cap = out->cap;
+        while (cap < n) cap *= 2;
+        out->cap = cap;
+        out->data = (bars_value_t*)GC_realloc(out->data, sizeof(bars_value_t) * out->cap);
+    }
+    for (size_t i = 0; i < n; i++)
+        out->data[i] = vec->data[i];
+    out->len = n;
+    return (int64_t)(uintptr_t)out;
+}
+
+/* Return a new vector = vec with val appended. Does not mutate vec. */
+int64_t bars_vector_conj_i64(bars_vector_t* vec, int64_t val) {
+    int64_t cloned = bars_vector_clone_i64(vec);
+    return bars_vector_push_i64((bars_vector_t*)(uintptr_t)cloned, val);
+}
+
+/* Return a new vector with index idx set to val. Out-of-range → clone only. */
+int64_t bars_vector_assoc_i64(bars_vector_t* vec, int64_t idx, int64_t val) {
+    int64_t cloned = bars_vector_clone_i64(vec);
+    bars_vector_t* out = (bars_vector_t*)(uintptr_t)cloned;
+    if (!out || idx < 0 || idx >= (int64_t)out->len) return cloned;
+    bars_value_t v = { .tag = BARS_I64, .data = { .i64 = val } };
+    out->data[(size_t)idx] = v;
+    return cloned;
+}
+
+/* Return a new vector without the last element. Empty/null → empty clone. */
+int64_t bars_vector_pop_copy_i64(bars_vector_t* vec) {
+    if (!vec || vec->len == 0)
+        return bars_vector_clone_i64(NULL);
+    int64_t cloned = bars_vector_clone_i64(vec);
+    bars_vector_t* out = (bars_vector_t*)(uintptr_t)cloned;
+    out->len -= 1;
+    return cloned;
+}
+
 /* --- Map --- */
 
 uint64_t bars_hash_value(bars_value_t v) {
@@ -389,6 +433,28 @@ bars_vector_t* bars_map_values_i64(bars_map_t* map) {
         }
     }
     return vec;
+}
+
+/* --- Persistent / COW maps --- */
+
+int64_t bars_map_clone_i64(bars_map_t* map) {
+    bars_map_t* out = bars_map_new();
+    if (!map) return (int64_t)(uintptr_t)out;
+    for (size_t i = 0; i < map->cap; i++) {
+        bars_map_entry_t* entry = map->buckets[i];
+        while (entry) {
+            bars_map_set(out, entry->key, entry->val);
+            entry = entry->next;
+        }
+    }
+    return (int64_t)(uintptr_t)out;
+}
+
+/* Return a new map with key→val. Does not mutate map. */
+int64_t bars_map_assoc_i64(bars_map_t* map, int64_t key, int64_t val) {
+    int64_t cloned = bars_map_clone_i64(map);
+    bars_map_set_i64((bars_map_t*)(uintptr_t)cloned, key, val);
+    return cloned;
 }
 
 /* --- Simple i64 set helpers (backed by map with dummy values) --- */
