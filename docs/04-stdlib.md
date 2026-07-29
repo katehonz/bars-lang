@@ -136,6 +136,9 @@ Self-host HIR desugars (also in the C backend):
 | `mapcat` | `(mapcat f coll)` | `(f x)` vectors, concatenated |
 | `keep` | `(keep f coll)` | Non-0 `(f x)` results only |
 | `flatten` | `(flatten coll)` | Deep flatten (runtime, order kept) |
+| `get-in` | `(get-in coll ks)` | Walk a key/index path (maps + vectors) |
+| `update` | `(update m k f)` | `map-set m k (f (map-get m k))` |
+| `sort-by` | `(sort-by f coll)` | Sort ascending by `(f elem)` |
 | `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 
 ### Boolean Helpers

@@ -259,7 +259,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.42** `sort` (insertion на clone) + mutating `vector-set`
 - [x] **17.43** `group-by` / `zipmap` / `select-keys`
 - [x] **17.44** `mapcat` / `keep` / `flatten`
+- [x] **17.45** `get-in` / `update` / `sort-by`
 
 ---
 
-*Версия: 7.31 | Актуализирано: 2026-07-29*
+*Версия: 7.32 | Актуализирано: 2026-07-29*

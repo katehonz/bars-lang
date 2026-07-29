@@ -157,6 +157,10 @@
                                                                                           (if (str-eq? name "mapcat") true
                                                                                             (if (str-eq? name "keep") true
                                                                                               (if (str-eq? name "flatten") true
+                                                                                                (if (str-eq? name "get-in") true
+                                                                                                  (if (str-eq? name "update") true
+                                                                                                    (if (str-eq? name "sort-by") true
+                                                                                                      (if (str-eq? name "bars_is_vector_i64") true
                                                                                     (if (str-eq? name "vector-set") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
@@ -186,7 +190,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1440,7 +1444,72 @@
         body (hir-if done r step)]
     (hir-let outer (hir-loop binds body))))
 
-;; (keep f coll) → vector of the non-0 (f x) results
+;; (get-in coll ks) — walk ks (vector of keys/indices); maps and vectors mixed
+(defn desugar-get-in [coll-ast ks-ast uid]
+  (let [cur (hir-sym (str-concat "__gic" (int-str uid)))
+        a (hir-sym (str-concat "__gia" (int-str uid)))
+        n (hir-sym (str-concat "__gin" (int-str uid)))
+        i (hir-sym (str-concat "__gii" (int-str uid)))
+        k (hir-sym (str-concat "__gik" (int-str uid)))
+        outer (hir-vec (vector
+                 a ks-ast
+                 n (hir-call "count" (vector a))
+                 cur coll-ast))
+        binds (hir-vec (vector i (hir-num 0) cur cur))
+        done (hir-call ">=" (vector i n))
+        getk (hir-call "get" (vector a i))
+        nxt (hir-if (hir-call "bars_is_vector_i64" (vector cur))
+              (hir-call "get" (vector cur k))
+              (hir-call "map-get" (vector cur k)))
+        step (hir-let (hir-vec (vector k getk))
+               (hir-let (hir-vec (vector cur nxt))
+                 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) cur))))
+        body (hir-if done cur step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (update m k f) → map-set m k (f (map-get m k))
+(defn desugar-update [map-ast key-ast f uid]
+  (let [m (hir-sym (str-concat "__udm" (int-str uid)))
+        k (hir-sym (str-concat "__udk" (int-str uid)))
+        outer (hir-vec (vector m map-ast k key-ast))
+        newv (apply-callable f (vector (hir-call "map-get" (vector m k))))]
+    (hir-let outer
+      (hir-call "map-set" (vector m k newv)))))
+
+;; (sort-by f coll) → insertion sort on a clone, comparing (f elem)
+(defn desugar-sort-by [f vec-ast uid]
+  (let [v (hir-sym (str-concat "__sbv" (int-str uid)))
+        c (hir-sym (str-concat "__sbc" (int-str uid)))
+        i (hir-sym (str-concat "__sbi" (int-str uid)))
+        j (hir-sym (str-concat "__sbj" (int-str uid)))
+        x (hir-sym (str-concat "__sbx" (int-str uid)))
+        kx (hir-sym (str-concat "__sbk" (int-str uid)))
+        p (hir-sym (str-concat "__sbp" (int-str uid)))
+        outer (hir-vec (vector
+                 v (hir-call "vector-clone" (vector vec-ast))
+                 c (hir-call "count" (vector v))))
+        shift (hir-call "vector-set" (vector v
+                (hir-call "+" (vector j (hir-num 1)))
+                (hir-call "get" (vector v j))))
+        inner-binds (hir-vec (vector j (hir-call "-" (vector i (hir-num 1)))))
+        inner-done (hir-call "<" (vector j (hir-num 0)))
+        inner-cmp (hir-call ">" (vector
+                    (apply-callable f (vector (hir-call "get" (vector v j)))) kx))
+        inner-step (hir-do (vector shift
+                     (hir-recur (vector (hir-call "-" (vector j (hir-num 1)))))))
+        inner-body (hir-if inner-done (hir-num -1)
+                     (hir-if inner-cmp inner-step j))
+        inner-loop (hir-loop inner-binds inner-body)
+        insert (hir-call "vector-set" (vector v
+                 (hir-call "+" (vector p (hir-num 1))) x))
+        step (hir-let (hir-vec (vector x (hir-call "get" (vector v i))))
+               (hir-let (hir-vec (vector kx (apply-callable f (vector x))))
+                 (hir-let (hir-vec (vector p inner-loop))
+                   (hir-do (vector insert
+                     (hir-recur (vector (hir-call "+" (vector i (hir-num 1))))))))))
+        binds (hir-vec (vector i (hir-num 1)))
+        body (hir-if (hir-call ">=" (vector i c)) v step)]
+    (hir-let outer (hir-loop binds body))))
 (defn desugar-keep [f vec-ast uid]
   (let [v (hir-sym (str-concat "__kpv" (int-str uid)))
         c (hir-sym (str-concat "__kpc" (int-str uid)))
@@ -1585,6 +1654,17 @@
       (lower-expr (desugar-mapcat (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "keep") (= n 3) false)
       (lower-expr (desugar-keep (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "get-in") (= n 3) false)
+      (lower-expr (desugar-get-in (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "update") (= n 4) false)
+      (lower-expr (desugar-update (get ast 1) (get ast 2) (get ast 3) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "sort-by") (= n 3) false)
+      (lower-expr (desugar-sort-by (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    ;; inc/dec are sugar over +/- 1 (no runtime fn needed)
+    (if (if (str-eq? fname "inc") (= n 2) false)
+      (lower-expr (hir-call "+" (vector (get ast 1) (hir-num 1))) t l lines loops adt structs)
+    (if (if (str-eq? fname "dec") (= n 2) false)
+      (lower-expr (hir-call "-" (vector (get ast 1) (hir-num 1))) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1639,7 +1719,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

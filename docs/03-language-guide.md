@@ -179,6 +179,9 @@ desugar to inline `loop`/`recur` (self-host):
 (mapcat wrap [1 2])            ;; f → vector per elem, concatenated
 (keep f [1 2 3])               ;; non-0 (f x) results only
 (flatten [1 [2 [3]] 4])        ;; [1 2 3 4] (deep)
+(get-in m [1 0])               ;; walk maps/vectors by key path
+(update m 5 f)                 ;; map-set m 5 (f (map-get m 5))
+(sort-by abs [-3 1 -2])        ;; [1 -2 -3] (key fn, ascending)
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):

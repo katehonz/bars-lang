@@ -418,6 +418,7 @@ bars/
 | 25 | C backend: няма forward declarations — lambda вика fn дефинирана по-късно → implicit decl error | `compiler/codegen/c.brs` (`func-proto` в `hir-to-c`) | ✅ |
 | 26 | C backend: `min`/`max` ternary с липсваща затваряща скоба | `compiler/codegen/c.brs` | ✅ |
 | 27 | Runtime: `bars_map_set_i64`/`bars_set_add_i64` връщат `void`, но backend-ите ги декларират `i64` → garbage при chained употреба (segfault) | `runtime/bars_runtime.c` (връщат map/set) | ✅ |
+| 28 | `abs`/`inc`/`dec` известни на HIR/types, но без backend mapping → undefined `@abs`; `bars_map_get(NULL)` segfault при get-in през missing key | backend maps + inc/dec desugar; NULL guard в `bars_map_get` | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -826,6 +827,17 @@ bars/
   за raw i64 pointers + BARS_VECTOR-tagged items)
 - [x] Example `mapcat_demo.brs` → 6 1 10 30, 4, 2 300 400, 5 1 3 5, 2
 
+### 17.45 `get-in` / `update` / `sort-by` ✅
+
+- [x] `(get-in coll ks)` → walk по key path; vector → `get`, map → `map-get`
+  (mixed structures via `bars_is_vector_i64`)
+- [x] `(update m k f)` → `map-set m k (f (map-get m k))`
+- [x] `(sort-by f coll)` → insertion sort по `(f elem)` върху clone
+- [x] Example `get_in_demo.brs` → 10 40, 77 0, 30, 1, 4 1, 1
+- [x] Fix: `abs` мапнат в двата backend-а (беше само в runtime); `inc`/`dec`
+  desugar към `+`/`-` 1; `bars_map_get` NULL-safe (get-in през missing key)
+- [x] Example `math_ops_demo.brs` → 42 42 7 7 3 7
+
 ---
 
-*План версия: 6.52 | Актуализиран: 2026-07-29*
+*План версия: 6.53 | Актуализиран: 2026-07-29*

@@ -546,6 +546,8 @@ void bars_map_set(bars_map_t* map, bars_value_t key, bars_value_t val) {
 }
 
 bars_value_t bars_map_get(const bars_map_t* map, bars_value_t key) {
+    /* NULL map (e.g. walking past a missing key in get-in) → nil, not a crash */
+    if (!map) { bars_value_t nilv = { .tag = BARS_NIL, .data = { .i64 = 0 } }; return nilv; }
     uint64_t h = bars_hash_value(key);
     size_t idx = h & (map->cap - 1);
     bars_map_entry_t* entry = map->buckets[idx];
