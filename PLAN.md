@@ -752,6 +752,11 @@ bars/
 - [x] `(comp f)` → `f`; `(comp)` → identity fn
 - [x] Example `comp_demo.brs` → 72 42 9
 
+### 17.34 `fnil` nil-default wrapper ✅
+
+- [x] `(fnil f d…)` → fn that substitutes defaults for 0/nil args (1–3)
+- [x] Example `fnil_demo.brs` → 7 42, 30 3 9, 6
+
 ---
 
-*План версия: 6.40 | Актуализиран: 2026-07-29*
+*План версия: 6.41 | Актуализиран: 2026-07-29*

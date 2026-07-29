@@ -248,7 +248,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.31** `identity` runtime + `constantly` macro
 - [x] **17.32** `juxt` multi-fn applicator macro
 - [x] **17.33** `comp` function composition macro
+- [x] **17.34** `fnil` nil/0 default-arg wrapper
 
 ---
 
-*Версия: 7.20 | Актуализирано: 2026-07-29*
+*Версия: 7.21 | Актуализирано: 2026-07-29*
