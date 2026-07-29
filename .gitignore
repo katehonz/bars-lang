@@ -7,12 +7,11 @@ struct_demo
 *.ssa
 *.qbe
 
-# Self-hosted compiler binaries and LLVM IR dumps
+# Self-hosted / bootstrap compiler binaries and IR dumps
 bars-self
-bars-self2
-bars-self3
-bars-self4
-bars-self*.ll
+bars-self*
+bars-from-*
+bars-from-good
 *.ll
 *.deps
 target/bars-deps/
