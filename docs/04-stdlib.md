@@ -126,6 +126,9 @@ Self-host HIR desugars (also in the C backend):
 | `reverse` | `(reverse coll)` | New vector, back-to-front |
 | `concat` | `(concat a b …)` | Fresh vector with all elements, variadic |
 | `distinct` | `(distinct coll)` | First occurrence of each element, order kept |
+| `interpose` | `(interpose sep coll)` | `sep` between elements |
+| `partition` | `(partition n coll)` | Vector of n-sized chunks (tail dropped) |
+| `frequencies` | `(frequencies coll)` | Map element → occurrence count |
 
 ### Boolean Helpers
 

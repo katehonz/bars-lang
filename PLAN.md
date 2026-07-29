@@ -417,6 +417,7 @@ bars/
 | 24 | `bars_print_any_i64` дереференцира i64 като raw pointer | `GC_base` guard | ✅ |
 | 25 | C backend: няма forward declarations — lambda вика fn дефинирана по-късно → implicit decl error | `compiler/codegen/c.brs` (`func-proto` в `hir-to-c`) | ✅ |
 | 26 | C backend: `min`/`max` ternary с липсваща затваряща скоба | `compiler/codegen/c.brs` | ✅ |
+| 27 | Runtime: `bars_map_set_i64`/`bars_set_add_i64` връщат `void`, но backend-ите ги декларират `i64` → garbage при chained употреба (segfault) | `runtime/bars_runtime.c` (връщат map/set) | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -796,6 +797,13 @@ bars/
 - [x] `(distinct coll)` → first occurrence kept (uses `some` + inline `fn`)
 - [x] Example `seq_ops_demo.brs` → 4 4 1, 5 1 5, 4 4, 4 1 4, 4 4 1
 
+### 17.41 `interpose` / `partition` / `frequencies` ✅
+
+- [x] `(interpose sep coll)` → sep between elements (none for 0/1 elems)
+- [x] `(partition n coll)` → n-sized chunks; incomplete tail dropped; n ≤ 0 → []
+- [x] `(frequencies coll)` → map elem → count (`map-get` missing = 0)
+- [x] Example `seq_more_demo.brs` → 5 1 0 3, 1, 2 2 3, 2, 0, 3 3 2 1
+
 ---
 
-*План версия: 6.48 | Актуализиран: 2026-07-29*
+*План версия: 6.49 | Актуализиран: 2026-07-29*

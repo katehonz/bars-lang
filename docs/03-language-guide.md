@@ -169,6 +169,9 @@ desugar to inline `loop`/`recur` (self-host):
 (concat [1 2] [3 4 5])         ;; [1 2 3 4 5]
 (concat [1] [2] [3])           ;; [1 2 3] (variadic)
 (distinct [1 2 2 3 1])         ;; [1 2 3]
+(interpose 0 [1 2 3])          ;; [1 0 2 0 3]
+(partition 2 [1 2 3 4 5])      ;; [[1 2] [3 4]] (tail dropped)
+(frequencies [1 2 1])          ;; map {1: 2, 2: 1}
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):

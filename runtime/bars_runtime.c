@@ -535,10 +535,13 @@ bars_map_t* bars_map_new_i64(void) {
     return bars_map_new();
 }
 
-void bars_map_set_i64(bars_map_t* map, int64_t key, int64_t val) {
+int64_t bars_map_set_i64(bars_map_t* map, int64_t key, int64_t val) {
     bars_value_t k = { .tag = BARS_I64, .data = { .i64 = key } };
     bars_value_t v = { .tag = BARS_I64, .data = { .i64 = val } };
     bars_map_set(map, k, v);
+    /* Return the map so `(let [m2 (map-set m k v)] …)` chains work —
+       the LLVM/C backends already declare this as returning i64. */
+    return (int64_t)(uintptr_t)map;
 }
 
 int64_t bars_map_get_i64(bars_map_t* map, int64_t key) {
@@ -617,10 +620,12 @@ bars_map_t* bars_set_new_i64(void) {
     return bars_map_new();
 }
 
-void bars_set_add_i64(bars_map_t* set, int64_t val) {
+int64_t bars_set_add_i64(bars_map_t* set, int64_t val) {
     bars_value_t k = { .tag = BARS_I64, .data = { .i64 = val } };
     bars_value_t v = { .tag = BARS_I64, .data = { .i64 = 1 } };
     bars_map_set(set, k, v);
+    /* Return the set (backends declare i64; enables threaded style). */
+    return (int64_t)(uintptr_t)set;
 }
 
 int64_t bars_set_contains_i64(bars_map_t* set, int64_t val) {

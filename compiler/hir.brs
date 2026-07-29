@@ -147,6 +147,9 @@
                                                                       (if (str-eq? name "reverse") true
                                                                         (if (str-eq? name "concat") true
                                                                           (if (str-eq? name "distinct") true
+                                                                            (if (str-eq? name "interpose") true
+                                                                              (if (str-eq? name "partition") true
+                                                                                (if (str-eq? name "frequencies") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
@@ -175,7 +178,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1208,6 +1211,84 @@
         body (hir-if done r check)]
     (hir-let outer (hir-loop binds body))))
 
+;; (interpose sep coll) → elements with sep between them
+(defn desugar-interpose [sep-ast vec-ast uid]
+  (let [v (hir-sym (str-concat "__ipv" (int-str uid)))
+        c (hir-sym (str-concat "__ipc" (int-str uid)))
+        s (hir-sym (str-concat "__ips" (int-str uid)))
+        i (hir-sym (str-concat "__ipi" (int-str uid)))
+        r (hir-sym (str-concat "__ipr" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 s sep-ast
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        with-sep (hir-if (hir-call ">" (vector i (hir-num 0)))
+                   (hir-call "push" (vector r s))
+                   r)
+        step (hir-let (hir-vec (vector r with-sep))
+               (hir-let (hir-vec (vector r
+                   (hir-call "push" (vector r (hir-call "get" (vector v i))))))
+                 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))))
+        body (hir-if done r step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (partition n coll) → vector of n-sized chunks (incomplete tail dropped)
+(defn desugar-partition [n-ast vec-ast uid]
+  (let [v (hir-sym (str-concat "__ptv" (int-str uid)))
+        c (hir-sym (str-concat "__ptc" (int-str uid)))
+        sz (hir-sym (str-concat "__ptz" (int-str uid)))
+        i (hir-sym (str-concat "__pti" (int-str uid)))
+        j (hir-sym (str-concat "__ptj" (int-str uid)))
+        r (hir-sym (str-concat "__ptr" (int-str uid)))
+        ch (hir-sym (str-concat "__pth" (int-str uid)))
+        outer (hir-vec (vector
+                 sz n-ast
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        ;; stop when a full chunk no longer fits
+        done (hir-call ">" (vector (hir-call "+" (vector i sz)) c))
+        inner-binds (hir-vec (vector j (hir-num 0) ch (hir-call "vector" (vector))))
+        inner-done (hir-call ">=" (vector j sz))
+        inner-push (hir-call "push" (vector ch
+                     (hir-call "get" (vector v (hir-call "+" (vector i j))))))
+        inner-step (hir-let (hir-vec (vector ch inner-push))
+                     (hir-recur (vector (hir-call "+" (vector j (hir-num 1))) ch)))
+        inner-loop (hir-loop inner-binds (hir-if inner-done ch inner-step))
+        step (hir-let (hir-vec (vector r (hir-call "push" (vector r inner-loop))))
+               (hir-recur (vector (hir-call "+" (vector i sz)) r)))
+        body (hir-if done r step)
+        main-loop (hir-loop binds body)]
+    ;; size <= 0 would never advance → empty result instead of hanging
+    (hir-let outer
+      (hir-if (hir-call "<=" (vector sz (hir-num 0)))
+        r
+        main-loop))))
+(defn desugar-frequencies [vec-ast uid]
+  (let [v (hir-sym (str-concat "__fqv" (int-str uid)))
+        c (hir-sym (str-concat "__fqc" (int-str uid)))
+        i (hir-sym (str-concat "__fqi" (int-str uid)))
+        m (hir-sym (str-concat "__fqm" (int-str uid)))
+        x (hir-sym (str-concat "__fqx" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 m (hir-call "map" (vector))))
+        binds (hir-vec (vector i (hir-num 0) m m))
+        done (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        bumped (hir-call "map-set" (vector m x
+                 (hir-call "+" (vector (hir-call "map-get" (vector m x)) (hir-num 1)))))
+        step (hir-let (hir-vec (vector x getx))
+               (hir-let (hir-vec (vector m bumped))
+                 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) m))))
+        body (hir-if done m step)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1309,6 +1390,12 @@
       (lower-expr (desugar-concat ast l) t l lines loops adt structs)
     (if (if (str-eq? fname "distinct") (= n 2) false)
       (lower-expr (desugar-distinct (get ast 1) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "interpose") (= n 3) false)
+      (lower-expr (desugar-interpose (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "partition") (= n 3) false)
+      (lower-expr (desugar-partition (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "frequencies") (= n 2) false)
+      (lower-expr (desugar-frequencies (get ast 1) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1363,7 +1450,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
