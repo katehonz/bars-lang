@@ -968,7 +968,8 @@
                            res
                            (let [cst (expand-expr (get expr i) macs)
                                  body (expand-expr (get expr (+ i 1)) macs)
-                                 test (case-test "__case" cst)]
+                                 ;; Expand or/and so multi-const groups lower to if, not call @or
+                                 test (expand-expr (case-test "__case" cst) macs)]
                              (recur (- i 2) (mk-if test body res)))))]
             (mk-let1 "__case" scrut nested)))))))
 
