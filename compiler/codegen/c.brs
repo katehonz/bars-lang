@@ -105,8 +105,10 @@
                       (if (str-eq? fname "vector-set") "bars_vector_set_i64"
                         (if (str-eq? fname "flatten") "bars_flatten_i64"
                           (if (str-eq? fname "abs") "bars_abs_i64"
+                            (if (str-eq? fname "sqrt") "bars_sqrt_i64"
+                              (if (str-eq? fname "pow") "bars_pow_i64"
                       (if (str-eq? fname "v-pop") "bars_vector_pop_copy_i64"
-                        "")))))))))))))))
+                        "")))))))))))))))))
 
 (defn map-map-ops [fname]
   (if (str-eq? fname "map") "bars_map_new_i64"

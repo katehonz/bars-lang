@@ -864,6 +864,13 @@ bars/
 - [x] `bars_string_eq_i64` в runtime + `str-eq?` mapping (беше само локални defn-и)
 - [x] selfhost-test: seq_lib_test блок с exit-code проверка (не само compile)
 
+### 17.49 `sqrt` / `pow` + `math_stdlib` в suite ✅
+
+- [x] `sqrt`/`pow` — runtime fns съществуваха (`bars_sqrt_i64`/`bars_pow_i64`,
+  libm), но без backend mapping → undefined name; мапнати в llvm/c + builtin
+- [x] `examples/math_stdlib.brs` (последният невалиден пример) в двата suite-а
+- [x] Output: 5, 256, 42
+
 ---
 
-*План версия: 6.56 | Актуализиран: 2026-07-29*
+*План версия: 6.57 | Актуализиран: 2026-07-29*

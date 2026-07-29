@@ -263,7 +263,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.46** `merge` / `dissoc` / `assoc-in` + `map-delete`
 - [x] **17.47** `update-in` / `reduce-kv` / `keys` / `vals`
 - [x] **17.48** `sort` с comparator + `str-upper`/`str-lower`/`str-includes?` + lib/test seq покритие
+- [x] **17.49** `sqrt` / `pow` mappings + `math_stdlib` в suite
 
 ---
 
-*Версия: 7.35 | Актуализирано: 2026-07-29*
+*Версия: 7.36 | Актуализирано: 2026-07-29*

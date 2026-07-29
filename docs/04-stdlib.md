@@ -94,6 +94,8 @@ Maps can hold vectors and other collections:
 | `abs` | `(abs n)` | Absolute value |
 | `max` | `(max a b)` | Maximum of two numbers |
 | `min` | `(min a b)` | Minimum of two numbers |
+| `sqrt` | `(sqrt n)` | Integer square root (0 for n ≤ 0) |
+| `pow` | `(pow base exp)` | `base^exp` via libm |
 
 ### Vector Helpers
 
