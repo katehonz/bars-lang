@@ -442,7 +442,7 @@ bars/
 | A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
 | B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
 | C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
-| D | Types | ~~Soft string/void warnings~~ → **17.7+17.8 ✅** (str-схеми, println accept-any, generalize/instantiate: 294→128) | остатък: global solve pinning в macro-heavy код |
+| D | Types | ~~Soft string/void warnings~~ → **17.7–17.9 ✅** (str-схеми, accept-any, generalize/instantiate, interleaved solve, env_lookup fix: 294→3) | практически чисто |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
 | F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
 | G | Tests | До 17.1 — само soft `assert` macro | ✅ поправено |
@@ -559,8 +559,26 @@ bars/
 - [x] `instantiate_ctx` — свежи vars при всяко lookup/call (резервира ctx counter)
   - Свързан в `infer_expr` (atom lookup) и `infer_call`
 - [x] Резултат: soft warnings **155 → 128** (от базова 294: −56%)
-  - Известно: остатъчен шум от global solve (constraints от defn bodies pin-ват
-    original vars; macro-expanded trait defns) — изисква interleaved solve, по-нататък
+  - Известно: остатъчен шум от global solve → **17.9 ✅** (interleaved solve)
+
+### 17.9 Interleaved solve + map API ✅
+
+- [x] **Interleaved solve per top-level form** (`compiler/types.brs`)
+  - След всяка форма: `solve_from` + `env_apply_subst_from` → defn схемите
+    стават конкретни (greet: str->i64), cross-form pinning е невъзможен
+- [x] Accept-any класове builtin-и (runtime-ът е нетипизиран i64):
+  - `=`/`!=` (полиморфно сравнение), `count` (vector/str/map length)
+  - coll-any със fresh var резултат: `get`/`first`/`last`/`push`/`pop`/`map-get`/`map-set`
+  - `map-contains?` → bool
+- [x] tcp типове: connect (str,i64)->i64, send (i64,str)->i64, recv (i64,i64)->str
+- [x] **Бъгфикс: `env_lookup` first-match** → last-match (лексикално shadowing)
+  - Same-named params в различни defns се замърсяваха (or/and bool → max i64);
+    това беше коренът на почти целия оставащ шум
+- [x] Резултат: soft warnings **128 → 3** (от базова 294: −99%)
+  - Оставащият 1 локализиран: kw/lookup-or poly default (истинско HM ограничение)
+- [x] Map API: `map-contains?` / `map-keys` / `map-values` (runtime + backend maps)
+  - `lib/map` map-has? делегира към map-contains? (вече не греши при стойност 0)
+  - Example `map_ops_demo.brs`; self-test 90/90
 
 ### 17.3 Ecosystem
 
@@ -573,4 +591,4 @@ bars/
 
 ---
 
-*План версия: 6.19 | Актуализиран: 2026-07-29*
+*План версия: 6.20 | Актуализиран: 2026-07-29*

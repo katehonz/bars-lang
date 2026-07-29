@@ -118,14 +118,53 @@
   (if (str-eq? name "println") true
     (str-eq? name "print")))
 
+;; = / != are polymorphic at runtime (i64, strings, bools, keys…); args
+;; get no type constraint either (17.9 — kwargs/str-key idiom).
+(defn eq-any-fn? [name]
+  (if (str-eq? name "=") true
+    (str-eq? name "!=")))
+
+;; count is also polymorphic at runtime (vector/string/map length).
+(defn count-any-fn? [name]
+  (str-eq? name "count"))
+
+;; Collection access is untyped in the runtime (vectors/maps hold anything):
+;; args get no constraint and the result is a fresh var per call (17.9).
+(defn coll-any-fn? [name]
+  (if (str-eq? name "get") true
+    (if (str-eq? name "first") true
+      (if (str-eq? name "last") true
+        (if (str-eq? name "push") true
+          (if (str-eq? name "pop") true
+            (if (str-eq? name "map-get") true
+              (str-eq? name "map-set"))))))))
+
+;; Ret type for accept-any builtins; empty vector when not one.
+(defn any-fn-ret [name]
+  (if (print-any-fn? name) (T_I64)
+    (if (eq-any-fn? name) (T_Bool)
+      (if (count-any-fn? name) (T_I64)
+        (if (str-eq? name "map-contains?") (T_Bool)
+          (vector))))))
+
+;; [1 ret-ty] for accept-any / poly-coll builtins; [0] otherwise.
+(defn any-call-ret [name ctx]
+  (if (coll-any-fn? name)
+    (let [r (vector)] (do (push r 1) (push r (fresh_var ctx)) r))
+    (let [t (any-fn-ret name)]
+      (if (> (count t) 0)
+        (let [r (vector)] (do (push r 1) (push r t) r))
+        (let [r (vector)] (do (push r 0) r))))))
+
 ;; Not-found = empty vector (count 0). Found = scheme [vars ty].
+;; Scans from the END: the most recent binding wins (lexical shadowing).
 (defn env_lookup [env name]
-  (loop [i 0]
-    (if (>= i (count env)) (vector)
+  (loop [i (- (count env) 1)]
+    (if (< i 0) (vector)
       (let [pair (get env i)]
         (if (str-eq? (get pair 0) name)
           (get pair 1)
-          (recur (+ i 1))))))
+          (recur (- i 1))))))
 )
 
 (defn env_insert [env name scheme]
@@ -471,7 +510,9 @@
         ss2i  (mono_scheme (T_Fun (str_str) (T_I64)))
         ss2b  (mono_scheme (T_Fun (str_str) (T_Bool)))
         si2i  (mono_scheme (T_Fun (str_i64) (T_I64)))
+        is2i  (mono_scheme (T_Fun (i64_str) (T_I64)))
         is2s  (mono_scheme (T_Fun (i64_str) (T_Str)))
+        ii2s  (mono_scheme (T_Fun (i64_i64) (T_Str)))
         i2s   (mono_scheme (T_Fun (i64_vec) (T_Str)))
         sii2s (mono_scheme (T_Fun (str_i64-i64) (T_Str)))
         sss2s (mono_scheme (T_Fun (str_str_str) (T_Str)))
@@ -539,11 +580,11 @@
         (env_insert env "bars_rand" (mono_scheme (T_Fun (empty_vec) (T_I64))))
         (env_insert env "bars_re_is_match" ss2i)
         (env_insert env "bars_re_find" ss2i)
-        (env_insert env "bars_tcp_connect" bin)
+        (env_insert env "bars_tcp_connect" si2i)
         (env_insert env "bars_tcp_listen" unary)
         (env_insert env "bars_tcp_accept" unary)
-        (env_insert env "bars_tcp_send" bin)
-        (env_insert env "bars_tcp_recv" bin)
+        (env_insert env "bars_tcp_send" is2i)
+        (env_insert env "bars_tcp_recv" ii2s)
         (env_insert env "bars_tcp_close" unary)
         (env_insert env "bars_sha256" s2s)
         (env_insert env "str-from-i64" i2s)
@@ -557,6 +598,9 @@
         (env_insert env "map-set" (mono_scheme (T_Fun (i64_i64-i64) (T_I64))))
         (env_insert env "map-get" (mono_scheme (T_Fun (i64_i64) (T_I64))))
         (env_insert env "map-count" unary)
+        (env_insert env "map-contains?" cmp)
+        (env_insert env "map-keys" unary)
+        (env_insert env "map-values" unary)
         (env_insert env "def" (id_scheme))
         ;; do removed from builtin — it's a special form
         env))
@@ -838,9 +882,10 @@
         n (count expr)]
     (if (if (is_atom? head) (= (ast_tag head) 1) false)
       (let [name (ast_val head)
-            found (env_lookup env name)]
-        (if (print-any-fn? name)
-          (infer_args env ctx expr 1 (T_I64))
+            found (env_lookup env name)
+            anyr (any-call-ret name ctx)]
+        (if (= (get anyr 0) 1)
+          (infer_args env ctx expr 1 (get anyr 1))
         (if (> (count found) 0)
           (let [fn-ty (instantiate_ctx found ctx)]
             (if (is_fun? fn-ty)
@@ -862,12 +907,13 @@
           (infer_args env ctx expr 1 (fresh_var ctx))))))
 ;; ====== Solving Constraints ======
 
-(defn solve [ctx]
+;; Solve constraints [start, end) with a fresh subst; warn on each failure.
+(defn solve_from [ctx start]
   (let [subst (vector)
         constraints (get ctx 1)
         path (ctx_path ctx)
         text (ctx_text ctx)]
-    (loop [i 0 subst subst failed 0]
+    (loop [i start subst subst failed 0]
       (if (>= i (count constraints))
         (if (= failed 0) [true subst] [false subst])
         (let [c (get constraints i)
@@ -882,19 +928,45 @@
                   (recur (+ i 1) subst 1))))))))
 )
 
+(defn solve [ctx]
+  (solve_from ctx 0)
+)
+
+;; Apply subst to env entries added at/after `start` (17.9 interleaved solve).
+;; Makes defn schemes concrete after their body's constraints are solved.
+(defn env_apply_subst_from [env start subst]
+  (loop [i start env env]
+    (if (>= i (count env)) env
+      (let [pair (get env i)
+            scheme (get pair 1)
+            new-ty (apply_subst subst (get scheme 1))
+            new-scheme (vector)
+            _ (do (push new-scheme (get scheme 0)) (push new-scheme new-ty))
+            new-pair (vector)
+            _ (do (push new-pair (get pair 0)) (push new-pair new-scheme))]
+        (recur (+ i 1) (set_at env i new-pair)))))
+)
+
 ;; ====== Top-Level Inference ======
 
+;; Interleaved: after each top-level form, solve its constraints and apply
+;; the subst to the env entries it added (17.9). Cross-form pinning is then
+;; impossible and stored defn schemes are concrete (true call-site errors).
 (defn infer_program_at [ast-list path text]
   (let [ctx (make_ctx_at path text)
         env (builtin_env ctx)]
-    (loop [i 0 env env ctx ctx]
+    (loop [i 0 env env failed 0 solved 0]
       (if (>= i (count ast-list))
-        (solve ctx)
+        (if (= failed 0) [true (vector)] [false (vector)])
         (let [expr (get ast-list i)
+              env-n (count env)
               res (infer_expr env ctx expr)
-              ty (get res 0)
-              ctx (get res 1)]
-          (recur (+ i 1) env ctx)))))
+              n-now (count (get ctx 1))
+              sres (solve_from ctx solved)
+              subst (get sres 1)
+              env2 (env_apply_subst_from env env-n subst)
+              f2 (if (get sres 0) failed 1)]
+          (recur (+ i 1) env2 f2 n-now)))))
 )
 
 (defn infer_program [ast-list]

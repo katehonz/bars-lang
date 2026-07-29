@@ -38,6 +38,9 @@ Vectors can be nested:
 | `map-set` | `(map-set m key val)` | Set key-value pair |
 | `map-get` | `(map-get m key)` | Get value by key |
 | `map-count` | `(map-count m)` | Number of entries |
+| `map-contains?` | `(map-contains? m key)` | `1` if key exists (even mapped to `0`), else `0` |
+| `map-keys` | `(map-keys m)` | Vector of keys |
+| `map-values` | `(map-values m)` | Vector of values |
 
 Maps can hold vectors and other collections:
 

@@ -223,8 +223,9 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.6** Auto TCO (self-tail-call → `recur`) + `str-replace` runtime/stdlib
 - [x] **17.7** Type env precision — str-схеми + println accept-any (warnings 294→155)
 - [x] **17.8** HM generalize + instantiate за defn (warnings →128; fix apply_subst/ty_free_vars)
-- [ ] **17.9** TLS / HTTPS (deferred)
+- [x] **17.9** Interleaved solve + env_lookup last-match fix + map-contains?/keys/values (warnings →3)
+- [ ] **17.10** TLS / HTTPS (deferred)
 
 ---
 
-*Версия: 7.0 | Актуализирано: 2026-07-29*
+*Версия: 7.1 | Актуализирано: 2026-07-29*

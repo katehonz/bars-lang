@@ -345,6 +345,43 @@ int64_t bars_map_count_i64(bars_map_t* map) {
     return bars_map_len(map);
 }
 
+/* 1 if key exists (even when mapped to 0/nil), else 0. */
+int64_t bars_map_contains_i64(bars_map_t* map, int64_t key) {
+    bars_value_t k = { .tag = BARS_I64, .data = { .i64 = key } };
+    bars_value_t v = bars_map_get(map, k);
+    return (v.tag == BARS_NIL) ? 0 : 1;
+}
+
+bars_vector_t* bars_map_keys_i64(bars_map_t* map) {
+    bars_vector_t* vec = bars_vector_new();
+    if (map) {
+        for (size_t i = 0; i < map->cap; i++) {
+            bars_map_entry_t* entry = map->buckets[i];
+            while (entry) {
+                if (entry->key.tag == BARS_I64)
+                    bars_vector_push(vec, entry->key);
+                entry = entry->next;
+            }
+        }
+    }
+    return vec;
+}
+
+bars_vector_t* bars_map_values_i64(bars_map_t* map) {
+    bars_vector_t* vec = bars_vector_new();
+    if (map) {
+        for (size_t i = 0; i < map->cap; i++) {
+            bars_map_entry_t* entry = map->buckets[i];
+            while (entry) {
+                if (entry->val.tag == BARS_I64)
+                    bars_vector_push(vec, entry->val);
+                entry = entry->next;
+            }
+        }
+    }
+    return vec;
+}
+
 /* --- Simple i64 set helpers (backed by map with dummy values) --- */
 
 bars_map_t* bars_set_new_i64(void) {

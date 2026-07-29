@@ -101,7 +101,10 @@
     (if (str-eq? fname "map-set") "bars_map_set_i64"
       (if (str-eq? fname "map-get") "bars_map_get_i64"
         (if (str-eq? fname "map-count") "bars_map_count_i64"
-          "")))))
+          (if (str-eq? fname "map-contains?") "bars_map_contains_i64"
+            (if (str-eq? fname "map-keys") "bars_map_keys_i64"
+              (if (str-eq? fname "map-values") "bars_map_values_i64"
+                ""))))))))
 
 (defn map-io-ops [fname]
   (if (str-eq? fname "slurp") "bars_slurp"

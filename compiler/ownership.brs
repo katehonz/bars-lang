@@ -240,6 +240,7 @@
         (push v "str-ends-with?") (push v "str-index-of") (push v "str-slice")
         (push v "str-replace")
         (push v "int-str") (push v "vector")
+        (push v "map-contains?") (push v "map-keys") (push v "map-values")
         v)))
 
 (defn name-in-copy-ops? [name]
