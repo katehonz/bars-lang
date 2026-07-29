@@ -681,6 +681,13 @@ bars/
 - [x] Document existing `when` / `unless` / `->` / `->>` / `cond` in language guide
 - [x] Example `iflet_demo.brs` → 1 2 7 3 4 9 12
 
+### 17.22 `apply` (first-class call with arg vector) ✅
+
+- [x] Runtime `bars_apply(f, args_vec)` → `bars_icall0`…`8` by vector length
+- [x] LLVM/C: map `apply` / `bars_apply`; declare `@bars_apply`
+- [x] HIR builtin allowlist includes `apply`
+- [x] Example `apply_demo.brs` → 42, 42, 103, 21
+
 ---
 
-*План версия: 6.28 | Актуализиран: 2026-07-29*
+*План версия: 6.29 | Актуализиран: 2026-07-29*

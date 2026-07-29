@@ -137,34 +137,34 @@
                                                   (if (str-eq? name "map") true
                                                     (if (str-eq? name "filter") true
                                                       (if (str-eq? name "reduce") true
-                                                        (if (str-eq? name "nil") true
-                                                          (if (str-eq? name "true") true
-                                                            (if (str-eq? name "false") true
-                                                              (if (str-eq? name "__env") true
-                                                                (if (str-eq? name "__mkclos") true
-                                                                  (if (str-eq? name "kwargs") true
-                                                                    (if (str-eq? name "set") true
-                                                                      (if (str-eq? name "conj") true
-                                                                        (if (str-eq? name "vector-clone") true
-                                                                          (if (str-eq? name "slurp") true
-                                                                            (if (str-eq? name "spit") true
-                                                                              (if (str-eq? name "exit") true
-                                                                                (if (str-eq? name "args-count") true
-                                                                                  (if (str-eq? name "args-get") true
-                                                                                    (if (str-eq? name "code-char") true
-                                                                                      (if (str-eq? name "char-code") true
-                                                                                        (if (str-eq? name "inc") true
-                                                                                          (if (str-eq? name "dec") true
-                                                                                            (if (str-eq? name "abs") true
-                                                                                              (if (str-eq? name "min") true
-                                                                                                (if (str-eq? name "max") true
-                                                                                                  (if (str-starts-with? name "str-") true
-                                                                                                    (if (str-starts-with? name "map-") true
-                                                                                                      (if (str-starts-with? name "set-") true
-                                                                                                        (if (str-starts-with? name "bars_") true
-                                                                                                          (if (str-starts-with? name "v-") true
-                                                                                                            false))))))))))))))))))))))))))))))))))))))))))))))))))))))
-
+                                                        (if (str-eq? name "apply") true
+                                                          (if (str-eq? name "nil") true
+                                                            (if (str-eq? name "true") true
+                                                              (if (str-eq? name "false") true
+                                                                (if (str-eq? name "__env") true
+                                                                  (if (str-eq? name "__mkclos") true
+                                                                    (if (str-eq? name "kwargs") true
+                                                                      (if (str-eq? name "set") true
+                                                                        (if (str-eq? name "conj") true
+                                                                          (if (str-eq? name "vector-clone") true
+                                                                            (if (str-eq? name "slurp") true
+                                                                              (if (str-eq? name "spit") true
+                                                                                (if (str-eq? name "exit") true
+                                                                                  (if (str-eq? name "args-count") true
+                                                                                    (if (str-eq? name "args-get") true
+                                                                                      (if (str-eq? name "code-char") true
+                                                                                        (if (str-eq? name "char-code") true
+                                                                                          (if (str-eq? name "inc") true
+                                                                                            (if (str-eq? name "dec") true
+                                                                                              (if (str-eq? name "abs") true
+                                                                                                (if (str-eq? name "min") true
+                                                                                                  (if (str-eq? name "max") true
+                                                                                                    (if (str-starts-with? name "str-") true
+                                                                                                      (if (str-starts-with? name "map-") true
+                                                                                                        (if (str-starts-with? name "set-") true
+                                                                                                          (if (str-starts-with? name "bars_") true
+                                                                                                            (if (str-starts-with? name "v-") true
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))

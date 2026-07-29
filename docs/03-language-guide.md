@@ -498,6 +498,24 @@ fails). Set `BARS_STRICT_HIR=1` to skip the backend after HIR errors.
 
 HOF `map`/`filter`/`reduce` still beta-reduce inline lambdas (no allocation).
 
+### `apply` — call with a vector of args
+
+```clojure
+(apply f [a b c])   ;; same as (f a b c); f may be a local/closure
+```
+
+`apply` spreads a vector into `bars_icall0`…`bars_icall8` (max 8 args). Use it
+when the argument list is built at runtime.
+
+```clojure
+(let [f add2]
+  (apply f [20 22]))          ;; → 42
+
+(let [n 100
+      h (fn [x y] (+ (+ x y) n))]
+  (apply h [1 2]))            ;; → 103
+```
+
 ### Threading Macros
 
 ```clojure

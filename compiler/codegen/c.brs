@@ -167,8 +167,10 @@
               (if (str-eq? fname "bars_icall6") "bars_icall6"
                 (if (str-eq? fname "bars_icall7") "bars_icall7"
                   (if (str-eq? fname "bars_icall8") "bars_icall8"
-                    (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
-                      "")))))))))))
+                    (if (str-eq? fname "bars_apply") "bars_apply"
+                      (if (str-eq? fname "apply") "bars_apply"
+                        (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
+                          "")))))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

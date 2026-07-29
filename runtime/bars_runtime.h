@@ -120,6 +120,9 @@ int64_t bars_icall6(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, i
 int64_t bars_icall7(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6);
 int64_t bars_icall8(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7);
 
+/* (apply f args-vec) — call f with 0..8 args from a vector (17.22) */
+int64_t bars_apply(int64_t f, int64_t args_vec);
+
 /* Persistent / COW vector ops (Phase 17.14) — originals never mutated */
 int64_t bars_vector_clone_i64(bars_vector_t* vec);
 int64_t bars_vector_conj_i64(bars_vector_t* vec, int64_t val);

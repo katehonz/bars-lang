@@ -263,6 +263,7 @@
         (lines-push lines "declare i64 @bars_icall6(i64, i64, i64, i64, i64, i64, i64)")
         (lines-push lines "declare i64 @bars_icall7(i64, i64, i64, i64, i64, i64, i64, i64)")
         (lines-push lines "declare i64 @bars_icall8(i64, i64, i64, i64, i64, i64, i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_apply(i64, i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "declare i8* @bars_alloc(i64)")
         (lines-push lines "")
@@ -372,8 +373,10 @@
               (if (str-eq? fname "bars_icall6") "bars_icall6"
                 (if (str-eq? fname "bars_icall7") "bars_icall7"
                   (if (str-eq? fname "bars_icall8") "bars_icall8"
-                    (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
-                      "")))))))))))
+                    (if (str-eq? fname "bars_apply") "bars_apply"
+                      (if (str-eq? fname "apply") "bars_apply"
+                        (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
+                          "")))))))))))))
 
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]

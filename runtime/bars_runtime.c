@@ -324,6 +324,42 @@ int64_t bars_icall8(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3, i
     return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3, a4, a5, a6, a7);
 }
 
+/* (apply f args-vec) — spread vector args into bars_icallN (arity 0..8). */
+int64_t bars_apply(int64_t f, int64_t args_vec) {
+    if (!bars_is_vector_i64(args_vec)) {
+        fprintf(stderr, "error: apply: args must be a vector\n");
+        return 0;
+    }
+    bars_vector_t* v = (bars_vector_t*)(uintptr_t)args_vec;
+    int64_t n = bars_vector_count_i64(v);
+    if (n < 0) n = 0;
+    if (n > 8) {
+        fprintf(stderr, "error: apply: arity > 8 not supported (got %lld)\n",
+                (long long)n);
+        return 0;
+    }
+    int64_t a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, a7 = 0;
+    if (n > 0) a0 = bars_vector_get_i64(v, 0);
+    if (n > 1) a1 = bars_vector_get_i64(v, 1);
+    if (n > 2) a2 = bars_vector_get_i64(v, 2);
+    if (n > 3) a3 = bars_vector_get_i64(v, 3);
+    if (n > 4) a4 = bars_vector_get_i64(v, 4);
+    if (n > 5) a5 = bars_vector_get_i64(v, 5);
+    if (n > 6) a6 = bars_vector_get_i64(v, 6);
+    if (n > 7) a7 = bars_vector_get_i64(v, 7);
+    switch ((int)n) {
+    case 0: return bars_icall0(f);
+    case 1: return bars_icall1(f, a0);
+    case 2: return bars_icall2(f, a0, a1);
+    case 3: return bars_icall3(f, a0, a1, a2);
+    case 4: return bars_icall4(f, a0, a1, a2, a3);
+    case 5: return bars_icall5(f, a0, a1, a2, a3, a4);
+    case 6: return bars_icall6(f, a0, a1, a2, a3, a4, a5);
+    case 7: return bars_icall7(f, a0, a1, a2, a3, a4, a5, a6);
+    default: return bars_icall8(f, a0, a1, a2, a3, a4, a5, a6, a7);
+    }
+}
+
 /* Simple i64 vector helpers */
 
 bars_vector_t* bars_vector_new_i64(void) {
