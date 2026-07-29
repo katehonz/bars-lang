@@ -162,10 +162,11 @@
           ty))
       (if (is_fun? ty)
         (let [ps (fun_params ty)
+              n (count ps)
               nps (loop [i 0 acc (vector)]
-                    (if (>= i (count ps)) acc
-                      (do (push acc (get ps i)) (recur (+ i 1) acc))))]
-          (T_Fun nps (fun_ret ty)))
+                    (if (>= i n) acc
+                      (do (push acc (apply_subst subst (get ps i))) (recur (+ i 1) acc))))]
+          (T_Fun nps (apply_subst subst (fun_ret ty))))
         ty))
   )
 )
@@ -230,25 +231,22 @@
 
 ;; ====== Free Variables ======
 
-(defn ty_free_vars [ty]
+(defn tyfv-into [ty acc]
   (if (is_var? ty)
-    (let [v (vector)] (do (push v (var_id ty)) v))
+    (if (vec_contains? acc (var_id ty)) acc
+      (do (push acc (var_id ty)) acc))
     (if (is_fun? ty)
       (let [ps (fun_params ty)
-            vars (vector)]
-        (do (loop [i 0]
-              (if (>= i (count ps)) 0
-                (let [inner (vector)]
-                  (do (loop [j 0]
-                        (if (>= j (count inner)) 0
-                          (do (push vars (get inner j)) (recur (+ j 1)))))
-                      (recur (+ i 1))))))
-            (let [ret-vars (vector)]
-              (do (loop [j 0]
-                    (if (>= j (count ret-vars)) 0
-                      (do (push vars (get ret-vars j)) (recur (+ j 1)))))
-                  vars))))
-      (let [v (vector)] v)))
+            n (count ps)
+            acc2 (loop [i 0 a acc]
+                   (if (>= i n) a
+                     (recur (+ i 1) (tyfv-into (get ps i) a))))]
+        (tyfv-into (fun_ret ty) acc2))
+      acc)))
+
+;; vec_contains? is defined below; calls resolve at emit time.
+(defn ty_free_vars [ty]
+  (tyfv-into ty (vector))
 )
 
 (defn vec_contains? [v x]
@@ -318,6 +316,41 @@
               (do (subst_insert subst id new-var) (recur (+ i 1))))))
         (apply_subst subst ty)))
 )
+
+;; Instantiate with fresh vars drawn from ctx (17.8). Reserves counter ids.
+(defn instantiate_ctx [scheme ctx]
+  (let [vars (get scheme 0)
+        n (count vars)
+        counter (get ctx 0)
+        base (count counter)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (do (push counter 0) (recur (+ i 1)))))
+        (instantiate scheme base)))
+)
+
+;; Free vars of the first n env entries (snapshot before defn params).
+(defn env_free_vars_prefix [env n]
+  (let [vars (vector)]
+    (do (loop [i 0]
+          (if (>= i n) 0
+            (let [scheme (get (get env i) 1)
+                  ty (get scheme 1)
+                  fv (ty_free_vars ty)]
+              (do (loop [j 0]
+                    (if (>= j (count fv)) 0
+                      (do (push vars (get fv j)) (recur (+ j 1)))))
+                  (recur (+ i 1))))))
+        vars))
+)
+
+;; Generalize against the env prefix [0, n) — defn params/locals excluded.
+(defn generalize_prefix [env n ty]
+  (let [ty-vars (ty_free_vars ty)
+        env-vars (env_free_vars_prefix env n)
+        gen-vars (vec_diff ty-vars env-vars)
+        v (vector)]
+    (do (push v gen-vars) (push v ty) v)))
 
 ;; ====== Inference Context ======
 
@@ -679,7 +712,7 @@
           (let [name (ast_val expr)
                 found (env_lookup env name)]
             (if (> (count found) 0)
-              (ret2 (apply_subst (vector) (get found 1)) ctx)
+              (ret2 (instantiate_ctx found ctx) ctx)
               (ret2 (fresh_var ctx) ctx)))
           (if (= tag 2) (ret2 (T_Str) ctx)
             (if (= tag 3) (ret2 (T_Str) ctx)
@@ -690,7 +723,8 @@
       (if (= tag 10)
         (let [name (ast_val (get expr 1))
               params (normalize_params (get expr 2))
-              body (get expr 3)]
+              body (get expr 3)
+              outer-n (count env)]
           (do (loop [i 0]
                 (if (>= i (count params)) 0
                   (do (env_insert env (ast_val (get params i)) (mono_scheme (fresh_var ctx)))
@@ -705,7 +739,7 @@
                                 (recur (+ i 1))))))
                     body-ty (res-ty (infer_expr env ctx body))
                     fn-ty (T_Fun param-tys body-ty)]
-                (do (env_insert env name (mono_scheme fn-ty))
+                (do (env_insert env name (generalize_prefix env outer-n fn-ty))
                     (ret2 (T_Void) ctx)))))
         (if (= tag 11) (infer_let env ctx expr)
           (if (= tag 12) (infer_if env ctx expr)
@@ -808,7 +842,7 @@
         (if (print-any-fn? name)
           (infer_args env ctx expr 1 (T_I64))
         (if (> (count found) 0)
-          (let [fn-ty (get found 1)]
+          (let [fn-ty (instantiate_ctx found ctx)]
             (if (is_fun? fn-ty)
               (let [param-tys (fun_params fn-ty)
                     ret-ty (fun_ret fn-ty)]

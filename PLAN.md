@@ -442,7 +442,7 @@ bars/
 | A | Macros | ~~User `defmacro` липсваше в self-host~~ → **17.2 ✅** (template expansion). Пълен macro interpreter още няма | list/cons в macro body — deferred |
 | B | Globals | ~~Top-level `(def x …)` не е истински LLVM global~~ → **17.5 ✅** (real globals + `__bars_init_globals`) | shadowing на global с local остава забранено (документирано) |
 | C | HOF | ~~map→bars_map_new~~ → **17.3a ✅** (loop desugar + lambda beta) | first-class fn values still limited |
-| D | Types | ~~Soft string/void warnings~~ → **17.7 ✅** (str-схеми + println accept-any: 294→155) | оставащ шум: shared mono vars в generic plumbing (instantiate/generalize — 17.8 кандидат) |
+| D | Types | ~~Soft string/void warnings~~ → **17.7+17.8 ✅** (str-схеми, println accept-any, generalize/instantiate: 294→128) | остатък: global solve pinning в macro-heavy код |
 | E | Docs | Language guide без destructuring/traits пълнота; DOCTRINE споменава `{}` maps | onboarding drift |
 | F | Net | HTTP client без TLS; няма server helper package | prod web ограничен |
 | G | Tests | До 17.1 — само soft `assert` macro | ✅ поправено |
@@ -544,8 +544,23 @@ bars/
   (`print-any-fn?` special case в `infer_call`; runtime печата всяка стойност)
 - [x] Резултат: soft type warnings в examples suite **294 → 155** (−47%);
   test/json/string/crypto demo-та вече са чисти
-- [ ] Оставащо: shared mono vars в generic plumbing (http/args) — истинското
-  решение е generalize на defn схеми + instantiate при lookup (17.8 кандидат)
+- [x] Оставащо: shared mono vars → **17.8 ✅** (generalize_prefix + instantiate_ctx);
+  остатъчен шум само от global solve в macro-heavy код
+
+### 17.8 HM generalize + instantiate (let-polymorphism за defn) ✅
+
+- [x] Бъгфиксове в dead-code пътеките на `compiler/types.brs`
+  - `apply_subst` не рекурсираше в `T_Fun` (params/ret минаваха без subst)
+  - `ty_free_vars` не рекурсираше в `T_Fun` → винаги празен → `generalize` quantify-ваше нищо
+  - (и двете вече рекурсивни — първи self-recursive defns в compiler source;
+    възможно благодарение на 17.6 auto TCO)
+- [x] `generalize_prefix` — defn схемите quantify-ват vars извън env prefix
+  (snapshot преди параметрите); params/locals не се quantify-ват
+- [x] `instantiate_ctx` — свежи vars при всяко lookup/call (резервира ctx counter)
+  - Свързан в `infer_expr` (atom lookup) и `infer_call`
+- [x] Резултат: soft warnings **155 → 128** (от базова 294: −56%)
+  - Известно: остатъчен шум от global solve (constraints от defn bodies pin-ват
+    original vars; macro-expanded trait defns) — изисква interleaved solve, по-нататък
 
 ### 17.3 Ecosystem
 
@@ -558,4 +573,4 @@ bars/
 
 ---
 
-*План версия: 6.18 | Актуализиран: 2026-07-29*
+*План версия: 6.19 | Актуализиран: 2026-07-29*
