@@ -243,7 +243,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.26** Multi-binding doseq/for + when-not
 - [x] **17.27** `while` loop macro
 - [x] **17.28** `case` equality dispatch macro
+- [x] **17.29** `case` multi-const groups (list/vector)
 
 ---
 
-*Версия: 7.15 | Актуализирано: 2026-07-29*
+*Версия: 7.16 | Актуализирано: 2026-07-29*

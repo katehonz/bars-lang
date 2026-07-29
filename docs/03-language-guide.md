@@ -236,11 +236,16 @@ value is truthy.
   2 20
   3 30
   0)                     ;; default when no constant matches
+
+(case n
+  (1 2 3) 1              ;; multi-const group → or of =
+  [4 5]   2              ;; vector group also OK
+  0)
 ```
 
-Pairs of `constant` / `result`. An odd trailing form is the default (`nil` if
-omitted). The scrutinee is evaluated **once**.
-
+Pairs of `constant` / `result`. A list or vector of constants matches if **any**
+equals the scrutinee. An odd trailing form is the default (`nil` if omitted).
+The scrutinee is evaluated **once**.
 ### `do` — Sequence Expressions
 
 ```clojure

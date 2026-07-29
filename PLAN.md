@@ -723,6 +723,11 @@ bars/
 - [x] `(case e c1 r1 c2 r2 default?)` → nested `if`/`=` with single scrutinee bind
 - [x] Example `case_demo.brs` → 10 20 30 0 200
 
+### 17.29 `case` multi-const groups ✅
+
+- [x] `(case e (1 2 3) r …)` / `[1 2 3]` → `(or (= e 1) (= e 2) …)`
+- [x] Example `case_group_demo.brs` → 1 1 2 3 0 42
+
 ---
 
-*План версия: 6.35 | Актуализиран: 2026-07-29*
+*План версия: 6.36 | Актуализиран: 2026-07-29*

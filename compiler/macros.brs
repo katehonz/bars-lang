@@ -922,8 +922,30 @@
             lbinds (wrap-vec (vector (mk-sym "__w") (mk-num 0)))]
         (mk-loop1 lbinds lbody)))))
 
+;; Equality test for case: atom → (= __case c); list/vec group → (or (= …) …)
+(defn case-eq [scrut-sym val]
+  (mk-call "=" (vector (mk-sym scrut-sym) val)))
+
+(defn case-group-test [scrut-sym elems]
+  (let [n (count elems)]
+    (if (= n 0) (mk-bool 0)
+      (if (= n 1)
+        (case-eq scrut-sym (get elems 0))
+        (loop [i (- n 2)
+               res (case-eq scrut-sym (get elems (- n 1)))]
+          (if (< i 0) res
+            (recur (- i 1)
+              (mk-call "or" (vector (case-eq scrut-sym (get elems i)) res)))))))))
+
+(defn case-test [scrut-sym cst]
+  (if (is-atom? cst)
+    (case-eq scrut-sym cst)
+    (let [elems (if (is-vec-marker? cst) (unwrap-vec cst) cst)]
+      (case-group-test scrut-sym elems))))
+
 ;; (case e c1 r1 c2 r2 default?)
-;; => (let [__case e] (if (= __case c1) r1 (if (= __case c2) r2 default)))
+;; (case e (1 2 3) r …) — multi-const group via or
+;; => (let [__case e] (if test r1 (if … default)))
 ;; Scrutinee evaluated once. Odd trailing form is the default (else nil).
 (defn expand-case [expr macs]
   (let [n (count expr)]
@@ -946,7 +968,7 @@
                            res
                            (let [cst (expand-expr (get expr i) macs)
                                  body (expand-expr (get expr (+ i 1)) macs)
-                                 test (mk-call "=" (vector (mk-sym "__case") cst))]
+                                 test (case-test "__case" cst)]
                              (recur (- i 2) (mk-if test body res)))))]
             (mk-let1 "__case" scrut nested)))))))
 
