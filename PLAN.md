@@ -718,6 +718,11 @@ bars/
 - [x] `(while cond body…)` → `loop`/`recur` with dummy binding
 - [x] Example `while_demo.brs` → 3 2 1 0, 30 20 10
 
+### 17.28 `case` equality dispatch ✅
+
+- [x] `(case e c1 r1 c2 r2 default?)` → nested `if`/`=` with single scrutinee bind
+- [x] Example `case_demo.brs` → 10 20 30 0 200
+
 ---
 
-*План версия: 6.34 | Актуализиран: 2026-07-29*
+*План версия: 6.35 | Актуализиран: 2026-07-29*

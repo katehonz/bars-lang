@@ -600,32 +600,34 @@
                     (expand-dotimes expr macs)
                     (if (str-eq? name "while")
                       (expand-while expr macs)
-                      (if (str-eq? name "cond")
-                        (expand-cond expr macs)
-                        (if (str-eq? name "and")
-                          (expand-and expr macs)
-                          (if (str-eq? name "or")
-                            (expand-or expr macs)
-                            (if (str-eq? name "->")
-                              (expand-thread expr macs)
-                              (if (str-eq? name "->>")
-                                (expand-thread-last expr macs)
-                                (if (str-eq? name "deftrait")
-                                  (expand-deftrait expr)
-                                  (if (str-eq? name "impl")
-                                    (expand-impl expr (vector) macs)
-                                    (if (str-eq? name "defconst")
-                                      (expand-defconst expr macs)
-                                      (if (str-eq? name "trait-call")
-                                        (expand-trait-call expr macs)
-                                        (if (str-eq? name "tcall")
+                      (if (str-eq? name "case")
+                        (expand-case expr macs)
+                        (if (str-eq? name "cond")
+                          (expand-cond expr macs)
+                          (if (str-eq? name "and")
+                            (expand-and expr macs)
+                            (if (str-eq? name "or")
+                              (expand-or expr macs)
+                              (if (str-eq? name "->")
+                                (expand-thread expr macs)
+                                (if (str-eq? name "->>")
+                                  (expand-thread-last expr macs)
+                                  (if (str-eq? name "deftrait")
+                                    (expand-deftrait expr)
+                                    (if (str-eq? name "impl")
+                                      (expand-impl expr (vector) macs)
+                                      (if (str-eq? name "defconst")
+                                        (expand-defconst expr macs)
+                                        (if (str-eq? name "trait-call")
                                           (expand-trait-call expr macs)
-                                          (let [entry (macro-lookup macs name)]
-                                            (if (= entry 0)
-                                              (expand-children-from expr 0 macs)
-                                              (let [args (expand-call-args expr macs)
-                                                    expanded (apply-user-macro entry args)]
-                                                (expand-expr expanded macs)))))))))))))))))))))))))
+                                          (if (str-eq? name "tcall")
+                                            (expand-trait-call expr macs)
+                                            (let [entry (macro-lookup macs name)]
+                                              (if (= entry 0)
+                                                (expand-children-from expr 0 macs)
+                                                (let [args (expand-call-args expr macs)
+                                                      expanded (apply-user-macro entry args)]
+                                                  (expand-expr expanded macs))))))))))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -919,6 +921,34 @@
             lbody (mk-if cnd step (mk-nil))
             lbinds (wrap-vec (vector (mk-sym "__w") (mk-num 0)))]
         (mk-loop1 lbinds lbody)))))
+
+;; (case e c1 r1 c2 r2 default?)
+;; => (let [__case e] (if (= __case c1) r1 (if (= __case c2) r2 default)))
+;; Scrutinee evaluated once. Odd trailing form is the default (else nil).
+(defn expand-case [expr macs]
+  (let [n (count expr)]
+    (if (< n 2)
+      (mk-nil)
+      (if (= n 2)
+        (mk-nil)
+        (if (= n 3)
+          ;; (case e default) — only default
+          (expand-expr (get expr 2) macs)
+          (let [scrut (expand-expr (get expr 1) macs)
+                m (- n 2)
+                has-def (= (% m 2) 1)
+                default (if has-def
+                          (expand-expr (get expr (- n 1)) macs)
+                          (mk-nil))
+                pair-end (if has-def (- n 1) n)
+                nested (loop [i (- pair-end 2) res default]
+                         (if (< i 2)
+                           res
+                           (let [cst (expand-expr (get expr i) macs)
+                                 body (expand-expr (get expr (+ i 1)) macs)
+                                 test (mk-call "=" (vector (mk-sym "__case") cst))]
+                             (recur (- i 2) (mk-if test body res)))))]
+            (mk-let1 "__case" scrut nested)))))))
 
 ;; (and) => true; (and x) => x; (and a b c) => (if a (if b c false) false)
 (defn expand-and [expr macs]

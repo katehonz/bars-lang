@@ -228,6 +228,19 @@ value is truthy.
 
 `:else` (or any keyword as the last condition) acts as a catch-all.
 
+### `case` — equality dispatch
+
+```clojure
+(case n
+  1 10
+  2 20
+  3 30
+  0)                     ;; default when no constant matches
+```
+
+Pairs of `constant` / `result`. An odd trailing form is the default (`nil` if
+omitted). The scrutinee is evaluated **once**.
+
 ### `do` — Sequence Expressions
 
 ```clojure
