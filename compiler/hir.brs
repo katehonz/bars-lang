@@ -137,8 +137,10 @@
                                                   (if (str-eq? name "map") true
                                                     (if (str-eq? name "filter") true
                                                       (if (str-eq? name "reduce") true
-                                                        (if (str-eq? name "apply") true
-                                                          (if (str-eq? name "identity") true
+                                                        (if (str-eq? name "some") true
+                                                          (if (str-eq? name "every?") true
+                                                            (if (str-eq? name "apply") true
+                                                              (if (str-eq? name "identity") true
                                                           (if (str-eq? name "nil") true
                                                             (if (str-eq? name "true") true
                                                               (if (str-eq? name "false") true
@@ -165,7 +167,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -949,6 +951,32 @@
         body (hir-if cond acc rec)]
     (hir-loop binds body)))
 
+;; (some pred coll) → first truthy (pred x), else 0
+(defn desugar-some [pred vec-ast uid]
+  (let [i (hir-sym (str-concat "__si" (int-str uid)))
+        binds (hir-vec (vector i (hir-num 0)))
+        cond (hir-call "=" (vector i (hir-call "count" (vector vec-ast))))
+        elem (hir-call "get" (vector vec-ast i))
+        r (hir-sym (str-concat "__sr" (int-str uid)))
+        pred-c (apply-callable pred (vector elem))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1)))))
+        step (hir-let (hir-vec (vector r pred-c))
+               (hir-if r r rec))
+        body (hir-if cond (hir-num 0) step)]
+    (hir-loop binds body)))
+
+;; (every? pred coll) → 1 if all truthy, else 0
+(defn desugar-every [pred vec-ast uid]
+  (let [i (hir-sym (str-concat "__ei" (int-str uid)))
+        binds (hir-vec (vector i (hir-num 0)))
+        cond (hir-call "=" (vector i (hir-call "count" (vector vec-ast))))
+        elem (hir-call "get" (vector vec-ast i))
+        pred-c (apply-callable pred (vector elem))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1)))))
+        step (hir-if pred-c rec (hir-num 0))
+        body (hir-if cond (hir-num 1) step)]
+    (hir-loop binds body)))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1028,6 +1056,10 @@
       (lower-expr (desugar-filter (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "reduce") (= n 4) false)
       (lower-expr (desugar-reduce (get ast 1) (get ast 2) (get ast 3) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "some") (= n 3) false)
+      (lower-expr (desugar-some (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "every?") (= n 3) false)
+      (lower-expr (desugar-every (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1082,7 +1114,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))
+            (recur (+ i 1) args t2 l2)))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]

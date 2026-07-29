@@ -249,7 +249,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.32** `juxt` multi-fn applicator macro
 - [x] **17.33** `comp` function composition macro
 - [x] **17.34** `fnil` nil/0 default-arg wrapper
+- [x] **17.35** `some` / `every?` HOF predicates
 
 ---
 
-*Версия: 7.21 | Актуализирано: 2026-07-29*
+*Версия: 7.22 | Актуализирано: 2026-07-29*

@@ -757,6 +757,13 @@ bars/
 - [x] `(fnil f d…)` → fn that substitutes defaults for 0/nil args (1–3)
 - [x] Example `fnil_demo.brs` → 7 42, 30 3 9, 6
 
+### 17.35 `some` / `every?` ✅
+
+- [x] HIR desugar like map/filter (apply-callable, loop/recur)
+- [x] `(some pred coll)` → first truthy `(pred x)`, else 0
+- [x] `(every? pred coll)` → 1 if all truthy, else 0
+- [x] Example `some_every_demo.brs` → 1 0, 1 0 1, 12
+
 ---
 
-*План версия: 6.41 | Актуализиран: 2026-07-29*
+*План версия: 6.42 | Актуализиран: 2026-07-29*

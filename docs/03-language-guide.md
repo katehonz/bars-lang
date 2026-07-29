@@ -138,19 +138,23 @@ Vector and nested patterns (also works with `defstruct` field patterns):
 
 See `examples/let_destructure.brs`, `examples/struct_destructure.brs`.
 
-### Higher-order `map` / `filter` / `reduce`
+### Higher-order `map` / `filter` / `reduce` / `some` / `every?`
 
 These are **not** hashmap constructors. With two (or three) arguments they
-desugar to inline `loop`/`recur` (self-host and host):
+desugar to inline `loop`/`recur` (self-host):
 
 ```clojure
-(defn inc [x] (+ x 1))
+(defn add1 [x] (+ x 1))
 (defn even? [x] (= (% x 2) 0))
 (defn add [a b] (+ a b))
+(defn pos? [n] (> n 0))
 
-(map inc [1 2 3])              ;; [2 3 4]
+(map add1 [1 2 3])             ;; [2 3 4]
 (filter even? [1 2 3 4])       ;; [2 4]
 (reduce add 0 [1 2 3 4 5])     ;; 15
+(some pos? [0 -1 3])           ;; 1 (first truthy pred result)
+(every? pos? [1 2 3])          ;; 1
+(every? pos? [1 0 3])          ;; 0
 
 ;; Inline lambda (beta-reduced into the loop):
 (map (fn [x] (* x 2)) [1 2 3])
