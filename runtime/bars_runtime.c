@@ -598,6 +598,25 @@ int64_t bars_map_contains_i64(bars_map_t* map, int64_t key) {
     return (v.tag == BARS_NIL) ? 0 : 1;
 }
 
+/* Remove key in place (unlink from bucket chain; entry is GC-managed).
+   Returns the map so `(dissoc …)` can thread it; no-op if missing/NULL. */
+int64_t bars_map_delete_i64(bars_map_t* map, int64_t key) {
+    if (!map) return 0;
+    bars_value_t k = { .tag = BARS_I64, .data = { .i64 = key } };
+    uint64_t h = bars_hash_value(k);
+    size_t idx = h & (map->cap - 1);
+    bars_map_entry_t** pp = &map->buckets[idx];
+    while (*pp) {
+        if (bars_value_eq((*pp)->key, k)) {
+            *pp = (*pp)->next;
+            map->size--;
+            break;
+        }
+        pp = &(*pp)->next;
+    }
+    return (int64_t)(uintptr_t)map;
+}
+
 bars_vector_t* bars_map_keys_i64(bars_map_t* map) {
     bars_vector_t* vec = bars_vector_new();
     if (map) {

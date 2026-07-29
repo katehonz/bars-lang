@@ -111,6 +111,7 @@
       (if (str-eq? fname "map-get") "bars_map_get_i64"
         (if (str-eq? fname "map-count") "bars_map_count_i64"
           (if (str-eq? fname "map-contains?") "bars_map_contains_i64"
+            (if (str-eq? fname "map-delete") "bars_map_delete_i64"
             (if (str-eq? fname "map-keys") "bars_map_keys_i64"
               (if (str-eq? fname "map-values") "bars_map_values_i64"
                 (if (str-eq? fname "map-clone") "bars_map_clone_i64"
@@ -119,7 +120,7 @@
                       (if (str-eq? fname "set-add") "bars_set_add_i64"
                         (if (str-eq? fname "set-contains?") "bars_set_contains_i64"
                           (if (str-eq? fname "set-count") "bars_set_count_i64"
-                            ""))))))))))))))
+                            "")))))))))))))))
 
 (defn map-io-ops [fname]
   (if (str-eq? fname "slurp") "bars_slurp"

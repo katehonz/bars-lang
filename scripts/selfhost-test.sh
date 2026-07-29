@@ -117,6 +117,7 @@ EXAMPLES=(
   examples/mapcat_demo.brs
   examples/get_in_demo.brs
   examples/math_ops_demo.brs
+  examples/merge_demo.brs
 )
 
 echo "=== self-host test with $CC_BIN ==="
@@ -1031,6 +1032,7 @@ C_EXAMPLES=(
   examples/mapcat_demo.brs
   examples/get_in_demo.brs
   examples/math_ops_demo.brs
+  examples/merge_demo.brs
 )
 
 if [[ "${BARS_SKIP_C_TEST:-}" == "1" ]]; then

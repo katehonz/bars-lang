@@ -419,6 +419,7 @@ bars/
 | 26 | C backend: `min`/`max` ternary с липсваща затваряща скоба | `compiler/codegen/c.brs` | ✅ |
 | 27 | Runtime: `bars_map_set_i64`/`bars_set_add_i64` връщат `void`, но backend-ите ги декларират `i64` → garbage при chained употреба (segfault) | `runtime/bars_runtime.c` (връщат map/set) | ✅ |
 | 28 | `abs`/`inc`/`dec` известни на HIR/types, но без backend mapping → undefined `@abs`; `bars_map_get(NULL)` segfault при get-in през missing key | backend maps + inc/dec desugar; NULL guard в `bars_map_get` | ✅ |
+| 29 | Nested desugar на същата fn (напр. `zipmap` в `zipmap`) дели един и същ `uid` → генерираните символи се блъскат и дават грешни стойности | `compiler/hir.brs` (fresh `(hir-lam-next)` uid per dispatch) | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -838,6 +839,15 @@ bars/
   desugar към `+`/`-` 1; `bars_map_get` NULL-safe (get-in през missing key)
 - [x] Example `math_ops_demo.brs` → 42 42 7 7 3 7
 
+### 17.46 `merge` / `dissoc` / `assoc-in` ✅
+
+- [x] Runtime `bars_map_delete_i64` (unlink от bucket chain, връща map)
+- [x] `(merge a b …)` → clone на първия + ключовете на останалите (variadic fold)
+- [x] `(dissoc m k …)` → clone без ключовете (входът запазен)
+- [x] `(assoc-in m ks v)` → nested assoc, междинните map-ове се clone-ват;
+  липсващи нива се създават; `ks = []` → m
+- [x] Example `merge_demo.brs` → 10 99 30 20, 3, 1 10 0, 60 50 0, 42
+
 ---
 
-*План версия: 6.53 | Актуализиран: 2026-07-29*
+*План версия: 6.54 | Актуализиран: 2026-07-29*

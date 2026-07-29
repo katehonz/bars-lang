@@ -139,6 +139,10 @@ Self-host HIR desugars (also in the C backend):
 | `get-in` | `(get-in coll ks)` | Walk a key/index path (maps + vectors) |
 | `update` | `(update m k f)` | `map-set m k (f (map-get m k))` |
 | `sort-by` | `(sort-by f coll)` | Sort ascending by `(f elem)` |
+| `merge` | `(merge a b …)` | Clone of first + others' keys (later wins) |
+| `dissoc` | `(dissoc m k …)` | Clone without the keys |
+| `assoc-in` | `(assoc-in m ks v)` | Nested assoc (intermediate maps cloned) |
+| `map-delete` | `(map-delete m k)` | Remove key in place; returns the map |
 | `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 
 ### Boolean Helpers

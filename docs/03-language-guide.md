@@ -182,6 +182,9 @@ desugar to inline `loop`/`recur` (self-host):
 (get-in m [1 0])               ;; walk maps/vectors by key path
 (update m 5 f)                 ;; map-set m 5 (f (map-get m 5))
 (sort-by abs [-3 1 -2])        ;; [1 -2 -3] (key fn, ascending)
+(merge a b)                    ;; clone of a + b's keys (b wins)
+(dissoc m 2 3)                 ;; clone without keys 2 and 3
+(assoc-in m [1 6] 60)          ;; nested assoc, input kept
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):

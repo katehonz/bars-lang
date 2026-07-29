@@ -158,6 +158,9 @@
                                                                                             (if (str-eq? name "keep") true
                                                                                               (if (str-eq? name "flatten") true
                                                                                                 (if (str-eq? name "get-in") true
+                                                                                                  (if (str-eq? name "merge") true
+                                                                                                    (if (str-eq? name "dissoc") true
+                                                                                                      (if (str-eq? name "assoc-in") true
                                                                                                   (if (str-eq? name "update") true
                                                                                                     (if (str-eq? name "sort-by") true
                                                                                                       (if (str-eq? name "bars_is_vector_i64") true
@@ -190,7 +193,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1444,6 +1447,100 @@
         body (hir-if done r step)]
     (hir-let outer (hir-loop binds body))))
 
+;; (merge a b) → clone of a with all of b's keys set (b wins)
+(defn desugar-merge-2 [a-ast b-ast uid]
+  (let [a (hir-sym (str-concat "__mga" (int-str uid)))
+        b (hir-sym (str-concat "__mgb" (int-str uid)))
+        ks (hir-sym (str-concat "__mgk" (int-str uid)))
+        n (hir-sym (str-concat "__mgn" (int-str uid)))
+        i (hir-sym (str-concat "__mgi" (int-str uid)))
+        k (hir-sym (str-concat "__mgx" (int-str uid)))
+        out (hir-sym (str-concat "__mgo" (int-str uid)))
+        outer (hir-vec (vector
+                 a a-ast
+                 b b-ast
+                 ks (hir-call "map-keys" (vector b))
+                 n (hir-call "count" (vector ks))
+                 out (hir-call "map-clone" (vector a))))
+        binds (hir-vec (vector i (hir-num 0) out out))
+        done (hir-call ">=" (vector i n))
+        store (hir-call "map-set" (vector out k (hir-call "map-get" (vector b k))))
+        step (hir-let (hir-vec (vector k (hir-call "get" (vector ks i))))
+               (hir-let (hir-vec (vector out store))
+                 (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) out))))
+        body (hir-if done out step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (merge) → {}; (merge a) → a; (merge a b c …) → left fold of merge-2
+(defn desugar-merge [ast uid]
+  (let [n (count ast)]
+    (if (<= n 1)
+      (hir-call "map" (vector))
+      (if (= n 2)
+        (get ast 1)
+        (if (= n 3)
+          (desugar-merge-2 (get ast 1) (get ast 2) uid)
+          (let [head2 (hir-call "merge" (vector (get ast 1) (get ast 2)))
+                rest-args (vector)]
+            (do (push rest-args head2)
+                (loop [i 3]
+                  (if (>= i n) 0
+                    (do (push rest-args (get ast i))
+                        (recur (+ i 1)))))
+                (desugar-merge (hir-call "merge" rest-args) uid))))))))
+
+;; (dissoc m k …) → clone of m with the keys removed (input not mutated)
+(defn desugar-dissoc [ast uid]
+  (let [n (count ast)
+        m (hir-sym (str-concat "__dcm" (int-str uid)))
+        out (hir-sym (str-concat "__dco" (int-str uid)))
+        outer (hir-vec (vector
+                 m (get ast 1)
+                 out (hir-call "map-clone" (vector m))))
+        exprs (vector)]
+    (do (loop [i 2]
+          (if (>= i n) 0
+            (do (push exprs (hir-call "map-delete" (vector out (get ast i))))
+                (recur (+ i 1)))))
+        (push exprs out)
+        (hir-let outer (hir-do exprs)))))
+
+;; (assoc-in m ks v) → nested assoc; intermediate maps cloned (input kept)
+(defn desugar-assoc-in [map-ast ks-ast v-ast uid]
+  (let [m (hir-sym (str-concat "__aim" (int-str uid)))
+        a (hir-sym (str-concat "__aia" (int-str uid)))
+        n (hir-sym (str-concat "__ain" (int-str uid)))
+        c0 (hir-sym (str-concat "__aic" (int-str uid)))
+        i (hir-sym (str-concat "__aii" (int-str uid)))
+        cur (hir-sym (str-concat "__aiu" (int-str uid)))
+        k (hir-sym (str-concat "__aik" (int-str uid)))
+        nxt (hir-sym (str-concat "__aix" (int-str uid)))
+        outer (hir-vec (vector
+                 m map-ast
+                 a ks-ast
+                 n (hir-call "count" (vector a))))
+        getk (hir-call "get" (vector a i))
+        inner (hir-if (hir-call "=" (vector (hir-call "map-get" (vector cur k)) (hir-num 0)))
+                (hir-call "map" (vector))
+                (hir-call "map-clone" (vector (hir-call "map-get" (vector cur k)))))
+        step (hir-let (hir-vec (vector k getk))
+               (hir-let (hir-vec (vector nxt inner))
+                 (hir-do (vector (hir-call "map-set" (vector cur k nxt))
+                           (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) nxt))))))
+        last-k (hir-call "get" (vector a (hir-call "-" (vector n (hir-num 1)))))
+        walk (hir-loop (hir-vec (vector i (hir-num 0) cur c0))
+               (hir-if (hir-call ">=" (vector i (hir-call "-" (vector n (hir-num 1)))))
+                 cur
+                 step))
+        finish (hir-do (vector (hir-call "map-set" (vector cur last-k v-ast))
+                         c0))]
+    (hir-let outer
+      (hir-if (hir-call "=" (vector n (hir-num 0)))
+        m
+        (hir-let (hir-vec (vector c0 (hir-call "map-clone" (vector m))))
+          (hir-let (hir-vec (vector cur walk))
+            finish))))))
+
 ;; (get-in coll ks) — walk ks (vector of keys/indices); maps and vectors mixed
 (defn desugar-get-in [coll-ast ks-ast uid]
   (let [cur (hir-sym (str-concat "__gic" (int-str uid)))
@@ -1609,57 +1706,63 @@
       (lower-expr (desugar-kwargs-form ast) t l lines loops adt structs)
     ;; HOF: (map f vec) (filter pred vec) (reduce f init vec)
     (if (if (str-eq? fname "map") (= n 3) false)
-      (lower-expr (desugar-map (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-map (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "filter") (= n 3) false)
-      (lower-expr (desugar-filter (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-filter (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "reduce") (= n 4) false)
-      (lower-expr (desugar-reduce (get ast 1) (get ast 2) (get ast 3) l) t l lines loops adt structs)
+      (lower-expr (desugar-reduce (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "some") (= n 3) false)
-      (lower-expr (desugar-some (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-some (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "every?") (= n 3) false)
-      (lower-expr (desugar-every (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-every (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "take") (= n 3) false)
-      (lower-expr (desugar-take (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-take (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "drop") (= n 3) false)
-      (lower-expr (desugar-drop (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-drop (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "take-while") (= n 3) false)
-      (lower-expr (desugar-take-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-take-while (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "drop-while") (= n 3) false)
-      (lower-expr (desugar-drop-while (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-drop-while (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "range") true false)
       (if (if (>= n 2) (<= n 4) false)
-        (lower-expr (desugar-range ast l) t l lines loops adt structs)
+        (lower-expr (desugar-range ast (hir-lam-next)) t l lines loops adt structs)
         (lower-expr (hir-call "vector" (vector)) t l lines loops adt structs))
     (if (if (str-eq? fname "reverse") (= n 2) false)
-      (lower-expr (desugar-reverse (get ast 1) l) t l lines loops adt structs)
+      (lower-expr (desugar-reverse (get ast 1) (hir-lam-next)) t l lines loops adt structs)
     (if (str-eq? fname "concat")
-      (lower-expr (desugar-concat ast l) t l lines loops adt structs)
+      (lower-expr (desugar-concat ast (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "distinct") (= n 2) false)
-      (lower-expr (desugar-distinct (get ast 1) l) t l lines loops adt structs)
+      (lower-expr (desugar-distinct (get ast 1) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "interpose") (= n 3) false)
-      (lower-expr (desugar-interpose (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-interpose (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "partition") (= n 3) false)
-      (lower-expr (desugar-partition (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-partition (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "frequencies") (= n 2) false)
-      (lower-expr (desugar-frequencies (get ast 1) l) t l lines loops adt structs)
+      (lower-expr (desugar-frequencies (get ast 1) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "sort") (= n 2) false)
-      (lower-expr (desugar-sort (get ast 1) l) t l lines loops adt structs)
+      (lower-expr (desugar-sort (get ast 1) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "group-by") (= n 3) false)
-      (lower-expr (desugar-group-by (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-group-by (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "zipmap") (= n 3) false)
-      (lower-expr (desugar-zipmap (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-zipmap (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "select-keys") (= n 3) false)
-      (lower-expr (desugar-select-keys (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-select-keys (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "mapcat") (= n 3) false)
-      (lower-expr (desugar-mapcat (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-mapcat (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "keep") (= n 3) false)
-      (lower-expr (desugar-keep (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-keep (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "get-in") (= n 3) false)
-      (lower-expr (desugar-get-in (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-get-in (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "merge") (>= n 2) false)
+      (lower-expr (desugar-merge ast (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "dissoc") (>= n 3) false)
+      (lower-expr (desugar-dissoc ast (hir-lam-next)) t l lines loops adt structs)
+    (if (if (str-eq? fname "assoc-in") (= n 4) false)
+      (lower-expr (desugar-assoc-in (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "update") (= n 4) false)
-      (lower-expr (desugar-update (get ast 1) (get ast 2) (get ast 3) l) t l lines loops adt structs)
+      (lower-expr (desugar-update (get ast 1) (get ast 2) (get ast 3) (hir-lam-next)) t l lines loops adt structs)
     (if (if (str-eq? fname "sort-by") (= n 3) false)
-      (lower-expr (desugar-sort-by (get ast 1) (get ast 2) l) t l lines loops adt structs)
+      (lower-expr (desugar-sort-by (get ast 1) (get ast 2) (hir-lam-next)) t l lines loops adt structs)
     ;; inc/dec are sugar over +/- 1 (no runtime fn needed)
     (if (if (str-eq? fname "inc") (= n 2) false)
       (lower-expr (hir-call "+" (vector (get ast 1) (hir-num 1))) t l lines loops adt structs)
@@ -1719,7 +1822,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
