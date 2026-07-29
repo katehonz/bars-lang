@@ -702,6 +702,11 @@ bars/
 - [x] Single binding only; gensyms derived from binding name
 - [x] Example `for_demo.brs` → 1 2 3, 10 40 4, 6 7
 
+### 17.25 `dotimes` ✅
+
+- [x] `(dotimes [i n] body…)` → `let` bound n + index `loop`/`recur`
+- [x] Example `dotimes_demo.brs` → 0 1 2 3, 0 4 3
+
 ---
 
-*План версия: 6.31 | Актуализиран: 2026-07-29*
+*План версия: 6.32 | Актуализиран: 2026-07-29*

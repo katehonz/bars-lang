@@ -594,32 +594,34 @@
               (expand-doseq expr macs)
               (if (str-eq? name "for")
                 (expand-for expr macs)
-                (if (str-eq? name "cond")
-                  (expand-cond expr macs)
-                  (if (str-eq? name "and")
-                    (expand-and expr macs)
-                    (if (str-eq? name "or")
-                      (expand-or expr macs)
-                      (if (str-eq? name "->")
-                        (expand-thread expr macs)
-                        (if (str-eq? name "->>")
-                          (expand-thread-last expr macs)
-                          (if (str-eq? name "deftrait")
-                            (expand-deftrait expr)
-                            (if (str-eq? name "impl")
-                              (expand-impl expr (vector) macs)
-                              (if (str-eq? name "defconst")
-                                (expand-defconst expr macs)
-                                (if (str-eq? name "trait-call")
-                                  (expand-trait-call expr macs)
-                                  (if (str-eq? name "tcall")
+                (if (str-eq? name "dotimes")
+                  (expand-dotimes expr macs)
+                  (if (str-eq? name "cond")
+                    (expand-cond expr macs)
+                    (if (str-eq? name "and")
+                      (expand-and expr macs)
+                      (if (str-eq? name "or")
+                        (expand-or expr macs)
+                        (if (str-eq? name "->")
+                          (expand-thread expr macs)
+                          (if (str-eq? name "->>")
+                            (expand-thread-last expr macs)
+                            (if (str-eq? name "deftrait")
+                              (expand-deftrait expr)
+                              (if (str-eq? name "impl")
+                                (expand-impl expr (vector) macs)
+                                (if (str-eq? name "defconst")
+                                  (expand-defconst expr macs)
+                                  (if (str-eq? name "trait-call")
                                     (expand-trait-call expr macs)
-                                    (let [entry (macro-lookup macs name)]
-                                      (if (= entry 0)
-                                        (expand-children-from expr 0 macs)
-                                        (let [args (expand-call-args expr macs)
-                                              expanded (apply-user-macro entry args)]
-                                          (expand-expr expanded macs))))))))))))))))))))))
+                                    (if (str-eq? name "tcall")
+                                      (expand-trait-call expr macs)
+                                      (let [entry (macro-lookup macs name)]
+                                        (if (= entry 0)
+                                          (expand-children-from expr 0 macs)
+                                          (let [args (expand-call-args expr macs)
+                                                expanded (apply-user-macro entry args)]
+                                            (expand-expr expanded macs)))))))))))))))))))))))
 
 (defn expand-expr [expr macs]
   (if (is-atom? expr)
@@ -840,6 +842,28 @@
                              (mk-sym cn) cnt
                              (mk-sym acc) empty)
                      loopf)))))))
+
+;; (dotimes [i n] body...) => (let [__dn n] (loop [i 0] (if (>= i __dn) nil (do body (recur (+ i 1))))))
+(defn expand-dotimes [expr macs]
+  (let [n (count expr)]
+    (if (< n 3)
+      (mk-nil)
+      (let [binds (unwrap-vec (get expr 1))]
+        (if (< (count binds) 2)
+          (mk-nil)
+          (let [ivar (get binds 0)
+                nexp (expand-expr (get binds 1) macs)
+                iname (if (is-atom? ivar) (ast-val ivar) "i")
+                cn (str-concat "__dtn_" iname)
+                body (expand-body-exprs expr 2 macs)
+                rec (mk-recur1 (vector
+                      (mk-call "+" (vector (mk-sym iname) (mk-num 1)))))
+                step (mk-do (vector body rec))
+                test (mk-call ">=" (vector (mk-sym iname) (mk-sym cn)))
+                lbody (mk-if test (mk-nil) step)
+                lbinds (wrap-vec (vector (mk-sym iname) (mk-num 0)))
+                loopf (mk-loop1 lbinds lbody)]
+            (mk-let1 cn nexp loopf)))))))
 
 ;; (and) => true; (and x) => x; (and a b c) => (if a (if b c false) false)
 (defn expand-and [expr macs]

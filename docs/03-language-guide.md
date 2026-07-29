@@ -539,7 +539,16 @@ Returns a **one-argument** function. Useful for specializing HOFs:
 ```
 
 Single binding `[name coll]` only. `coll` must be a vector. Bodies may be
-multiple expressions (`do`-style); `for` collects the **last** expression.### Threading Macros
+multiple expressions (`do`-style); `for` collects the **last** expression.
+
+### `dotimes` — repeat n times
+
+```clojure
+(dotimes [i 4]
+  (println i))               ;; prints 0 1 2 3; returns nil
+```
+
+Binding is `[name n]`; `n` is evaluated once. `name` runs from `0` to `n-1`.### Threading Macros
 
 ```clojure
 (-> x
