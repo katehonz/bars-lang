@@ -325,21 +325,67 @@
 ;; ============================================================
 ;; lower-expr [ast t l lines loops adt structs]
 ;; ============================================================
+
+;; Closure value = vector [fnptr, env-vector]. Empty env for closed fns.
+(defn lower-mkclos-empty [name t l lines]
+  (let [fp (fresh-temp t)
+        ar (hir-fn-arity name)
+        _ (put lines (str-concat "    funcref " (str-concat fp
+              (str-concat " " (str-concat name (str-concat " " (int-str ar)))))))
+        c (fresh-temp (+ t 1))
+        _ (put lines (str-concat "    call " (str-concat c " vector")))
+        t2 (fresh-temp (+ t 2))
+        _ (put lines (str-concat "    call " (str-concat t2
+              (str-concat " push var " (str-concat c (str-concat " var " fp))))))
+        e (fresh-temp (+ t 3))
+        _ (put lines (str-concat "    call " (str-concat e " vector")))
+        t3 (fresh-temp (+ t 4))
+        _ (put lines (str-concat "    call " (str-concat t3
+              (str-concat " push var " (str-concat c (str-concat " var " e))))))]
+    (mk-ret c (+ t 5) l)))
+
+;; (__mkclos name free0 free1 …) → closure capturing current free values
+(defn lower-mkclos [ast t l lines loops adt structs]
+  (let [name (val-of (get ast 1))
+        n (count ast)
+        ar (hir-fn-arity name)
+        fp (fresh-temp t)
+        _ (put lines (str-concat "    funcref " (str-concat fp
+              (str-concat " " (str-concat name (str-concat " " (int-str ar)))))))
+        e (fresh-temp (+ t 1))
+        _ (put lines (str-concat "    call " (str-concat e " vector")))]
+    (loop [i 2 tcur (+ t 2) lcur l]
+      (if (>= i n)
+        (let [c (fresh-temp tcur)
+              _ (put lines (str-concat "    call " (str-concat c " vector")))
+              t2 (fresh-temp (+ tcur 1))
+              _ (put lines (str-concat "    call " (str-concat t2
+                    (str-concat " push var " (str-concat c (str-concat " var " fp))))))
+              t3 (fresh-temp (+ tcur 2))
+              _ (put lines (str-concat "    call " (str-concat t3
+                    (str-concat " push var " (str-concat c (str-concat " var " e))))))]
+          (mk-ret c (+ tcur 3) lcur))
+        (let [res (lower-expr (get ast i) tcur lcur lines loops adt structs)
+              op (ret-op res)
+              t2 (st-t res)
+              l2 (st-l res)
+              tmp (fresh-temp t2)
+              _ (put lines (str-concat "    call " (str-concat tmp
+                    (str-concat " push var " (str-concat e
+                      (str-concat " " (op-fmt op)))))))]
+          (recur (+ i 1) (+ t2 1) l2))))))
+
 (defn lower-atom [ast t l lines]
   (let [tag (tag-of ast)]
     (if (= tag 0)
       (mk-ret (int-str (val-of ast)) t l)
       (if (= tag 1)
         (let [name (val-of ast)]
-          ;; Locals win. Else top-level / lifted fn → funcref (i64 fn pointer).
+          ;; Locals win. Else top-level / lifted fn → closure vector [fnptr, env].
           (if (hir-is-local? name)
             (mk-ret name t l)
             (if (hir-is-fn? name)
-              (let [dest (fresh-temp t)
-                    ar (hir-fn-arity name)]
-                (do (put lines (str-concat "    funcref " (str-concat dest
-                          (str-concat " " (str-concat name (str-concat " " (int-str ar)))))))
-                    (mk-ret dest (+ t 1) l)))
+              (lower-mkclos-empty name t l lines)
               (mk-ret name t l))))
         (if (= tag 2)
           (let [dest (fresh-temp t)]
@@ -860,6 +906,8 @@
   (let [fname (val-of (get ast 0))
         n (count ast)
         entry (adt-lookup adt fname)]
+    (if (str-eq? fname "__mkclos")
+      (lower-mkclos ast t l lines loops adt structs)
     (if (str-eq? fname "def")
       (lower-def ast t l lines loops adt structs)
     (if (str-eq? fname "vector")
@@ -900,15 +948,19 @@
                   (str-concat " " (str-concat (op-fmt op)
                     (str-concat " " (int-str offset)))))))]
         (mk-ret dest t3 l2))
-      ;; Normal call — or icall when callee is a local holding a funcref
+      ;; Normal call — or icall when callee is a local holding a closure/fnptr
       (loop [i 1 args (vector) tcur t lcur l]
         (if (>= i n)
           (let [dest (fresh-temp tcur)
                 tnext (+ tcur 1)
-                astr (join-args args 0)]
+                astr (join-args args 0)
+                nargs (- n 1)]
             (do (if (hir-is-local? fname)
-                  (put lines (str-concat "    icall " (str-concat dest
-                        (str-concat " var " (str-concat fname (str-concat " " astr))))))
+                  ;; bars_icallN(f, a0…) — runtime unpacks closure vs bare ptr
+                  (put lines (str-concat "    call " (str-concat dest
+                        (str-concat " bars_icall" (str-concat (int-str nargs)
+                          (str-concat " var " (str-concat fname
+                            (if (= (count astr) 0) "" (str-concat " " astr)))))))))
                   (put lines (str-concat "    call " (str-concat dest
                         (str-concat " " (str-concat fname (str-concat " " astr)))))))
                 (mk-ret dest tnext lcur)))
@@ -917,7 +969,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2)))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
@@ -1567,7 +1619,7 @@
               (do (free-collect (get expr i) bound out)
                   (recur (+ i 1))))))))))
 
-(defn fn-is-closed? [expr]
+(defn fn-free-names [expr]
   (let [out (vector)
         params (normalize-params (get expr 1))
         bound (vector)
@@ -1579,7 +1631,33 @@
             (if (>= i (count expr)) 0
               (do (free-collect (get expr i) bound out)
                   (recur (+ i 1)))))]
-    (= (count out) 0)))
+    out))
+
+(defn fn-is-closed? [expr]
+  (= (count (fn-free-names expr)) 0))
+
+(defn free-index [frees name]
+  (let [n (count frees)]
+    (loop [i 0]
+      (if (>= i n) -1
+        (if (str-eq? (get frees i) name) i
+          (recur (+ i 1)))))))
+
+;; Replace free symbols with (get __env i). Nested fn left for outer lift pass.
+(defn rewrite-frees [expr frees]
+  (if (is-atom? expr)
+    (if (= (tag-of expr) 1)
+      (let [idx (free-index frees (val-of expr))]
+        (if (< idx 0) expr
+          (hir-call "get" (vector (hir-sym "__env") (hir-num idx)))))
+      expr)
+    (if (is-fn-form? expr) expr
+      (let [n (count expr)
+            out (vector)]
+        (do (loop [i 0]
+              (if (>= i n) out
+                (do (push out (rewrite-frees (get expr i) frees))
+                    (recur (+ i 1))))))))))
 
 (def __hir_lifted (vector))
 
@@ -1593,25 +1671,57 @@
             (do (push out (get fn-expr i))
                 (recur (+ i 1))))))))
 
+;; Open lambda: defn __lam [__env p…] with frees rewritten.
+(defn mk-open-lifted [name fn-expr frees]
+  (let [params (normalize-params (get fn-expr 1))
+        nbody (count fn-expr)
+        pvec (vector)
+        _ (push pvec (hir-sym "__env"))
+        _ (loop [i 0]
+            (if (>= i (count params)) 0
+              (do (push pvec (get params i))
+                  (recur (+ i 1)))))
+        out (vector)
+        _ (push out (hir-special 10 "defn"))
+        _ (push out (hir-sym name))
+        _ (push out (hir-vec pvec))
+        _ (loop [i 2]
+            (if (>= i nbody) 0
+              (do (push out (rewrite-frees (get fn-expr i) frees))
+                  (recur (+ i 1)))))]
+    out))
+
+;; (__mkclos name free0 free1 …) — lowered to closure vector [fnptr, env]
+(defn mk-clos-form [name frees]
+  (let [out (vector)
+        n (count frees)]
+    (do (push out (hir-sym "__mkclos"))
+        (push out (hir-sym name))
+        (loop [i 0]
+          (if (>= i n) out
+            (do (push out (hir-sym (get frees i)))
+                (recur (+ i 1))))))))
+
 (defn lift-expr [expr]
   ;; Mutates __hir_fns / __hir_lam_n / __hir_lifted; returns rewritten expr.
   (if (is-atom? expr) expr
     (if (is-fn-form? expr)
-      (if (fn-is-closed? expr)
-        (let [id (hir-lam-next)
-              name (str-concat "__lam" (int-str id))
-              ar (count (normalize-params (get expr 1)))
-              _ (hir-fns-add name ar)
-              lifted (mk-lifted-defn name expr)]
-          (do (push __hir_lifted lifted)
-              (hir-sym name)))
-        ;; Open lambda (captures locals) — leave; may fail later
-        (let [n (count expr)
-              out (vector)]
-          (do (loop [i 0]
-                (if (>= i n) out
-                  (do (push out (lift-expr (get expr i)))
-                      (recur (+ i 1))))))))
+      (let [frees (fn-free-names expr)
+            id (hir-lam-next)
+            name (str-concat "__lam" (int-str id))
+            nparams (count (normalize-params (get expr 1)))]
+        (if (= (count frees) 0)
+          (let [ar nparams
+                _ (hir-fns-add name ar)
+                lifted (mk-lifted-defn name expr)]
+            (do (push __hir_lifted lifted)
+                (hir-sym name)))
+          ;; Capturing: env is first param → arity nparams+1
+          (let [ar (+ nparams 1)
+                _ (hir-fns-add name ar)
+                lifted (mk-open-lifted name expr frees)]
+            (do (push __hir_lifted lifted)
+                (mk-clos-form name frees)))))
       (let [n (count expr)
             out (vector)]
         (do (loop [i 0]

@@ -229,6 +229,69 @@ int64_t bars_count_any_i64(int64_t val) {
     return 0;
 }
 
+int64_t bars_is_vector_i64(int64_t val) {
+    if (val == 0) return 0;
+    if (val < 0x10000000L || val < 0) return 0;
+    if ((val & 0x7) != 0) return 0;
+    return (*(uint32_t*)(uintptr_t)val == BARS_MAGIC_VECTOR) ? 1 : 0;
+}
+
+/* Unpack f → (fp, env, has_env). Closure = vector [fnptr, env-vector]. */
+static void bars_unpack_fn(int64_t f, int64_t* fp_out, int64_t* env_out, int* has_env) {
+    *fp_out = f;
+    *env_out = 0;
+    *has_env = 0;
+    if (!bars_is_vector_i64(f)) return;
+    bars_vector_t* v = (bars_vector_t*)(uintptr_t)f;
+    if (v->len >= 1) *fp_out = bars_vector_get_i64(v, 0);
+    if (v->len >= 2) {
+        int64_t env = bars_vector_get_i64(v, 1);
+        *env_out = env;
+        if (bars_is_vector_i64(env) && bars_vector_count_i64((bars_vector_t*)(uintptr_t)env) > 0)
+            *has_env = 1;
+    }
+}
+
+int64_t bars_icall0(int64_t f) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t))(uintptr_t)fp)(env);
+    return ((int64_t(*)(void))(uintptr_t)fp)();
+}
+
+int64_t bars_icall1(int64_t f, int64_t a0) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t))(uintptr_t)fp)(env, a0);
+    return ((int64_t(*)(int64_t))(uintptr_t)fp)(a0);
+}
+
+int64_t bars_icall2(int64_t f, int64_t a0, int64_t a1) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1);
+    return ((int64_t(*)(int64_t, int64_t))(uintptr_t)fp)(a0, a1);
+}
+
+int64_t bars_icall3(int64_t f, int64_t a0, int64_t a1, int64_t a2) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2);
+    return ((int64_t(*)(int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2);
+}
+
+int64_t bars_icall4(int64_t f, int64_t a0, int64_t a1, int64_t a2, int64_t a3) {
+    int64_t fp, env; int has_env;
+    bars_unpack_fn(f, &fp, &env, &has_env);
+    if (has_env)
+        return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(env, a0, a1, a2, a3);
+    return ((int64_t(*)(int64_t, int64_t, int64_t, int64_t))(uintptr_t)fp)(a0, a1, a2, a3);
+}
+
 /* Simple i64 vector helpers */
 
 bars_vector_t* bars_vector_new_i64(void) {

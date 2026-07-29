@@ -253,6 +253,12 @@
         (lines-push lines "declare i64 @bars_tcp_recv(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_close(i64)")
         (lines-push lines "declare i64 @bars_sha256(i64)")
+        (lines-push lines "declare i64 @bars_is_vector_i64(i64)")
+        (lines-push lines "declare i64 @bars_icall0(i64)")
+        (lines-push lines "declare i64 @bars_icall1(i64, i64)")
+        (lines-push lines "declare i64 @bars_icall2(i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_icall3(i64, i64, i64, i64)")
+        (lines-push lines "declare i64 @bars_icall4(i64, i64, i64, i64, i64)")
         (lines-push lines "declare void @bars_set_args(i32, i8**)")
         (lines-push lines "declare i8* @bars_alloc(i64)")
         (lines-push lines "")
@@ -352,6 +358,15 @@
             (if (str-eq? fname "bars_tcp_close") "bars_tcp_close"
               "")))))))
 
+(defn map-icall-ops [fname]
+  (if (str-eq? fname "bars_icall0") "bars_icall0"
+    (if (str-eq? fname "bars_icall1") "bars_icall1"
+      (if (str-eq? fname "bars_icall2") "bars_icall2"
+        (if (str-eq? fname "bars_icall3") "bars_icall3"
+          (if (str-eq? fname "bars_icall4") "bars_icall4"
+            (if (str-eq? fname "bars_is_vector_i64") "bars_is_vector_i64"
+              "")))))))
+
 (defn map-fname [fname]
   (let [a (map-str-ops fname)]
     (if (> (count a) 0) a
@@ -366,7 +381,9 @@
                       (let [f (map-time-rand-ops fname)]
                         (if (> (count f) 0) f
                           (let [g (map-net-ops fname)]
-                            (if (> (count g) 0) g fname)))))))))))))))
+                            (if (> (count g) 0) g
+                              (let [h (map-icall-ops fname)]
+                                (if (> (count h) 0) h fname)))))))))))))))))
 
 ;; ---- operators (small groups = fewer closing parens) ----
 

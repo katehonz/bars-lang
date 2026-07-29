@@ -80,6 +80,7 @@ EXAMPLES=(
   examples/persist_demo.brs
   examples/andor_demo.brs
   examples/fcfn_demo.brs
+  examples/closure_demo.brs
   examples/hof_demo.brs
   examples/hof_lambda.brs
   examples/kwargs_demo.brs
@@ -966,6 +967,7 @@ C_EXAMPLES=(
   examples/persist_demo.brs
   examples/andor_demo.brs
   examples/fcfn_demo.brs
+  examples/closure_demo.brs
   examples/hof_demo.brs
   examples/hof_lambda.brs
   examples/kwargs_demo.brs

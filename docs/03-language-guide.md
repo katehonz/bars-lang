@@ -433,21 +433,27 @@ Short-circuiting macros (not function calls):
 
 Any non-zero / non-`false` / non-`nil` value is truthy (including integers other than 0).
 
-### First-class functions (closed)
+### First-class functions
 
-Named top-level functions and **closed** lambdas can be passed as values and
-called through a local:
+Named top-level functions and lambdas can be passed as values and called
+through a local:
 
 ```clojure
 (defn apply1 [f x] (f x))
 (defn double [n] (* n 2))
 
 (apply1 double 21)           ;; → 42
-(apply1 (fn [n] (+ n 1)) 41) ;; → 42  (lambda lifted to a top-level __lamN)
+(apply1 (fn [n] (+ n 1)) 41) ;; → 42  (closed lambda lifted to __lamN)
+
+(let [y 10]
+  (apply1 (fn [x] (+ x y)) 32))  ;; → 42  (capturing closure)
 ```
 
-Lambdas that **capture** outer locals are not supported yet (use HOF
-`map`/`filter`/`reduce`, which beta-reduce inline lambdas).
+Closed lambdas are lifted to top-level functions. Capturing lambdas pack free
+locals into an env vector; the runtime `bars_icallN` passes env as the first
+argument. Nested `fn` forms that capture are lifted independently.
+
+HOF `map`/`filter`/`reduce` still beta-reduce inline lambdas (no allocation).
 
 ### Threading Macros
 
