@@ -133,6 +133,7 @@ int64_t bars_vector_clone_i64(bars_vector_t* vec);
 int64_t bars_vector_conj_i64(bars_vector_t* vec, int64_t val);
 int64_t bars_vector_assoc_i64(bars_vector_t* vec, int64_t idx, int64_t val);
 int64_t bars_vector_set_i64(bars_vector_t* vec, int64_t idx, int64_t val);
+int64_t bars_flatten_i64(bars_vector_t* vec);
 int64_t bars_vector_pop_copy_i64(bars_vector_t* vec);
 
 /* Map operations */

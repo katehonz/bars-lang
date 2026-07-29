@@ -176,6 +176,9 @@ desugar to inline `loop`/`recur` (self-host):
 (group-by pos? [1 -2 3])       ;; map {1: [1 3], 0: [-2]}
 (zipmap [10 20] [1 2])         ;; map {10: 1, 20: 2}
 (select-keys m [1 3])          ;; only keys 1 and 3 from map m
+(mapcat wrap [1 2])            ;; f → vector per elem, concatenated
+(keep f [1 2 3])               ;; non-0 (f x) results only
+(flatten [1 [2 [3]] 4])        ;; [1 2 3 4] (deep)
 (min 3 7) (max 3 7)            ;; 3 , 7
 
 ;; Inline lambda (beta-reduced into the loop):

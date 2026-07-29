@@ -818,6 +818,14 @@ bars/
 - [x] `(select-keys m ks)` → sub-map, missing keys skipped
 - [x] Example `group_by_demo.brs` → 2 3 2, 3 3, 2 1 2, 2 100 300
 
+### 17.44 `mapcat` / `keep` / `flatten` ✅
+
+- [x] `(mapcat f coll)` → nested-loop desugar, (f x) vectors concatenated
+- [x] `(keep f coll)` → non-0 (f x) results only
+- [x] `(flatten coll)` → runtime `bars_flatten_i64` (recursive, magic check
+  за raw i64 pointers + BARS_VECTOR-tagged items)
+- [x] Example `mapcat_demo.brs` → 6 1 10 30, 4, 2 300 400, 5 1 3 5, 2
+
 ---
 
-*План версия: 6.51 | Актуализиран: 2026-07-29*
+*План версия: 6.52 | Актуализиран: 2026-07-29*

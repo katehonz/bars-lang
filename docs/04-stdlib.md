@@ -133,6 +133,9 @@ Self-host HIR desugars (also in the C backend):
 | `group-by` | `(group-by f coll)` | Map `(f x)` → vector of matching elems |
 | `zipmap` | `(zipmap ks vs)` | Map from keys to values (stops at shorter) |
 | `select-keys` | `(select-keys m ks)` | Sub-map with only the present keys |
+| `mapcat` | `(mapcat f coll)` | `(f x)` vectors, concatenated |
+| `keep` | `(keep f coll)` | Non-0 `(f x)` results only |
+| `flatten` | `(flatten coll)` | Deep flatten (runtime, order kept) |
 | `vector-set` | `(vector-set vec i v)` | Set index in place; returns the vector |
 
 ### Boolean Helpers

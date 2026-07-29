@@ -431,6 +431,32 @@ int64_t bars_vector_set_i64(bars_vector_t* vec, int64_t idx, int64_t val) {
     return (int64_t)(uintptr_t)vec;
 }
 
+/* Deep flatten: recursively unpack nested vectors into a fresh flat one.
+   Handles both BARS_VECTOR-tagged items and raw i64 pointers (magic check). */
+static void bars_flatten_walk(bars_vector_t* out, bars_value_t item) {
+    bars_vector_t* nested = NULL;
+    if (item.tag == BARS_VECTOR) {
+        nested = item.data.vector;
+    } else if (item.tag == BARS_I64 && bars_is_vector_i64(item.data.i64)) {
+        nested = (bars_vector_t*)(uintptr_t)item.data.i64;
+    }
+    if (nested) {
+        for (size_t i = 0; i < nested->len; i++)
+            bars_flatten_walk(out, nested->data[i]);
+    } else {
+        bars_vector_push(out, item);
+    }
+}
+
+int64_t bars_flatten_i64(bars_vector_t* vec) {
+    bars_vector_t* out = bars_vector_new();
+    if (vec) {
+        for (size_t i = 0; i < vec->len; i++)
+            bars_flatten_walk(out, vec->data[i]);
+    }
+    return (int64_t)(uintptr_t)out;
+}
+
 /* Return a new vector without the last element. Empty/null → empty clone. */
 int64_t bars_vector_pop_copy_i64(bars_vector_t* vec) {
     if (!vec || vec->len == 0)

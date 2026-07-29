@@ -154,6 +154,9 @@
                                                                                     (if (str-eq? name "group-by") true
                                                                                       (if (str-eq? name "zipmap") true
                                                                                         (if (str-eq? name "select-keys") true
+                                                                                          (if (str-eq? name "mapcat") true
+                                                                                            (if (str-eq? name "keep") true
+                                                                                              (if (str-eq? name "flatten") true
                                                                                     (if (str-eq? name "vector-set") true
                                                                       (if (str-eq? name "apply") true
                                                                         (if (str-eq? name "identity") true
@@ -183,7 +186,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))
@@ -1408,6 +1411,61 @@
         body (hir-if done out step)]
     (hir-let outer (hir-loop binds body))))
 
+;; (mapcat f coll) → (f x) must be a vector; all results concatenated
+(defn desugar-mapcat [f vec-ast uid]
+  (let [v (hir-sym (str-concat "__mcv" (int-str uid)))
+        c (hir-sym (str-concat "__mcc" (int-str uid)))
+        i (hir-sym (str-concat "__mci" (int-str uid)))
+        j (hir-sym (str-concat "__mcj" (int-str uid)))
+        r (hir-sym (str-concat "__mcr" (int-str uid)))
+        xs (hir-sym (str-concat "__mcx" (int-str uid)))
+        n (hir-sym (str-concat "__mcn" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        xs-c (apply-callable f (vector (hir-call "get" (vector v i))))
+        inner-binds (hir-vec (vector j (hir-num 0) r r))
+        inner-done (hir-call ">=" (vector j n))
+        inner-push (hir-call "push" (vector r (hir-call "get" (vector xs j))))
+        inner-step (hir-let (hir-vec (vector r inner-push))
+                     (hir-recur (vector (hir-call "+" (vector j (hir-num 1))) r)))
+        inner-loop (hir-loop inner-binds (hir-if inner-done r inner-step))
+        step (hir-let (hir-vec (vector xs xs-c))
+               (hir-let (hir-vec (vector n (hir-call "count" (vector xs))))
+                 (hir-let (hir-vec (vector r inner-loop))
+                   (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r)))))
+        body (hir-if done r step)]
+    (hir-let outer (hir-loop binds body))))
+
+;; (keep f coll) → vector of the non-0 (f x) results
+(defn desugar-keep [f vec-ast uid]
+  (let [v (hir-sym (str-concat "__kpv" (int-str uid)))
+        c (hir-sym (str-concat "__kpc" (int-str uid)))
+        i (hir-sym (str-concat "__kpi" (int-str uid)))
+        r (hir-sym (str-concat "__kpr" (int-str uid)))
+        x (hir-sym (str-concat "__kpx" (int-str uid)))
+        y (hir-sym (str-concat "__kpy" (int-str uid)))
+        outer (hir-vec (vector
+                 v vec-ast
+                 c (hir-call "count" (vector v))
+                 r (hir-call "vector" (vector))))
+        binds (hir-vec (vector i (hir-num 0) r r))
+        done (hir-call ">=" (vector i c))
+        getx (hir-call "get" (vector v i))
+        y-c (apply-callable f (vector x))
+        rec (hir-recur (vector (hir-call "+" (vector i (hir-num 1))) r))
+        step (hir-let (hir-vec (vector x getx))
+               (hir-let (hir-vec (vector y y-c))
+                 (hir-if (hir-call "=" (vector y (hir-num 0)))
+                   rec
+                   (hir-let (hir-vec (vector r (hir-call "push" (vector r y))))
+                     rec))))
+        body (hir-if done r step)]
+    (hir-let outer (hir-loop binds body))))
+
 ;; ---- Keyword args pack (Phase 17.3c) ----
 ;; (kwargs :name "Ada" :n 3) → (vector "name" "Ada" "n" 3)
 ;; Explicit form so (map-set m :k v) is not rewritten.
@@ -1523,6 +1581,10 @@
       (lower-expr (desugar-zipmap (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (if (str-eq? fname "select-keys") (= n 3) false)
       (lower-expr (desugar-select-keys (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "mapcat") (= n 3) false)
+      (lower-expr (desugar-mapcat (get ast 1) (get ast 2) l) t l lines loops adt structs)
+    (if (if (str-eq? fname "keep") (= n 3) false)
+      (lower-expr (desugar-keep (get ast 1) (get ast 2) l) t l lines loops adt structs)
     (if (adt-found? entry)
       ;; Collect arg exprs into vector for lower-ctor
       (let [args (vector)]
@@ -1577,7 +1639,7 @@
                 t2  (st-t res)
                 l2  (st-l res)
                 _   (push args op)]
-            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))
+            (recur (+ i 1) args t2 l2))))))))))))))))))))))))))))))))))))
 
 (defn join-args [args i]
   (let [n (count args)]
