@@ -741,6 +741,11 @@ bars/
 - [x] `(constantly v)` → `(let [__cv v] (fn [__cu] __cv))`
 - [x] Example `identity_demo.brs` → 42 0 7 7 11
 
+### 17.32 `juxt` ✅
+
+- [x] `(juxt f g …)` → `(fn [x] (vector (f x) (g x) …))`
+- [x] Example `juxt_demo.brs` → 10 25 6 3, 42
+
 ---
 
-*План версия: 6.38 | Актуализиран: 2026-07-29*
+*План версия: 6.39 | Актуализиран: 2026-07-29*

@@ -246,7 +246,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.29** `case` multi-const groups (list/vector)
 - [x] **17.30** `if-not` / `complement` + macro index docs
 - [x] **17.31** `identity` runtime + `constantly` macro
+- [x] **17.32** `juxt` multi-fn applicator macro
 
 ---
 
-*Версия: 7.18 | Актуализирано: 2026-07-29*
+*Версия: 7.19 | Актуализирано: 2026-07-29*
