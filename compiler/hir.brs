@@ -194,6 +194,10 @@
                                                                                             (if (str-eq? name "dec") true
                                                                                               (if (str-eq? name "abs") true
                                                                                                 (if (str-eq? name "sqrt") true
+                                                                                                  (if (str-eq? name "bars_tls_connect") true
+                                                                                                    (if (str-eq? name "bars_tls_send") true
+                                                                                                      (if (str-eq? name "bars_tls_recv") true
+                                                                                                        (if (str-eq? name "bars_tls_close") true
                                                                                                   (if (str-eq? name "pow") true
                                                                                                 (if (str-eq? name "min") true
                                                                                                   (if (str-eq? name "max") true
@@ -202,7 +206,7 @@
                                                                                                         (if (str-starts-with? name "set-") true
                                                                                                           (if (str-starts-with? name "bars_") true
                                                                                                             (if (str-starts-with? name "v-") true
-                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                              false)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 (defn fresh-temp [t] (str-concat "t" (int-str t)))
 (defn fresh-label [l p] (str-concat p (int-str l)))
 (defn put [lines s] (do (push lines s) lines))

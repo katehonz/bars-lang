@@ -338,6 +338,41 @@ Response is a vector `[status-code body-string]`, or `0` on connect/send failure
 /tmp/hc      # → 200 / hello
 ```
 
+### `lib/tls.brs` — TLS transport (Phase 17.11)
+
+OpenSSL-backed client (`runtime/bars_tls.c`). Mirrors the `lib/net` TCP API.
+Requiring this module makes the linker pull `runtime/bars_tls.o` +
+`-lssl -lcrypto` automatically (build.brs detects `bars_tls_*` references);
+build the object once with `make tls-runtime`.
+
+| Function | Description |
+|----------|-------------|
+| `connect` | `(tls/connect host port verify)` → handle or `-1` |
+| `ok?` | Handle ≥ 0 |
+| `send` / `recv` | `(tls/recv h max-len)` → string or `0` |
+| `close` | Shutdown + free |
+
+`verify=1` checks the peer against the system CA store (production);
+`verify=0` skips verification — local dev / self-signed servers only.
+
+### `lib/https.brs` — HTTPS client (Phase 17.11)
+
+HTTP/1.1 over TLS, response parsing shared with `lib/http`.
+Response shape is the same `[status body]` vector.
+
+| Function | Description |
+|----------|-------------|
+| `get-req` / `post` | Verified requests (system CA) |
+| `get-insecure` / `post-insecure` | No verification — local dev only |
+| `request` | `(https/request method host port path body verify)` |
+| `status` / `body` / `ok?` | Accessors |
+
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout k.pem -out c.pem -days 1 -nodes -subj /CN=localhost
+openssl s_server -quiet -accept 18443 -cert c.pem -key k.pem -www &
+./bars-self examples/https_client.brs /tmp/hc && /tmp/hc   # → 200
+```
+
 ## `lib/map.brs`
 
 | Function | Signature | Description |

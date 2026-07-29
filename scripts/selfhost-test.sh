@@ -627,6 +627,59 @@ run_http_smoke() {
 
 run_http_smoke
 
+# --- Phase 17.11 TLS / HTTPS smoke (openssl s_server loopback) ---
+run_https_smoke() {
+  local src="examples/https_client.brs"
+  local out="$TMP/https_cli"
+  local log="$TMP/https.compile.log"
+  if [[ ! -f "$src" ]]; then
+    echo "SKIP https smoke (example missing)"
+    return
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "SKIP https smoke (no openssl)"
+    return
+  fi
+  if [[ ! -f runtime/bars_tls.o ]]; then
+    echo "SKIP https smoke (runtime/bars_tls.o missing — make tls-runtime)"
+    return
+  fi
+  if ! "$CC_BIN" "$src" "$out" >"$log" 2>&1; then
+    echo "FAIL compile  https_client (LLVM)"
+    tail -8 "$log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  # C backend compile exercises the same TLS link detection
+  local cout="$TMP/https_cli_c"
+  if ! BARS_BACKEND_C=1 BARS_FORCE=1 "$CC_BIN" "$src" "$cout" >"$TMP/https_c.compile.log" 2>&1; then
+    echo "FAIL compile  https_client (C backend)"
+    tail -8 "$TMP/https_c.compile.log" | sed 's/^/  /'
+    fail=$((fail + 1))
+    return
+  fi
+  # self-signed local server; client uses get-insecure (verify=0)
+  openssl req -x509 -newkey rsa:2048 -keyout "$TMP/tls.key" -out "$TMP/tls.crt" \
+    -days 1 -nodes -subj "/CN=localhost" >/dev/null 2>&1
+  openssl s_server -quiet -accept 18443 -cert "$TMP/tls.crt" -key "$TMP/tls.key" -www \
+    >/dev/null 2>&1 &
+  local spid=$!
+  sleep 0.5
+  local stdout
+  stdout="$(timeout 5 "$out" 2>/dev/null || true)"
+  kill "$spid" 2>/dev/null || true
+  wait "$spid" 2>/dev/null || true
+  if echo "$stdout" | head -1 | grep -qx '200'; then
+    echo "OK   https GET (TLS loopback :18443 → 200)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL run      https GET (got: $stdout)"
+    fail=$((fail + 1))
+  fi
+}
+
+run_https_smoke
+
 # --- Phase 14.1 stdlib smoke (io / json / random+time+regex) ---
 run_stdlib_smoke() {
   local out log stdout

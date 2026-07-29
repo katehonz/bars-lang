@@ -417,12 +417,25 @@
       0))
 
 ;; Host: single clang link of .ll + runtime.
+;; If the generated code references bars_tls_*, also link the TLS object
+;; and OpenSSL (kept out of the base runtime on purpose).
+(defn tls-link-extra [gen-path]
+  (let [src (slurp gen-path)]
+    (if (= src 0) ""
+      (if (>= (str-index-of src "bars_tls_") 0)
+        (if (= (bars_file_exists "runtime/bars_tls.o") 1)
+          " runtime/bars_tls.o -lssl -lcrypto"
+          (do (err "link" "runtime/bars_tls.o missing (make tls-runtime)")
+              ""))
+        ""))))
+
 (defn link-llvm-host [output-path ll-path rt opts]
   (let [cmd (str-concat "clang -Wno-override-module "
               (str-concat opts
                 (str-concat ll-path
                   (str-concat " " (str-concat rt
-                    (str-concat " -lgc -lm -o " output-path))))))
+                    (str-concat (tls-link-extra ll-path)
+                      (str-concat " -lgc -lm -o " output-path)))))))
         status (bars_system cmd)]
     (if (!= status 0)
       (do (err "link" "clang failed (LLVM backend)")
@@ -490,7 +503,8 @@
                     (str-concat opts
                       (str-concat c-path
                         (str-concat " " (str-concat rt
-                          (str-concat " -lgc -lm -o " output-path)))))))
+                          (str-concat (tls-link-extra c-path)
+                            (str-concat " -lgc -lm -o " output-path))))))))
             status (bars_system cmd)]
         (if (!= status 0)
           (do (err "link" (str-concat cc " failed (C backend)"))

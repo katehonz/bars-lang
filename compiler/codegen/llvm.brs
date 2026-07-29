@@ -179,7 +179,14 @@
 
 ;; ---- header with correct C runtime names ----
 
-(defn llvm-header [triple]
+(defn hir-mentions-tls? [hir-lines]
+  (let [n (count hir-lines)]
+    (loop [i 0]
+      (if (>= i n) false
+        (if (>= (str-index-of (get hir-lines i) "bars_tls_") 0) true
+          (recur (+ i 1)))))))
+
+(defn llvm-header [triple with-tls]
   (let [t (if (> (count triple) 0) triple "x86_64-unknown-linux-gnu")
         lines (vector)]
     (do (lines-push lines (str-concat "target triple = \"" (str-concat t "\"")))
@@ -261,6 +268,14 @@
         (lines-push lines "declare i64 @bars_tcp_send(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_recv(i64, i64)")
         (lines-push lines "declare i64 @bars_tcp_close(i64)")
+        ;; TLS client fns — declared only when the program references them,
+        ;; so plain programs never pull OpenSSL into the link
+        (if with-tls
+          (do (lines-push lines "declare i64 @bars_tls_connect(i64, i64, i64)")
+              (lines-push lines "declare i64 @bars_tls_send(i64, i64)")
+              (lines-push lines "declare i64 @bars_tls_recv(i64, i64)")
+              (lines-push lines "declare i64 @bars_tls_close(i64)"))
+          0)
         (lines-push lines "declare i64 @bars_sha256(i64)")
         (lines-push lines "declare i64 @bars_is_vector_i64(i64)")
         (lines-push lines "declare i64 @bars_icall0(i64)")
@@ -1048,7 +1063,7 @@
                                 inj (inject-allocas-after-define closed env)]
                             (do (append-vec all-body inj) all-body))
                           all-body)
-                  out (llvm-header triple)
+                  out (llvm-header triple (hir-mentions-tls? hir-lines))
                   wrap (c-main-wrapper)]
               (do (append-vec out strs)
                   (if (> (count strs) 0) (lines-push out "") 0)

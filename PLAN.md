@@ -340,8 +340,8 @@ bars/
 
 ### 15.2 Next (candidates)
 
-- [ ] TLS / HTTPS (deferred — needs crypto + OpenSSL or similar)
-- [ ] Crypto hashes (SHA-256) in runtime + `lib/crypto`
+- [x] TLS / HTTPS → **17.11 ✅** (OpenSSL client, `lib/tls` + `lib/https`)
+- [x] Crypto hashes (SHA-256) in runtime + `lib/crypto` (от 17.3)
 - [ ] HTTP server helper package (routing beyond one-shot examples)
 
 ---
@@ -420,6 +420,7 @@ bars/
 | 27 | Runtime: `bars_map_set_i64`/`bars_set_add_i64` връщат `void`, но backend-ите ги декларират `i64` → garbage при chained употреба (segfault) | `runtime/bars_runtime.c` (връщат map/set) | ✅ |
 | 28 | `abs`/`inc`/`dec` известни на HIR/types, но без backend mapping → undefined `@abs`; `bars_map_get(NULL)` segfault при get-in през missing key | backend maps + inc/dec desugar; NULL guard в `bars_map_get` | ✅ |
 | 29 | Nested desugar на същата fn (напр. `zipmap` в `zipmap`) дели един и същ `uid` → генерираните символи се блъскат и дават грешни стойности | `compiler/hir.brs` (fresh `(hir-lam-next)` uid per dispatch) | ✅ |
+| 30 | C backend: `c-escape` не обработва `\r` (13) → raw CR в C string literal = compile error при `"\r\n"` (lib/http `crlf`) | `compiler/codegen/c.brs` (`\r` → `\\r`) | ✅ |
 
 ### 💡 Идеи за подобрения
 1. Същински test framework (deftest макрос + test runner) → **17.1 ✅** (`lib/test.brs`; function API, not macros)
@@ -879,6 +880,20 @@ bars/
 - [x] Example `indexed_demo.brs` → 3 0 20, 3 3 5, 0, 4 1 1, 3
 - [x] +8 проверки в `seq_lib_test.brs` (→ 40 общо)
 
+### 17.11 TLS / HTTPS ✅ (беше deferred)
+
+- [x] `runtime/bars_tls.c` — OpenSSL client (SNI, VERIFY_PEER със system CA или
+  VERIFY_NONE за local dev); отделен `bars_tls.o`, базовият runtime остава
+  без OpenSSL зависимост
+- [x] `make tls-runtime`; link в `build.brs`: ако генерираният код реферира
+  `bars_tls_*`, се добавя `runtime/bars_tls.o -lssl -lcrypto` (LLVM + C host)
+- [x] `lib/tls.brs` — transport wrappers (connect/send/recv/close, verify flag)
+- [x] `lib/https.brs` — HTTP/1.1 върху TLS; `get-req`/`post` (verify=1),
+  `get-insecure`/`post-insecure` (verify=0, само за local dev)
+- [x] Example `https_client.brs`; suite smoke: `openssl s_server -www` loopback
+  :18443 → 200 (+ C backend compile check)
+- Остава: TLS server (SSL_accept страна) — по-нататък
+
 ---
 
-*План версия: 6.58 | Актуализиран: 2026-07-29*
+*План версия: 6.59 | Актуализиран: 2026-07-29*

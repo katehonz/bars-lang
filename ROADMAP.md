@@ -225,7 +225,7 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.8** HM generalize + instantiate за defn (warnings →128; fix apply_subst/ty_free_vars)
 - [x] **17.9** Interleaved solve + env_lookup last-match fix + map-contains?/keys/values (warnings →3)
 - [x] **17.10** Set ops + first/last свързани в self-host backend-ите
-- [ ] **17.11** TLS / HTTPS (deferred)
+- [x] **17.11** TLS / HTTPS (OpenSSL client → `lib/tls` + `lib/https`)
 - [x] **17.12** Full macro interpreter (list/cons/if/let at expand-time)
 - [x] **17.13** Incremental dep-graph (`.deps` sidecar beyond mtime)
 - [x] **17.14** Persistent/COW vectors & maps (`conj` / `map-assoc` / …)

@@ -6,7 +6,7 @@
 # Day-to-day language work happens in compiler/*.brs (Bars-first).
 # bootstrap/ is frozen like Nim csources — only rebuild for bring-up.
 
-.PHONY: all build host runtime runtime-aarch64 bars-self self gen2 gen3 identity \
+.PHONY: all build host runtime tls-runtime runtime-aarch64 bars-self self gen2 gen3 identity \
         self-test self-test-c test clean install examples help
 
 HOST     := ./target/release/bars
@@ -67,6 +67,14 @@ install:
 runtime $(RUNTIME): runtime/bars_runtime.c runtime/bars_runtime.h
 	$(CC) -O2 -c runtime/bars_runtime.c -o runtime/bars_runtime.o
 	ar rcs runtime/libbars_runtime.a runtime/bars_runtime.o
+
+# TLS client runtime (OpenSSL). Separate object — linked only when the
+# program references bars_tls_* (build.brs appends it + -lssl -lcrypto).
+RUNTIME_TLS := runtime/bars_tls.o
+
+tls-runtime $(RUNTIME_TLS): runtime/bars_tls.c runtime/bars_runtime.h
+	$(CC) -O2 -c runtime/bars_tls.c -o $(RUNTIME_TLS)
+	@echo "→ $(RUNTIME_TLS) ready (OpenSSL)"
 
 # Cross-compiled runtime for aarch64 (requires aarch64-linux-gnu-gcc)
 RUNTIME_AARCH64 := runtime/bars_runtime_aarch64_unknown_linux_gnu.o
