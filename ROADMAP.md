@@ -238,7 +238,8 @@ New language work goes in `compiler/*.brs`, not `bootstrap/`.
 - [x] **17.21** `if-let` / `when-let` + docs for when/unless/->/->>
 - [x] **17.22** `apply` — call first-class fn with arg vector (≤8)
 - [x] **17.23** Multi-arg `apply` + `partial` macro
+- [x] **17.24** `doseq` / `for` vector iteration macros
 
 ---
 
-*Версия: 7.10 | Актуализирано: 2026-07-29*
+*Версия: 7.11 | Актуализирано: 2026-07-29*

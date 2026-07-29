@@ -527,7 +527,19 @@ Returns a **one-argument** function. Useful for specializing HOFs:
 (let [p (partial add3 10 20)]
   (p 12))                     ;; → 42
 ```
-### Threading Macros
+
+### `doseq` / `for` — iterate a vector
+
+```clojure
+(doseq [x coll]
+  (println x))               ;; side effects; returns nil
+
+(for [n coll]
+  (* n 10))                  ;; → vector of body results
+```
+
+Single binding `[name coll]` only. `coll` must be a vector. Bodies may be
+multiple expressions (`do`-style); `for` collects the **last** expression.### Threading Macros
 
 ```clojure
 (-> x

@@ -695,6 +695,13 @@ bars/
 - [x] Built-in macro `(partial f a…)` → `(fn [x] (apply f a… [x]))`
 - [x] Example `partial_demo.brs` → 42, 6, 42, 17, 24
 
+### 17.24 `doseq` / `for` vector iteration macros ✅
+
+- [x] `(doseq [x coll] body…)` → index `loop`/`recur` (side effects, nil)
+- [x] `(for [x coll] body…)` → collect last body expr into a vector
+- [x] Single binding only; gensyms derived from binding name
+- [x] Example `for_demo.brs` → 1 2 3, 10 40 4, 6 7
+
 ---
 
-*План версия: 6.30 | Актуализиран: 2026-07-29*
+*План версия: 6.31 | Актуализиран: 2026-07-29*
